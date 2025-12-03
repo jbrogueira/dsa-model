@@ -24,30 +24,36 @@ class LifecycleConfig:
     # === Income process parameters ===
     n_y: int = 5                         # Number of income states (including unemployment)
     
+    # === Pension parameters ===
+    N_earnings_history: int = 35         # Number of years for earnings history computation (moving average)
+    
     # === Education parameters ===
     education_type: str = 'medium'       # 'low', 'medium', 'high'
     
     # Education-specific income parameters
     edu_params: dict = field(default_factory=lambda: {
         'low': {
-            'mu_y': -0.3,      # Lower average income
-            'sigma_y': 0.25,   # Higher volatility
-            'rho_y': 0.93,     # Lower persistence
+            'mu_y': 0.05,    # MUCH smaller values
+            'sigma_y': 0.03, # MUCH smaller volatility
+            'rho_y': 0.97,
+            'unemployment_rate': 0.10,  # 10% unemployment for low education
         },
         'medium': {
-            'mu_y': 0.0,       # Baseline
-            'sigma_y': 0.20,
-            'rho_y': 0.95,
+            'mu_y': 0.1,      # Keep baseline at zero
+            'sigma_y': 0.03,  # MUCH smaller volatility
+            'rho_y': 0.97,
+            'unemployment_rate': 0.06,  # 6% unemployment for medium education
         },
         'high': {
-            'mu_y': 0.4,       # Higher average income
-            'sigma_y': 0.15,   # Lower volatility
-            'rho_y': 0.97,     # Higher persistence
+            'mu_y': 0.12,      # MUCH smaller positive value
+            'sigma_y': 0.03,   # MUCH smaller volatility
+            'rho_y': 0.97,
+            'unemployment_rate': 0.03,  # 3% unemployment for high education
         }
     })
     
+    
     # === Unemployment parameters ===
-    unemployment_rate: float = 0.05      # Target steady-state unemployment rate
     job_finding_rate: float = 0.5        # Probability of finding job when unemployed
     max_job_separation_rate: float = 0.1 # Maximum probability of losing job
     ui_replacement_rate: float = 0.4     # Unemployment insurance replacement rate (% of last wage)
@@ -117,7 +123,6 @@ class LifecycleConfig:
         assert self.n_a > 1, "n_a must be greater than 1"
         assert self.n_y >= 2, "n_y must be at least 2 (to include unemployment)"
         assert self.n_h >= 1, "n_h must be at least 1"
-        assert 0 <= self.unemployment_rate < 1, "unemployment_rate must be in [0, 1)"
         assert 0 < self.job_finding_rate <= 1, "job_finding_rate must be in (0, 1]"
         assert 0 <= self.ui_replacement_rate <= 1, "ui_replacement_rate must be in [0, 1]"
         assert 0 <= self.kappa <= 1, "kappa must be in [0, 1]"
@@ -141,6 +146,7 @@ class LifecycleModelPerfectForesight:
     - Heterogeneous agents (income, unemployment, and health risk)
     - Education heterogeneity (different income processes by education type)
     - Incomplete markets (borrowing constraint)
+    - Moving average of gross labor income for earnings history (continuous state)
     """
     
     def __init__(self, config: LifecycleConfig):
@@ -159,6 +165,7 @@ class LifecycleModelPerfectForesight:
         self.current_age = config.current_age
         self.ui_replacement_rate = config.ui_replacement_rate
         self.kappa = config.kappa
+        self.N_earnings_history = config.N_earnings_history
         
         # Set up price paths
         self.r_path = self._setup_path(config.r_path, config.r_default, "r_path")
@@ -173,6 +180,47 @@ class LifecycleModelPerfectForesight:
         # Create grids and processes
         self.a_grid = self._create_asset_grid()
         self.y_grid, self.P_y = self._income_process()
+        
+        # COMPREHENSIVE DIAGNOSTIC
+        print(f"\n{'='*70}")
+        print(f"INCOME PROCESS DIAGNOSTIC - {self.config.education_type.upper()} EDUCATION")
+        print('='*70)
+        edu_params = self.config.edu_params[self.config.education_type]
+        print(f"Input parameters:")
+        print(f"  mu_y:    {edu_params['mu_y']}")
+        print(f"  sigma_y: {edu_params['sigma_y']}")
+        print(f"  rho_y:   {edu_params['rho_y']}")
+        print(f"\nIncome grid (y_grid):")
+        print(f"  {self.y_grid}")
+        print(f"\nIncome grid details:")
+        for i, y in enumerate(self.y_grid):
+            state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
+            print(f"  State {i} ({state_name}): y = {y:.6f}")
+        
+        # Check stationary distribution
+        from scipy.linalg import eig
+        eigenvalues, eigenvectors = eig(self.P_y.T)
+        stationary_idx = np.argmax(eigenvalues.real)
+        stationary = eigenvectors[:, stationary_idx].real
+        stationary = stationary / stationary.sum()
+        
+        print(f"\nTransition matrix P_y (first 3 rows):")
+        print(self.P_y[:3])
+        
+        print(f"\nStationary distribution:")
+        for i in range(self.n_y):
+            state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
+            print(f"  State {i} ({state_name}, y={self.y_grid[i]:.4f}): {stationary[i]:.4%}")
+        
+        expected_income = np.dot(stationary, self.y_grid)
+        print(f"\nExpected steady-state income: {expected_income:.6f}")
+        
+        if expected_income < 0.01:
+            print(f"\n⚠️  WARNING: Expected income is nearly zero!")
+            print(f"    This will cause zero average income in simulations!")
+        
+        print('='*70)
+        
         self.h_grid, self.P_h = self._health_process()
         
         # Health expenditure grid (by health state)
@@ -182,10 +230,13 @@ class LifecycleModelPerfectForesight:
             config.m_poor
         ])
         
-        # Value and policy functions (now include last period's income state for UI)
+        # Value and policy functions (earnings history stored as continuous value, not gridded)
+        # Dimensions: (T, n_a, n_y, n_h, n_y_last)
+        # avg_earnings is tracked separately in simulation
         self.V = None
         self.a_policy = None
         self.c_policy = None
+        self.pension_avg_policy = None  # Stores next period's pension average
     
     def _create_asset_grid(self):
         """Create non-linear asset grid with more points near borrowing constraint."""
@@ -225,16 +276,16 @@ class LifecycleModelPerfectForesight:
         rho_y = edu_params['rho_y']
         sigma_y = edu_params['sigma_y']
         mu_y = edu_params['mu_y']
+        unemployment_rate = edu_params['unemployment_rate']
         
         # Extract unemployment parameters
-        unemployment_rate = self.config.unemployment_rate
         job_finding_rate = self.config.job_finding_rate
         max_job_separation_rate = self.config.max_job_separation_rate
         
         # Discretize employed income states using Tauchen (excluding unemployment)
         n_employed = self.n_y - 1
         
-        mc = tauchen(n_employed, rho_y, sigma_y, mu_y, n_std=3)
+        mc = tauchen(n_employed, rho_y, sigma_y, mu_y, n_std=2)  # Changed from n_std=3
         y_employed = np.exp(mc.state_values)
         P_employed = mc.P
         
@@ -246,21 +297,29 @@ class LifecycleModelPerfectForesight:
         # Create full transition matrix
         P_y = np.zeros((self.n_y, self.n_y))
         
-        # Transition probabilities from unemployment (state 0)
-        P_y[0, 0] = 1 - job_finding_rate  # Stay unemployed
-        P_y[0, 1:] = job_finding_rate / n_employed  # Equal probability to any employed state
-        
-        # Transition probabilities from employed states (states 1 to n_y-1)
-        for i in range(n_employed):
-            # Job separation rate: probability of losing job and becoming unemployed
-            # Computed to match steady-state unemployment rate
-            job_separation_rate = unemployment_rate / (1 - unemployment_rate) * job_finding_rate
-            job_separation_rate = min(job_separation_rate, max_job_separation_rate)
+        # If unemployment rate is zero, everyone stays employed
+        if unemployment_rate == 0.0 or unemployment_rate < 1e-10:
+            # From unemployment (should never happen, but set to go to employment)
+            P_y[0, 0] = 0.0
+            P_y[0, 1:] = 1.0 / n_employed  # Equal probability to any employed state
             
-            P_y[i + 1, 0] = job_separation_rate  # Become unemployed
+            # From employed states: no job separation, just normal employed transitions
+            for i in range(n_employed):
+                P_y[i + 1, 0] = 0.0  # Never become unemployed
+                P_y[i + 1, 1:] = P_employed[i, :]  # Normal employed transitions
+        else:
+            # Original code for non-zero unemployment
+            # Transition probabilities from unemployment (state 0)
+            P_y[0, 0] = 1 - job_finding_rate  # Stay unemployed
+            P_y[0, 1:] = job_finding_rate / n_employed  # Equal probability to any employed state
             
-            # Employed-to-employed transitions (normalized)
-            P_y[i + 1, 1:] = (1 - job_separation_rate) * P_employed[i, :]
+            # Transition probabilities from employed states (states 1 to n_y-1)
+            for i in range(n_employed):
+                job_separation_rate = unemployment_rate / (1 - unemployment_rate) * job_finding_rate
+                job_separation_rate = min(job_separation_rate, max_job_separation_rate)
+                
+                P_y[i + 1, 0] = job_separation_rate  # Become unemployed
+                P_y[i + 1, 1:] = (1 - job_separation_rate) * P_employed[i, :]
         
         # Ensure rows sum to 1 (numerical stability)
         for i in range(self.n_y):
@@ -310,14 +369,21 @@ class LifecycleModelPerfectForesight:
         """
         Solve the lifecycle problem using backward induction.
         
-        State space: (t, a, y, h, y_last)
-        where y_last tracks last period's income state for UI calculation.
+        State space: (t, a, y, h, y_last, avg_earnings)
+        where:
+        - y_last tracks last period's income state for UI calculation
+        - avg_earnings is the moving average of gross labor income over last N_earnings_history years (continuous)
+        
+        Note: avg_earnings is a continuous state variable that is computed on-the-fly during simulation.
+        It does not need to be discretized for the value function iteration because it doesn't affect
+        current-period decisions - it only matters for future pension benefits.
         
         Budget constraint now includes out-of-pocket health expenditures:
         (1 + tau_c) * c + a' + (1 - kappa) * m(h) = a + (1 - tau_k) * r * a + after_tax_labor_income
         """
         if verbose:
             print(f"Solving lifecycle model for {self.config.education_type} education...")
+            print(f"  Solving for periods {self.current_age} to {self.T-1}")
         
         # Initialize value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
@@ -405,7 +471,6 @@ class LifecycleModelPerfectForesight:
                         oop_health_exp = (1 - self.kappa) * self.m_grid[i_h]
                         
                         # Budget available for consumption and savings
-                        # (1 + tau_c) * c + a' + oop_health_exp = a + after_tax_capital_income + after_tax_labor_income
                         budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
                         
                         # Find optimal next period assets
@@ -415,14 +480,14 @@ class LifecycleModelPerfectForesight:
                         
                         for i_a_next, a_next in enumerate(self.a_grid):
                             # Consumption from budget constraint
-                            # (1 + tau_c) * c = budget - a'
                             c = (budget - a_next) / (1 + tau_c_t)
                             
                             if c <= 0:
                                 continue
                             
                             # Expected continuation value
-                            # Next period's y_last will be current period's y
+                            # Note: earnings history doesn't affect value function here
+                            # as it will only matter when pension benefits are added later
                             EV = 0.0
                             for i_y_next in range(self.n_y):
                                 for i_h_next in range(self.n_h):
@@ -458,7 +523,7 @@ class LifecycleModelPerfectForesight:
                             self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_fallback
     
     def simulate(self, T_sim=None, n_sim=10000, seed=42):
-        """Simulate lifecycle paths."""
+        """Simulate lifecycle paths with earnings history tracking."""
         if T_sim is None:
             T_sim = self.T - self.current_age
         
@@ -468,11 +533,12 @@ class LifecycleModelPerfectForesight:
         c_sim = np.zeros((T_sim, n_sim))
         y_sim = np.zeros((T_sim, n_sim))
         h_sim = np.zeros((T_sim, n_sim))
-        h_idx_sim = np.zeros((T_sim, n_sim), dtype=int)  # Add health index tracking
-        ui_sim = np.zeros((T_sim, n_sim))  # UI benefits received
-        m_sim = np.zeros((T_sim, n_sim))   # Total health expenditure
-        oop_m_sim = np.zeros((T_sim, n_sim))  # Out-of-pocket health expenditure
-        gov_m_sim = np.zeros((T_sim, n_sim))  # Government health coverage
+        h_idx_sim = np.zeros((T_sim, n_sim), dtype=int)
+        ui_sim = np.zeros((T_sim, n_sim))
+        m_sim = np.zeros((T_sim, n_sim))
+        oop_m_sim = np.zeros((T_sim, n_sim))
+        gov_m_sim = np.zeros((T_sim, n_sim))
+        avg_earnings_sim = np.zeros((T_sim, n_sim))  # Track average earnings (continuous)
         
         # Track employment status
         employed_sim = np.zeros((T_sim, n_sim), dtype=bool)
@@ -484,10 +550,34 @@ class LifecycleModelPerfectForesight:
         tax_k_sim = np.zeros((T_sim, n_sim))
         
         # Initial conditions
-        i_y = np.random.choice(self.n_y, size=n_sim, p=np.ones(self.n_y) / self.n_y)
-        i_y_last = i_y.copy()  # Start with current income as "last period" income
+        # Get education-specific unemployment rate
+        edu_unemployment_rate = self.config.edu_params[self.config.education_type]['unemployment_rate']
+        
+        if edu_unemployment_rate < 1e-10:
+            # Start only in employed states (states 1 to n_y-1)
+            n_employed = self.n_y - 1
+            i_y = np.random.choice(range(1, self.n_y), size=n_sim, 
+                                  p=np.ones(n_employed) / n_employed)
+        else:
+            # Non-zero unemployment: use stationary distribution of income process
+            from scipy.linalg import eig
+            eigenvalues, eigenvectors = eig(self.P_y.T)
+            stationary_idx = np.argmax(eigenvalues.real)
+            stationary = eigenvectors[:, stationary_idx].real
+            stationary = stationary / stationary.sum()
+            
+            # Draw initial income states from stationary distribution
+            i_y = np.random.choice(self.n_y, size=n_sim, p=stationary)
+        
+        i_y_last = i_y.copy()
         i_h = np.zeros(n_sim, dtype=int)  # Start in good health
-        i_a = np.zeros(n_sim, dtype=int)  # Start with zero assets
+        i_a = np.zeros(n_sim, dtype=int)  # Start at first asset grid point (a_min)
+        avg_earnings = np.zeros(n_sim)  # Start with zero average earnings
+        
+        if verbose := (n_sim <= 100):  # Add diagnostics for small simulations
+            print(f"Initial asset level: {self.a_grid[0]:.3f}")
+            print(f"Asset grid range: [{self.a_grid.min():.3f}, {self.a_grid.max():.3f}]")
+            print(f"Income grid: {self.y_grid}")
         
         for t in range(T_sim):
             age = self.current_age + t
@@ -497,12 +587,14 @@ class LifecycleModelPerfectForesight:
                 a_sim[t, i] = self.a_grid[i_a[i]]
                 y_sim[t, i] = self.y_grid[i_y[i]]
                 h_sim[t, i] = self.h_grid[i_h[i]]
-                h_idx_sim[t, i] = i_h[i]  # Store health index
+                h_idx_sim[t, i] = i_h[i]
                 employed_sim[t, i] = (i_y[i] > 0)
+                avg_earnings_sim[t, i] = avg_earnings[i]
+                
                 c_sim[t, i] = self.c_policy[age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
                 
                 # Compute UI benefits
-                if i_y[i] == 0:  # Unemployed
+                if i_y[i] == 0:
                     ui_sim[t, i] = self.ui_replacement_rate * self.w_path[age] * self.y_grid[i_y_last[i]]
                 else:
                     ui_sim[t, i] = 0.0
@@ -526,15 +618,25 @@ class LifecycleModelPerfectForesight:
                 # Transition to next period (if not last)
                 if t < T_sim - 1:
                     i_a[i] = self.a_policy[age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                    i_y_last[i] = i_y[i]  # Update last period's income
+                    i_y_last[i] = i_y[i]
                     i_y[i] = np.random.choice(self.n_y, p=self.P_y[i_y[i], :])
                     i_h[i] = np.random.choice(self.n_h, p=self.P_h[age, i_h[i], :])
+                    
+                    # Update average earnings (continuous state variable)
+                    current_gross_labor = self.w_path[age] * y_sim[t, i] * h_sim[t, i]
+                    if age < self.N_earnings_history:
+                        # Before N_earnings_history: average remains zero
+                        avg_earnings[i] = 0.0
+                    else:
+                        # After N_earnings_history: update moving average
+                        # Formula: new_avg = old_avg + (new_value - old_avg) / N
+                        avg_earnings[i] = avg_earnings[i] + (current_gross_labor - avg_earnings[i]) / self.N_earnings_history
         
         effective_y_sim = y_sim * h_sim
         
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
-                tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim)
+                tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim)
     
     def plot_policies(self, ages=[20, 40, 60], save=False, filename=None):
         """Plot policy functions at different ages."""
@@ -549,7 +651,6 @@ class LifecycleModelPerfectForesight:
             
             for i_h in range(self.n_h):
                 # Average over income states and last period income
-                # Use MEDIAN instead of MEAN for robustness to outliers
                 a_pol_avg = np.zeros(self.n_a)
                 c_pol_avg = np.zeros(self.n_a)
                 
@@ -753,7 +854,7 @@ if __name__ == "__main__":
         print("="*70)
         n_a = args.n_a if args.n_a is not None else 30
         n_sim = args.n_sim if args.n_sim is not None else 1000
-        n_y = 3  # Fewer income states
+        n_y = 5  # Changed from 3 to 5 - need more states for reasonable discretization
         test_mode = True
         verbose = True
     else:
@@ -785,7 +886,7 @@ if __name__ == "__main__":
         current_age=0,
         
         # Asset grid
-        a_min=-2.0,
+        a_min=0.0,  # No borrowing for clearer results
         a_max=50.0,
         n_a=n_a,
         
@@ -793,7 +894,6 @@ if __name__ == "__main__":
         n_y=n_y,
         
         # Unemployment
-        unemployment_rate=0.06,
         job_finding_rate=0.5,
         max_job_separation_rate=0.1,
         ui_replacement_rate=0.4,
@@ -832,6 +932,19 @@ if __name__ == "__main__":
     print(f"Total solution time: {end_total - start_total:.2f} seconds")
     print('='*70)
     
+    # Diagnostic: Check policy functions
+    if verbose:
+        print(f"\n{'='*70}")
+        print("DIAGNOSTIC: Policy Function Check")
+        print('='*70)
+        for edu_type, model in models.items():
+            print(f"\n{edu_type.upper()} education:")
+            print(f"  Asset grid: [{model.a_grid.min():.2f}, {model.a_grid.max():.2f}], n={len(model.a_grid)}")
+            print(f"  Income grid: {model.y_grid}")
+            print(f"  Value function shape: {model.V.shape}")
+            print(f"  Consumption policy t=0: min={model.c_policy[0].min():.4f}, max={model.c_policy[0].max():.4f}, mean={model.c_policy[0].mean():.4f}")
+            print(f"  Consumption policy t=0, all zero?: {np.all(model.c_policy[0] == 0)}")
+    
     # Create output directory
     output_dir = 'output'
     os.makedirs(output_dir, exist_ok=True)
@@ -853,7 +966,7 @@ if __name__ == "__main__":
         results = model.simulate(n_sim=n_sim, seed=42)
         (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
          ui_sim, m_sim, oop_m_sim, gov_m_sim,
-         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim) = results
+         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim) = results
         
         # Store results
         edu_results[edu_type] = {
@@ -885,7 +998,8 @@ if __name__ == "__main__":
         print("PLOTTING EDUCATION TYPE COMPARISON")
         print('='*70)
         
-        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        # Change from 2x3 to 3x3 to add avg_earnings plot
+        fig, axes = plt.subplots(3, 3, figsize=(18, 15))
         
         edu_colors = {'low': 'C0', 'medium': 'C1', 'high': 'C2'}
         
@@ -893,7 +1007,7 @@ if __name__ == "__main__":
             results = data['results']
             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
              ui_sim, m_sim, oop_m_sim, gov_m_sim,
-             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim) = results
+             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim) = results
             
             color = edu_colors[edu_type]
             label = f'{edu_type.capitalize()} education'
@@ -924,12 +1038,26 @@ if __name__ == "__main__":
             unemp_rate = 1 - np.mean(employed_sim, axis=1)
             axes[1, 2].plot(ages, unemp_rate * 100, linewidth=2.5,
                            label=label, color=color)
+            
+            # 7. Average earnings (moving average)
+            axes[2, 0].plot(ages, np.mean(avg_earnings_sim, axis=1), linewidth=2.5,
+                           label=label, color=color)
+            
+            # 8. UI benefits
+            axes[2, 1].plot(ages, np.mean(ui_sim, axis=1), linewidth=2.5,
+                           label=label, color=color)
+            
+            # 9. Health expenditures
+            axes[2, 2].plot(ages, np.mean(m_sim, axis=1), linewidth=2.5,
+                           label=label, color=color)
         
         # Format axes
         titles = ['Average Assets', 'Average Consumption', 'Average Income',
-                  'Average Taxes', 'Average Gov Spending', 'Unemployment Rate (%)']
+                  'Average Taxes', 'Average Gov Spending', 'Unemployment Rate (%)',
+                  'Avg Earnings (Moving Avg)', 'UI Benefits', 'Health Expenditures']
         ylabels = ['Assets', 'Consumption', 'Effective Income',
-                   'Total Taxes', 'Gov Spending', 'Unemployment (%)']
+                   'Total Taxes', 'Gov Spending', 'Unemployment (%)',
+                   'Avg Earnings', 'UI Benefits', 'Health Exp']
         
         for idx, (ax, title, ylabel) in enumerate(zip(axes.flat, titles, ylabels)):
             ax.set_xlabel('Age', fontsize=11)
