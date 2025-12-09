@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from quantecon.markov import tauchen
 from dataclasses import dataclass, field
 from typing import Optional
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 
 @dataclass
@@ -154,6 +156,7 @@ class LifecycleModelPerfectForesight:
     - Education heterogeneity (different income processes by education type)
     - Incomplete markets (borrowing constraint)
     - Moving average of gross labor income for earnings history (continuous state)
+    - Parallel processing support for faster computation
     """
     
     def __init__(self, config: LifecycleConfig):
@@ -241,7 +244,7 @@ class LifecycleModelPerfectForesight:
         # Health expenditure grid (by health state)
         self.m_grid = np.array([
             config.m_good,
-            config.m_moderate,  # Fixed: was config.moderate
+            config.m_moderate,  # Fixed: should be m_moderate (not moderate, not h_moderate)
             config.m_poor
         ])
         
@@ -380,25 +383,25 @@ class LifecycleModelPerfectForesight:
         else:
             return (c ** (1 - gamma)) / (1 - gamma)
     
-    def solve(self, verbose=False):
+    def solve(self, verbose=False, parallel=False, n_jobs=None):
         """
         Solve the lifecycle problem using backward induction.
         
-        State space: (t, a, y, h, y_last, avg_earnings)
-        where:
-        - y_last tracks last period's income state for UI calculation
-        - avg_earnings is the moving average of gross labor income over last N_earnings_history years (continuous)
-        
-        Note: avg_earnings is a continuous state variable that is computed on-the-fly during simulation.
-        It does not need to be discretized for the value function iteration because it doesn't affect
-        current-period decisions - it only matters for future pension benefits.
-        
-        Budget constraint now includes out-of-pocket health expenditures:
-        (1 + tau_c) * c + a' + (1 - kappa) * m(h) = a + (1 - tau_k) * r * a + after_tax_labor_income
+        Parameters:
+        -----------
+        verbose : bool
+            Print progress messages
+        parallel : bool
+            Use parallel processing for period-by-period solving
+        n_jobs : int, optional
+            Number of parallel jobs. If None, uses all available CPUs.
         """
         if verbose:
             print(f"Solving lifecycle model for {self.config.education_type} education...")
             print(f"  Solving for periods {self.current_age} to {self.T-1}")
+            if parallel:
+                n_jobs_actual = n_jobs if n_jobs is not None else cpu_count()
+                print(f"  Using parallel processing with {n_jobs_actual} workers")
         
         # Initialize value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
@@ -407,6 +410,19 @@ class LifecycleModelPerfectForesight:
         self.c_policy = np.zeros((self.T, self.n_a, self.n_y, self.n_h, self.n_y))
         
         # Terminal period (T-1)
+        self._solve_terminal_period(verbose)
+        
+        # Backward induction
+        if parallel:
+            self._solve_backward_parallel(verbose, n_jobs)
+        else:
+            self._solve_backward_sequential(verbose)
+        
+        if verbose:
+            print("Done!")
+    
+    def _solve_terminal_period(self, verbose=False):
+        """Solve the terminal period."""
         for i_a, a in enumerate(self.a_grid):
             for i_y, y in enumerate(self.y_grid):
                 for i_h, h in enumerate(self.h_grid):
@@ -431,7 +447,7 @@ class LifecycleModelPerfectForesight:
                         # Out-of-pocket health expenditure
                         oop_health_exp = (1 - self.kappa) * self.m_grid[i_h]
                         
-                        # Budget constraint: (1 + tau_c) * c + oop_health_exp = a + after_tax_capital_income + after_tax_labor_income
+                        # Budget constraint
                         budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
                         c = budget / (1 + self.tau_c_path[self.T - 1])
                         c = max(c, 1e-10)
@@ -439,23 +455,6 @@ class LifecycleModelPerfectForesight:
                         self.V[self.T - 1, i_a, i_y, i_h, i_y_last] = self.utility(c, self.gamma)
                         self.a_policy[self.T - 1, i_a, i_y, i_h, i_y_last] = 0
                         self.c_policy[self.T - 1, i_a, i_y, i_h, i_y_last] = c
-        
-        # Backward induction
-        for t in range(self.T - 2, self.current_age - 1, -1):
-            if verbose and t % 10 == 0:
-                print(f"  Solving period {t}/{self.T-1}")
-            
-            r_t = self.r_path[t]
-            w_t = self.w_path[t]
-            tau_c_t = self.tau_c_path[t]
-            tau_l_t = self.tau_l_path[t]
-            tau_p_t = self.tau_p_path[t]
-            tau_k_t = self.tau_k_path[t]
-            
-            self._solve_period(t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t)
-        
-        if verbose:
-            print("Done!")
     
     def _solve_period(self, t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t):
         """Solve single period with time-varying prices, taxes, UI, health expenditures, and retirement."""
@@ -564,15 +563,70 @@ class LifecycleModelPerfectForesight:
                             self.a_policy[t, i_a, i_y, i_h, i_y_last] = 0
                             self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_fallback
 
-# Update the simulate method to track pension benefits (around line 452):
+    def _solve_backward_sequential(self, verbose=False):
+        """Solve backward induction sequentially."""
+        for t in range(self.T - 2, self.current_age - 1, -1):
+            if verbose and t % 10 == 0:
+                print(f"  Solving period {t}/{self.T-1}")
+            
+            r_t = self.r_path[t]
+            w_t = self.w_path[t]
+            tau_c_t = self.tau_c_path[t]
+            tau_l_t = self.tau_l_path[t]
+            tau_p_t = self.tau_p_path[t]
+            tau_k_t = self.tau_k_path[t]
+            
+            self._solve_period(t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t)
+    
+    def _solve_backward_parallel(self, verbose=False, n_jobs=None):
+        """Solve backward induction using parallel processing."""
+        if n_jobs is None:
+            n_jobs = cpu_count()
+        
+        # Create partial function with model parameters
+        solve_func = partial(
+            _solve_period_wrapper,
+            model=self
+        )
+        
+        # Prepare period data
+        periods = []
+        for t in range(self.T - 2, self.current_age - 1, -1):
+            periods.append((
+                t,
+                self.r_path[t],
+                self.w_path[t],
+                self.tau_c_path[t],
+                self.tau_l_path[t],
+                self.tau_p_path[t],
+                self.tau_k_path[t]
+            ))
+        
+        # Process periods in batches to maintain sequential dependency
+        # Note: We can't fully parallelize backward induction since t depends on t+1
+        # But we can parallelize across state space dimensions within each period
+        for i, period_data in enumerate(periods):
+            if verbose and period_data[0] % 10 == 0:
+                print(f"  Solving period {period_data[0]}/{self.T-1}")
+            
+            # For each period, parallelize across asset grid points
+            state_combinations = []
+            for i_a in range(self.n_a):
+                state_combinations.append((period_data, i_a))
+            
+            # Solve all asset states in parallel
+            with Pool(processes=n_jobs) as pool:
+                results = pool.map(solve_func, state_combinations)
+            
+            # Update value and policy functions
+            t = period_data[0]
+            for i_a, (V_slice, a_pol_slice, c_pol_slice) in enumerate(results):
+                self.V[t, i_a, :, :, :] = V_slice
+                self.a_policy[t, i_a, :, :, :] = a_pol_slice
+                self.c_policy[t, i_a, :, :, :] = c_pol_slice
 
-    def simulate(self, T_sim=None, n_sim=10000, seed=42):
-        """Simulate lifecycle paths with earnings history tracking and retirement."""
-        if T_sim is None:
-            T_sim = self.T - self.current_age
-        
-        np.random.seed(seed)
-        
+    def _simulate_sequential(self, T_sim, n_sim):
+        """Sequential simulation (original implementation)."""
         a_sim = np.zeros((T_sim, n_sim))
         c_sim = np.zeros((T_sim, n_sim))
         y_sim = np.zeros((T_sim, n_sim))
@@ -583,19 +637,16 @@ class LifecycleModelPerfectForesight:
         oop_m_sim = np.zeros((T_sim, n_sim))
         gov_m_sim = np.zeros((T_sim, n_sim))
         avg_earnings_sim = np.zeros((T_sim, n_sim))
-        pension_sim = np.zeros((T_sim, n_sim))  # NEW: Track pension benefits
-        retired_sim = np.zeros((T_sim, n_sim), dtype=bool)  # NEW: Track retirement status
+        pension_sim = np.zeros((T_sim, n_sim))
+        retired_sim = np.zeros((T_sim, n_sim), dtype=bool)
         
-        # Track employment status
         employed_sim = np.zeros((T_sim, n_sim), dtype=bool)
         
-        # Tax payments
         tax_c_sim = np.zeros((T_sim, n_sim))
         tax_l_sim = np.zeros((T_sim, n_sim))
         tax_p_sim = np.zeros((T_sim, n_sim))
         tax_k_sim = np.zeros((T_sim, n_sim))
         
-        # Track average earnings at retirement for pension calculation
         avg_earnings_at_retirement = np.zeros(n_sim)
         
         # Initial conditions
@@ -716,42 +767,287 @@ class LifecycleModelPerfectForesight:
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                pension_sim, retired_sim)  # Added pension_sim and retired_sim
-
-# Update the example usage section (around line 850) to unpack the new return values:
-
-        # Simulate this education type
-        results = model.simulate(n_sim=n_sim, seed=42)
-        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
-         ui_sim, m_sim, oop_m_sim, gov_m_sim,
-         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-         pension_sim, retired_sim) = results  # Added pension_sim and retired_sim
-
-# Update statistics computation (around line 870):
-
-        # Compute statistics for this education type
-        unemployment_rate = np.mean(~employed_sim & ~retired_sim)  # Exclude retired from unemployment
-        retirement_rate = np.mean(retired_sim)
-        total_tax = tax_c_sim + tax_l_sim + tax_p_sim + tax_k_sim
-        total_gov_spending = gov_m_sim + ui_sim + pension_sim  # Include pension spending
+                pension_sim, retired_sim)
+    
+    def simulate(self, T_sim=None, n_sim=10000, seed=42, parallel=False, n_jobs=None):
+        """
+        Simulate lifecycle paths with earnings history tracking and retirement.
         
-        print(f"  Statistics for {edu_type} education:")
-        print(f"    Mean assets:         {np.mean(a_sim):.2f}")
-        print(f"    Mean consumption:    {np.mean(c_sim):.3f}")
-        print(f"    Mean income:         {np.mean(effective_y_sim):.3f}")
-        print(f"    Mean pension:        {np.mean(pension_sim[retired_sim]) if np.any(retired_sim) else 0:.3f}")
-        print(f"    Unemployment rate:   {unemployment_rate:.2%}")
-        print(f"    Retirement rate:     {retirement_rate:.2%}")
-        print(f"    Mean taxes:          {np.mean(total_tax):.4f}")
-        print(f"    Mean gov spending:   {np.mean(total_gov_spending):.4f}")
+        Parameters:
+        -----------
+        T_sim : int, optional
+            Number of periods to simulate
+        n_sim : int
+            Number of agents to simulate
+        seed : int
+            Random seed
+        parallel : bool
+            Use parallel processing for simulation
+        n_jobs : int, optional
+            Number of parallel jobs. If None, uses all available CPUs.
+        """
+        if T_sim is None:
+            T_sim = self.T - self.current_age
+        
+        np.random.seed(seed)
+        
+        if parallel:
+            return self._simulate_parallel(T_sim, n_sim, seed, n_jobs)
+        else:
+            return self._simulate_sequential(T_sim, n_sim)
+    
+    def _simulate_parallel(self, T_sim, n_sim, seed, n_jobs=None):
+        """Parallel simulation by splitting agents across workers."""
+        if n_jobs is None:
+            n_jobs = cpu_count()
+        
+        # Split agents across workers
+        agents_per_job = n_sim // n_jobs
+        remaining = n_sim % n_jobs
+        
+        agent_splits = []
+        start_idx = 0
+        for i in range(n_jobs):
+            n_agents = agents_per_job + (1 if i < remaining else 0)
+            agent_splits.append((start_idx, n_agents, seed + i))
+            start_idx += n_agents
+        
+        # Create partial function
+        sim_func = partial(_simulate_agent_batch, model=self, T_sim=T_sim)
+        
+        # Run simulations in parallel
+        with Pool(processes=n_jobs) as pool:
+            results = pool.map(sim_func, agent_splits)
+        
+        # Combine results
+        return self._combine_simulation_results(results)
+    
+    def _combine_simulation_results(self, results):
+        """Combine results from parallel simulation."""
+        # Concatenate all results along agent dimension
+        combined = tuple(
+            np.concatenate([r[i] for r in results], axis=1)
+            for i in range(len(results[0]))
+        )
+        return combined
+
+
+# Helper functions for parallel processing (must be at module level for pickling)
+
+def _solve_period_wrapper(args, model):
+    """Wrapper for parallel period solving."""
+    period_data, i_a = args
+    t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t = period_data
+    
+    a = model.a_grid[i_a]
+    is_retired = (t >= model.retirement_age)
+    
+    V_slice = np.zeros((model.n_y, model.n_h, model.n_y))
+    a_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y), dtype=np.int32)
+    c_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y))
+    
+    for i_y, y in enumerate(model.y_grid):
+        for i_h, h in enumerate(model.h_grid):
+            for i_y_last in range(model.n_y):
+                
+                if is_retired:
+                    gross_labor_income = 0.0
+                    ui_benefit = 0.0
+                    after_tax_labor_income = 0.0
+                else:
+                    if i_y == 0:
+                        ui_benefit = model.ui_replacement_rate * w_t * model.y_grid[i_y_last]
+                    else:
+                        ui_benefit = 0.0
+                    
+                    gross_wage_income = w_t * y * h
+                    gross_labor_income = gross_wage_income + ui_benefit
+                    payroll_tax = tau_p_t * gross_wage_income
+                    income_tax = tau_l_t * (gross_labor_income - payroll_tax)
+                    after_tax_labor_income = gross_labor_income - payroll_tax - income_tax
+                
+                gross_capital_income = r_t * a
+                capital_income_tax = tau_k_t * gross_capital_income
+                after_tax_capital_income = gross_capital_income - capital_income_tax
+                
+                oop_health_exp = (1 - model.kappa) * model.m_grid[i_h]
+                budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
+                
+                max_val = -np.inf
+                best_a_idx = 0
+                best_c = 1e-10
+                
+                for i_a_next, a_next in enumerate(model.a_grid):
+                    c = (budget - a_next) / (1 + tau_c_t)
+                    
+                    if c <= 0:
+                        continue
+                    
+                    EV = 0.0
+                    
+                    if is_retired:
+                        for i_h_next in range(model.n_h):
+                            prob = model.P_h[t, i_h, i_h_next]
+                            next_val = model.V[t + 1, i_a_next, 0, i_h_next, 0]
+                            
+                            if np.isfinite(prob) and np.isfinite(next_val):
+                                EV += prob * next_val
+                    else:
+                        for i_y_next in range(model.n_y):
+                            for i_h_next in range(model.n_h):
+                                prob = model.P_y[i_y, i_y_next] * model.P_h[t, i_h, i_h_next]
+                                next_val = model.V[t + 1, i_a_next, i_y_next, i_h_next, i_y]
+                                
+                                if np.isfinite(prob) and np.isfinite(next_val):
+                                    EV += prob * next_val
+                    
+                    if not np.isfinite(EV):
+                        continue
+                    
+                    val = model.utility(c, model.gamma) + model.beta * EV
+                    
+                    if val > max_val:
+                        max_val = val
+                        best_a_idx = i_a_next
+                        best_c = c
+                
+                if np.isfinite(max_val):
+                    V_slice[i_y, i_h, i_y_last] = max_val
+                    a_pol_slice[i_y, i_h, i_y_last] = best_a_idx
+                    c_pol_slice[i_y, i_h, i_y_last] = best_c
+                else:
+                    c_fallback = max(budget / (1 + tau_c_t), 1e-10)
+                    V_slice[i_y, i_h, i_y_last] = model.utility(c_fallback, model.gamma)
+                    a_pol_slice[i_y, i_h, i_y_last] = 0
+                    c_pol_slice[i_y, i_h, i_y_last] = c_fallback
+    
+    return V_slice, a_pol_slice, c_pol_slice
+
+
+def _simulate_agent_batch(args, model, T_sim):
+    """Simulate a batch of agents."""
+    start_idx, n_agents, seed = args
+    
+    np.random.seed(seed)
+    
+    # Run sequential simulation for this batch
+    result = model._simulate_sequential(T_sim, n_agents)
+    
+    return result
+
+
+def _solve_and_simulate_education_type(args):
+    """Solve and simulate a single education type (for parallel execution)."""
+    edu_type, n_sim, use_parallel_internal = args
+    
+    print(f"\n{'='*70}")
+    print(f"Education type: {edu_type.upper()}")
+    print('='*70)
+    
+    # Create configuration
+    config = LifecycleConfig(
+        T=60,
+        beta=0.96,
+        gamma=2.0,
+        current_age=0,
+        retirement_age=45,
+        pension_replacement_default=0.60,
+        education_type=edu_type,
+        n_a=50,
+        n_y=5,
+    )
+    
+    # Create and solve model
+    model = LifecycleModelPerfectForesight(config)
+    print(f"\nSolving model for {edu_type}...")
+    model.solve(verbose=True, parallel=use_parallel_internal)
+    
+    # Simulate
+    print(f"\nSimulating {n_sim} agents for {edu_type}...")
+    results = model.simulate(n_sim=n_sim, seed=42, parallel=use_parallel_internal)
+    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
+     ui_sim, m_sim, oop_m_sim, gov_m_sim,
+     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+     pension_sim, retired_sim) = results
+    
+    # Compute statistics
+    unemployment_rate = np.mean(~employed_sim & ~retired_sim)
+    retirement_rate = np.mean(retired_sim)
+    total_tax = tax_c_sim + tax_l_sim + tax_p_sim + tax_k_sim
+    total_gov_spending = gov_m_sim + ui_sim + pension_sim
+    
+    print(f"\n{'-'*70}")
+    print(f"RESULTS FOR {edu_type.upper()} EDUCATION:")
+    print(f"{'-'*70}")
+    print(f"  Mean assets:              {np.mean(a_sim):.2f}")
+    print(f"  Mean consumption:         {np.mean(c_sim):.3f}")
+    print(f"  Mean effective income:    {np.mean(effective_y_sim):.3f}")
+    print(f"  Mean avg earnings:        {np.mean(avg_earnings_sim):.3f}")
+    
+    if np.any(retired_sim):
+        print(f"  Mean pension (retired):   {np.mean(pension_sim[retired_sim]):.3f}")
+    else:
+        print(f"  Mean pension (retired):   N/A (no retirement periods)")
+    
+    print(f"  Unemployment rate:        {unemployment_rate:.2%}")
+    print(f"  Retirement rate:          {retirement_rate:.2%}")
+    print(f"  Mean total taxes:         {np.mean(total_tax):.4f}")
+    print(f"  Mean gov spending:        {np.mean(total_gov_spending):.4f}")
+    print(f"  Mean UI benefits:         {np.mean(ui_sim):.4f}")
+    print(f"  Mean gov health spending: {np.mean(gov_m_sim):.4f}")
+    
+    # Age-specific statistics
+    print(f"\n  Age-specific means:")
+    ages_to_check = [0, 20, 40, 45, 50, 59]
+    for age_idx in ages_to_check:
+        if age_idx < len(a_sim):
+            is_retired_age = age_idx >= (config.retirement_age - config.current_age)
+            status = "RETIRED" if is_retired_age else "WORKING"
+            print(f"    Age {20+age_idx} ({status}):")
+            print(f"      Assets:      {np.mean(a_sim[age_idx, :]):.2f}")
+            print(f"      Consumption: {np.mean(c_sim[age_idx, :]):.3f}")
+            if is_retired_age and np.any(pension_sim[age_idx, :] > 0):
+                print(f"      Pension:     {np.mean(pension_sim[age_idx, :]):.3f}")
+            else:
+                print(f"      Income:      {np.mean(effective_y_sim[age_idx, :]):.3f}")
+    
+    # Store results for plotting
+    result_dict = {
+        'a_sim': a_sim,
+        'c_sim': c_sim,
+        'effective_y_sim': effective_y_sim,
+        'pension_sim': pension_sim,
+        'retired_sim': retired_sim,
+        'avg_earnings_sim': avg_earnings_sim,
+        'employed_sim': employed_sim,
+        'ui_sim': ui_sim,
+        'total_tax': total_tax,
+        'total_gov_spending': total_gov_spending,
+        'config': config
+    }
+    
+    return edu_type, result_dict
+
 
 if __name__ == "__main__":
     import sys
     
     # Check if --test flag is provided
     if "--test" in sys.argv:
+        # Check for parallel flags
+        use_parallel = "--parallel" in sys.argv
+        use_parallel_all = "--parallel-all" in sys.argv
+        
         print("\n" + "="*70)
         print("TESTING LIFECYCLE MODEL WITH RETIREMENT")
+        if use_parallel_all:
+            print(f"FULL PARALLEL MODE: Using {cpu_count()} CPU cores")
+            print(f"  - Each education type uses internal parallelism")
+            print(f"  - Education types solved sequentially (to avoid nested parallelism)")
+        elif use_parallel:
+            print(f"PARALLEL MODE: Using {cpu_count()} CPU cores")
+            print(f"  - Solving 3 education types in parallel")
+            print(f"  - Each education type uses sequential solving/simulation")
         print("="*70)
         
         # Test different education types
@@ -761,92 +1057,31 @@ if __name__ == "__main__":
         # Store results for plotting
         all_results = {}
         
-        for edu_type in education_types:
-            print(f"\n{'='*70}")
-            print(f"Education type: {edu_type.upper()}")
-            print('='*70)
+        if use_parallel_all:
+            # FULL PARALLEL: Sequential education types, but parallel internally
+            # This avoids nested parallelism issues
+            for edu_type in education_types:
+                edu_type, result_dict = _solve_and_simulate_education_type(
+                    (edu_type, n_sim, True)  # Enable internal parallelism
+                )
+                all_results[edu_type] = result_dict
+        elif use_parallel:
+            # EDUCATION-LEVEL PARALLEL: Parallel education types, sequential internally
+            args_list = [(edu_type, n_sim, False) for edu_type in education_types]
             
-            # Create configuration
-            config = LifecycleConfig(
-                T=60,
-                beta=0.96,
-                gamma=2.0,
-                current_age=0,
-                retirement_age=45,  # Retire at period 45 (age 65)
-                pension_replacement_default=0.60,  # 60% replacement rate
-                education_type=edu_type,
-                n_a=50,  # Smaller grid for faster testing
-                n_y=5,
-            )
+            with Pool(processes=min(3, cpu_count())) as pool:
+                results = pool.map(_solve_and_simulate_education_type, args_list)
             
-            # Create and solve model
-            model = LifecycleModelPerfectForesight(config)
-            print(f"\nSolving model...")
-            model.solve(verbose=True)
-            
-            # Simulate
-            print(f"\nSimulating {n_sim} agents...")
-            results = model.simulate(n_sim=n_sim, seed=42)
-            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
-             ui_sim, m_sim, oop_m_sim, gov_m_sim,
-             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-             pension_sim, retired_sim) = results
-            
-            # Store results
-            all_results[edu_type] = {
-                'a_sim': a_sim,
-                'c_sim': c_sim,
-                'effective_y_sim': effective_y_sim,
-                'pension_sim': pension_sim,
-                'retired_sim': retired_sim,
-                'avg_earnings_sim': avg_earnings_sim,
-                'employed_sim': employed_sim,
-                'ui_sim': ui_sim,
-                'total_tax': tax_c_sim + tax_l_sim + tax_p_sim + tax_k_sim,
-                'total_gov_spending': gov_m_sim + ui_sim + pension_sim,
-                'config': config
-            }
-            
-            # Compute statistics
-            unemployment_rate = np.mean(~employed_sim & ~retired_sim)
-            retirement_rate = np.mean(retired_sim)
-            total_tax = tax_c_sim + tax_l_sim + tax_p_sim + tax_k_sim
-            total_gov_spending = gov_m_sim + ui_sim + pension_sim
-            
-            print(f"\n{'-'*70}")
-            print(f"RESULTS FOR {edu_type.upper()} EDUCATION:")
-            print(f"{'-'*70}")
-            print(f"  Mean assets:              {np.mean(a_sim):.2f}")
-            print(f"  Mean consumption:         {np.mean(c_sim):.3f}")
-            print(f"  Mean effective income:    {np.mean(effective_y_sim):.3f}")
-            print(f"  Mean avg earnings:        {np.mean(avg_earnings_sim):.3f}")
-            
-            if np.any(retired_sim):
-                print(f"  Mean pension (retired):   {np.mean(pension_sim[retired_sim]):.3f}")
-            else:
-                print(f"  Mean pension (retired):   N/A (no retirement periods)")
-            
-            print(f"  Unemployment rate:        {unemployment_rate:.2%}")
-            print(f"  Retirement rate:          {retirement_rate:.2%}")
-            print(f"  Mean total taxes:         {np.mean(total_tax):.4f}")
-            print(f"  Mean gov spending:        {np.mean(total_gov_spending):.4f}")
-            print(f"  Mean UI benefits:         {np.mean(ui_sim):.4f}")
-            print(f"  Mean gov health spending: {np.mean(gov_m_sim):.4f}")
-            
-            # Age-specific statistics
-            print(f"\n  Age-specific means:")
-            ages_to_check = [0, 20, 40, 45, 50, 59]  # Include retirement transition
-            for age_idx in ages_to_check:
-                if age_idx < len(a_sim):
-                    is_retired_age = age_idx >= (config.retirement_age - config.current_age)
-                    status = "RETIRED" if is_retired_age else "WORKING"
-                    print(f"    Age {20+age_idx} ({status}):")
-                    print(f"      Assets:      {np.mean(a_sim[age_idx, :]):.2f}")
-                    print(f"      Consumption: {np.mean(c_sim[age_idx, :]):.3f}")
-                    if is_retired_age and np.any(pension_sim[age_idx, :] > 0):
-                        print(f"      Pension:     {np.mean(pension_sim[age_idx, :]):.3f}")
-                    else:
-                        print(f"      Income:      {np.mean(effective_y_sim[age_idx, :]):.3f}")
+            # Convert results to dictionary
+            for edu_type, result_dict in results:
+                all_results[edu_type] = result_dict
+        else:
+            # SEQUENTIAL: No parallelism at all
+            for edu_type in education_types:
+                edu_type, result_dict = _solve_and_simulate_education_type(
+                    (edu_type, n_sim, False)
+                )
+                all_results[edu_type] = result_dict
         
         print(f"\n{'='*70}")
         print("GENERATING PLOTS")
@@ -991,5 +1226,9 @@ if __name__ == "__main__":
         print('='*70)
     
     else:
-        print("Usage: python lifecycle_perfect_foresight.py --test")
-        print("Add --test flag to run testing suite")
+        print("Usage: python lifecycle_perfect_foresight.py --test [--parallel] [--parallel-all]")
+        print("  --test         Run testing suite")
+        print("  --parallel     Parallelize across education types (3 parallel jobs)")
+        print("  --parallel-all Maximum parallelism within each education type (sequential education types)")
+        print("")
+        print("Note: --parallel and --parallel-all cannot be combined due to nested parallelism restrictions")
