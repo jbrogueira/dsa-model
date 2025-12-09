@@ -165,10 +165,10 @@ class OLGTransition:
         return self._marginal_products_njit(K, L, self.alpha, self.delta, self.A)
     
     def solve_cohort_problems(self, r_path, w_path, 
-                              tau_c_path=None, tau_l_path=None, 
-                              tau_p_path=None, tau_k_path=None,
-                              pension_replacement_path=None,
-                              verbose=False):
+                          tau_c_path=None, tau_l_path=None, 
+                          tau_p_path=None, tau_k_path=None,
+                          pension_replacement_path=None,
+                          verbose=False):
         """Solve lifecycle problems for all cohorts given full price paths."""
         if verbose:
             print("\nSolving cohort lifecycle problems with perfect foresight...")
@@ -176,6 +176,48 @@ class OLGTransition:
         
         self.cohort_models = {}
         
+        # STEP 1: Compute steady-state asset profiles for initialization
+        if verbose:
+            print("  Computing initial steady-state asset profiles...")
+        
+        r_ss = r_path[0]
+        w_ss = w_path[0]
+        
+        # Store as instance variable so compute_aggregates can access it
+        self.ss_asset_profiles = {}
+        
+        for edu_type in self.education_shares.keys():
+            ss_config = LifecycleConfig(
+                T=self.T,
+                beta=self.beta,
+                gamma=self.gamma,
+                current_age=0,
+                education_type=edu_type,
+                n_a=self.n_a,
+                n_y=self.n_y,
+                n_h=self.n_h,
+                retirement_age=self.retirement_age,
+                r_path=np.ones(self.T) * r_ss,
+                w_path=np.ones(self.T) * w_ss
+            )
+            
+            ss_model = LifecycleModelPerfectForesight(ss_config)
+            ss_model.solve(verbose=False)
+            
+            results = ss_model.simulate(T_sim=self.T, n_sim=1000, seed=42)
+            a_sim = results[0]
+            
+            self.ss_asset_profiles[edu_type] = np.mean(a_sim, axis=1)
+            
+            if verbose:
+                print(f"    {edu_type}:")
+                print(f"      age 0 = {self.ss_asset_profiles[edu_type][0]:.4f}")
+                print(f"      age 5 = {self.ss_asset_profiles[edu_type][min(5, self.T-1)]:.4f}")
+                print(f"      age {self.T//2} = {self.ss_asset_profiles[edu_type][self.T//2]:.4f}")
+                print(f"      max assets = {np.max(self.ss_asset_profiles[edu_type]):.4f}")
+                print(f"      Full profile: {self.ss_asset_profiles[edu_type]}")  # ← DEBUG: Print full array
+        
+        # STEP 2: Solve all cohort problems with appropriate initial assets
         for t in range(self.T_transition):
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
@@ -190,6 +232,7 @@ class OLGTransition:
                     remaining_life = self.T - age
                     
                     if birth_period >= 0:
+                        # Born during or after transition - start with no assets
                         cohort_r = r_path[birth_period:birth_period + self.T]
                         cohort_w = w_path[birth_period:birth_period + self.T]
                         cohort_tau_c = tau_c_path[birth_period:birth_period + self.T] if tau_c_path is not None else None
@@ -198,6 +241,7 @@ class OLGTransition:
                         cohort_tau_k = tau_k_path[birth_period:birth_period + self.T] if tau_k_path is not None else None
                         cohort_pension = pension_replacement_path[birth_period:birth_period + self.T] if pension_replacement_path is not None else None
                     else:
+                        # Born before transition - lived under initial steady state
                         pre_periods = -birth_period
                         r_initial = r_path[0]
                         w_initial = w_path[0]
@@ -230,24 +274,57 @@ class OLGTransition:
                         else:
                             cohort_pension = None
                     
-                    config = LifecycleConfig(
-                        T=self.T,
-                        beta=self.beta,
-                        gamma=self.gamma,
-                        current_age=age,
-                        education_type=edu_type,
-                        n_a=self.n_a,
-                        n_y=self.n_y,
-                        n_h=self.n_h,
-                        retirement_age=self.retirement_age,
-                        r_path=cohort_r,
-                        w_path=cohort_w,
-                        tau_c_path=cohort_tau_c,
-                        tau_l_path=cohort_tau_l,
-                        tau_p_path=cohort_tau_p,
-                        tau_k_path=cohort_tau_k,
-                        pension_replacement_path=cohort_pension
-                    )
+                    # Determine initial assets based on birth period
+                    if birth_period >= 0:
+                        # Born during/after transition
+                        initial_assets = 0.0
+                    else:
+                        # Born before transition - use steady-state assets
+                        initial_assets = self.ss_asset_profiles[edu_type][age]
+                    
+                    # Create cohort-specific config
+                    try:
+                        config = LifecycleConfig(
+                            T=self.T,
+                            beta=self.beta,
+                            gamma=self.gamma,
+                            current_age=age,
+                            education_type=edu_type,
+                            n_a=self.n_a,
+                            n_y=self.n_y,
+                            n_h=self.n_h,
+                            retirement_age=self.retirement_age,
+                            r_path=cohort_r,
+                            w_path=cohort_w,
+                            tau_c_path=cohort_tau_c,
+                            tau_l_path=cohort_tau_l,
+                            tau_p_path=cohort_tau_p,
+                            tau_k_path=cohort_tau_k,
+                            pension_replacement_path=cohort_pension,
+                            initial_assets=initial_assets
+                        )
+                    except TypeError:
+                        # If initial_assets not supported, create without it
+                        config = LifecycleConfig(
+                            T=self.T,
+                            beta=self.beta,
+                            gamma=self.gamma,
+                            current_age=age,
+                            education_type=edu_type,
+                            n_a=self.n_a,
+                            n_y=self.n_y,
+                            n_h=self.n_h,
+                            retirement_age=self.retirement_age,
+                            r_path=cohort_r,
+                            w_path=cohort_w,
+                            tau_c_path=cohort_tau_c,
+                            tau_l_path=cohort_tau_l,
+                            tau_p_path=cohort_tau_p,
+                            tau_k_path=cohort_tau_k,
+                            pension_replacement_path=cohort_pension
+                        )
+                        # Set initial assets directly on config object
+                        config.initial_assets = initial_assets
                     
                     model = LifecycleModelPerfectForesight(config)
                     model.solve(verbose=False)
@@ -255,7 +332,7 @@ class OLGTransition:
                     self.cohort_models[t][edu_type][age] = model
         
         if verbose:
-            print("All cohort problems solved!")
+            print("All cohort problems solved!") 
     
     def compute_aggregates(self, t, n_sim=10000):
         """Compute aggregate capital and labor for period t."""
@@ -268,22 +345,55 @@ class OLGTransition:
         
         for edu_idx, edu_type in enumerate(education_types):
             for age in range(self.T):
+                birth_period = t - age
+                
                 model = self.cohort_models[t][edu_type][age]
                 
-                results = model.simulate(T_sim=1, n_sim=n_sim, seed=42 + t * 100 + age)
+                # Simulate from current age to end of life
+                remaining_periods = self.T - age
+                
+                results = model.simulate(T_sim=remaining_periods, n_sim=n_sim, 
+                                        seed=42 + t * 100 + age)
                 
                 (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
                  ui_sim, m_sim, oop_m_sim, gov_m_sim,
                  tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                  pension_sim, retired_sim) = results
                 
+                # CRITICAL FIX: Manually set initial assets for cohorts born before transition
+                if birth_period < 0 and hasattr(self, 'ss_asset_profiles'):
+                    initial_assets = self.ss_asset_profiles[edu_type][age]
+                    
+                    # DEBUG OUTPUT for first period, first few ages
+                    if t == 0 and age < 5:
+                        print(f"\n  DEBUG compute_aggregates: t={t}, age={age}, birth_period={birth_period}")
+                        print(f"    initial_assets from ss_profile: {initial_assets:.4f}")
+                        print(f"    a_sim[0, :5] BEFORE override: {a_sim[0, :5]}")
+                    
+                    a_sim[0, :] = initial_assets  # Override simulated initial assets
+                    
+                    if t == 0 and age < 5:
+                        print(f"    a_sim[0, :5] AFTER override: {a_sim[0, :5]}")
+                
+                # Take assets and labor at time 0 of simulation (which is their current age)
                 assets_by_age_edu[edu_idx, age] = np.mean(a_sim[0, :])
                 labor_by_age_edu[edu_idx, age] = np.mean(effective_y_sim[0, :])
+        
+        # DEBUG: Print aggregation for first period
+        if t == 0:
+            print(f"\n  DEBUG Aggregation at t=0:")
+            print(f"    assets_by_age_edu[0, :]: {assets_by_age_edu[0, :]}")
+            print(f"    labor_by_age_edu[0, :]: {labor_by_age_edu[0, :]}")
+            print(f"    cohort_sizes: {self.cohort_sizes}")
+            print(f"    education_shares_array: {education_shares_array}")
         
         K, L = self._aggregate_capital_labor_njit(
             assets_by_age_edu, labor_by_age_edu,
             self.cohort_sizes, education_shares_array
         )
+        
+        if t == 0:
+            print(f"    Aggregated K: {K:.4f}, L: {L:.4f}")
         
         return K, L
     
@@ -292,23 +402,55 @@ class OLGTransition:
                            tau_p_path=None, tau_k_path=None,
                            pension_replacement_path=None,
                            n_sim=10000, verbose=True):
-        """Simulate transition dynamics with exogenous interest rate path."""
+        """
+        Simulate transition dynamics with exogenous interest rate path.
+        
+        With exogenous r, the capital-labor ratio K/L is pinned down by:
+            r = α * A * (K/L)^(α-1) - δ
+        
+        This determines the wage:
+            w = (1-α) * A * (K/L)^α
+        
+        Parameters
+        ----------
+        r_path : array_like
+            Exogenous interest rate path
+        w_path : array_like, optional
+            If provided, uses this wage path (for testing)
+            If None, computes wage from production function given r
+        """
         r_path = np.array(r_path)
         self.T_transition = len(r_path)
         
+        # Extend r_path for cohorts born before transition
         r_path_full = np.concatenate([r_path, np.ones(self.T) * r_path[-1]])
         
+        # Compute wage path from production function
         if w_path is None:
-            K_init = 10.0
-            L_init = 1.0
-            _, w_init = self.factor_prices(K_init, L_init)
-            w_path_full = np.ones(len(r_path_full)) * w_init
-            compute_wages = True
+            if verbose:
+                print("\nComputing wage path from production function...")
+                print(f"  Using r + δ = MPK = α * A * (K/L)^(α-1)")
+            
+            # From MPK: r + δ = α * A * (K/L)^(α-1)
+            # Solve for K/L: K/L = [(r + δ) / (α * A)]^(1/(α-1))
+            # Then: w = MPL = (1-α) * A * (K/L)^α
+            
+            K_over_L = np.power((r_path + self.delta) / (self.alpha * self.A), 
+                                1.0 / (self.alpha - 1.0))
+            w_path = (1 - self.alpha) * self.A * np.power(K_over_L, self.alpha)
+            
+            if verbose:
+                print(f"  Initial: r={r_path[0]:.4f} → K/L={K_over_L[0]:.4f} → w={w_path[0]:.4f}")
+                print(f"  Final:   r={r_path[-1]:.4f} → K/L={K_over_L[-1]:.4f} → w={w_path[-1]:.4f}")
         else:
             w_path = np.array(w_path)
-            w_path_full = np.concatenate([w_path, np.ones(self.T) * w_path[-1]])
-            compute_wages = False
+            if verbose:
+                print("\nUsing provided wage path")
         
+        # Extend w_path for cohorts born before transition
+        w_path_full = np.concatenate([w_path, np.ones(self.T) * w_path[-1]])
+        
+        # Extend tax paths
         if tau_c_path is not None:
             tau_c_path = np.array(tau_c_path)
             tau_c_path_full = np.concatenate([tau_c_path, np.ones(self.T) * tau_c_path[-1]])
@@ -341,15 +483,16 @@ class OLGTransition:
             pension_path_full = None
         
         if verbose:
-            print("=" * 60)
+            print("\n" + "=" * 60)
             print("Simulating OLG Transition with Exogenous Interest Rates")
             print("=" * 60)
             print(f"Transition periods: {self.T_transition}")
-            print(f"Initial r: {r_path[0]:.4f}")
-            print(f"Final r: {r_path[-1]:.4f}")
+            print(f"Initial r: {r_path[0]:.4f}, w: {w_path[0]:.4f}")
+            print(f"Final r: {r_path[-1]:.4f}, w: {w_path[-1]:.4f}")
             print(f"Retirement age: {self.retirement_age}")
             print(f"Education groups: {list(self.education_shares.keys())}")
         
+        # Solve all cohort problems with perfect foresight of r and w
         self.solve_cohort_problems(
             r_path_full, w_path_full,
             tau_c_path=tau_c_path_full,
@@ -363,6 +506,7 @@ class OLGTransition:
         if verbose:
             print("\nComputing aggregate quantities...")
         
+        # Compute aggregates from household decisions
         K_path = np.zeros(self.T_transition)
         L_path = np.zeros(self.T_transition)
         
@@ -371,18 +515,30 @@ class OLGTransition:
                 print(f"  Period {t + 1}/{self.T_transition}")
             K_path[t], L_path[t] = self.compute_aggregates(t, n_sim=n_sim)
         
-        if compute_wages:
-            if verbose:
-                print("\nComputing implied wages from production function...")
-            w_path_computed = self._compute_wage_path_njit(
-                K_path, L_path, self.alpha, self.delta, self.A
-            )
-            w_path_full[:self.T_transition] = w_path_computed
-        
+        # Compute output
         Y_path = self._compute_output_path_njit(K_path, L_path, self.alpha, self.A)
         
+        # Verify consistency: check if implied r from aggregates matches exogenous r
+        if verbose:
+            print("\nVerifying consistency with production function...")
+            r_implied, w_implied = self._marginal_products_njit(
+                K_path[0], L_path[0], self.alpha, self.delta, self.A
+            )
+            print(f"  Period 0:")
+            print(f"    Exogenous r: {r_path[0]:.4f}, Implied r: {r_implied:.4f}")
+            print(f"    Computed w:  {w_path[0]:.4f}, Implied w: {w_implied:.4f}")
+            
+            if self.T_transition > 1:
+                r_implied_end, w_implied_end = self._marginal_products_njit(
+                    K_path[-1], L_path[-1], self.alpha, self.delta, self.A
+                )
+                print(f"  Period {self.T_transition-1}:")
+                print(f"    Exogenous r: {r_path[-1]:.4f}, Implied r: {r_implied_end:.4f}")
+                print(f"    Computed w:  {w_path[-1]:.4f}, Implied w: {w_implied_end:.4f}")
+        
+        # Store results
         self.r_path = r_path
-        self.w_path = w_path_full[:self.T_transition]
+        self.w_path = w_path
         self.K_path = K_path
         self.L_path = L_path
         self.Y_path = Y_path
@@ -395,9 +551,13 @@ class OLGTransition:
             print(f"  Average K: {np.mean(K_path):.4f}")
             print(f"  Average L: {np.mean(L_path):.4f}")
             print(f"  Average Y: {np.mean(Y_path):.4f}")
+            print(f"  Average w: {np.mean(w_path):.4f}")
             print(f"  Average K/Y: {np.mean(K_path/Y_path):.4f}")
+            print(f"  K range: [{np.min(K_path):.4f}, {np.max(K_path):.4f}]")
+            print(f"  L range: [{np.min(L_path):.4f}, {np.max(L_path):.4f}]")
         
-        return {'r': self.r_path, 'w': self.w_path, 'K': self.K_path, 'L': self.L_path, 'Y': self.Y_path}
+        return {'r': self.r_path, 'w': self.w_path, 'K': self.K_path, 
+                'L': self.L_path, 'Y': self.Y_path}
     
     def plot_transition(self, save=True, show=True, filename=None):
         """Plot transition dynamics."""
