@@ -40,86 +40,85 @@ class LifecycleConfig:
     # Education-specific income parameters
     edu_params: dict = field(default_factory=lambda: {
         'low': {
-            'mu_y': 0.05,    # MUCH smaller values
-            'sigma_y': 0.03, # MUCH smaller volatility
+            'mu_y': 0.05,
+            'sigma_y': 0.03,
             'rho_y': 0.97,
-            'unemployment_rate': 0.10,  # 10% unemployment for low education
+            'unemployment_rate': 0.10,
         },
         'medium': {
-            'mu_y': 0.1,      # Keep baseline at zero
-            'sigma_y': 0.03,  # MUCH smaller volatility
+            'mu_y': 0.1,
+            'sigma_y': 0.03,
             'rho_y': 0.97,
-            'unemployment_rate': 0.06,  # 6% unemployment for medium education
+            'unemployment_rate': 0.06,
         },
         'high': {
-            'mu_y': 0.12,      # MUCH smaller positive value
-            'sigma_y': 0.03,   # MUCH smaller volatility
+            'mu_y': 0.12,
+            'sigma_y': 0.03,
             'rho_y': 0.97,
-            'unemployment_rate': 0.03,  # 3% unemployment for high education
+            'unemployment_rate': 0.03,
         }
     })
     
-    
     # === Unemployment parameters ===
-    job_finding_rate: float = 0.5        # Probability of finding job when unemployed
-    max_job_separation_rate: float = 0.1 # Maximum probability of losing job
-    ui_replacement_rate: float = 0.4     # Unemployment insurance replacement rate (% of last wage)
+    job_finding_rate: float = 0.5
+    max_job_separation_rate: float = 0.1
+    ui_replacement_rate: float = 0.4
     
     # === Health process parameters ===
-    n_h: int = 3                         # Number of health states
-    h_good: float = 1.0                  # Good health productivity
-    h_moderate: float = 0.7              # Moderate health productivity
-    h_poor: float = 0.3                  # Poor health productivity
+    n_h: int = 3
+    h_good: float = 1.0
+    h_moderate: float = 0.7
+    h_poor: float = 0.3
     
     # Health expenditure by health state
-    m_good: float = 0.05                 # Health expenditure when in good health
-    m_moderate: float = 0.15             # Health expenditure when in moderate health
-    m_poor: float = 0.30                 # Health expenditure when in poor health
+    m_good: float = 0.05
+    m_moderate: float = 0.15
+    m_poor: float = 0.30
     
     # Government health coverage rate
-    kappa: float = 0.7                   # Government covers 70% of health expenditures
+    kappa: float = 0.7
     
     # Health transition probabilities by age group
-    # Young (age < 40)
     P_h_young: list = field(default_factory=lambda: [
-        [0.95, 0.04, 0.01],  # From good
-        [0.30, 0.60, 0.10],  # From moderate
-        [0.10, 0.30, 0.60]   # From poor
+        [0.95, 0.04, 0.01],
+        [0.30, 0.60, 0.10],
+        [0.10, 0.30, 0.60]
     ])
     
-    # Middle age (40 <= age < 60)
     P_h_middle: list = field(default_factory=lambda: [
-        [0.85, 0.12, 0.03],  # From good
-        [0.20, 0.60, 0.20],  # From moderate
-        [0.05, 0.25, 0.70]   # From poor
+        [0.85, 0.12, 0.03],
+        [0.20, 0.60, 0.20],
+        [0.05, 0.25, 0.70]
     ])
     
-    # Old (age >= 60)
     P_h_old: list = field(default_factory=lambda: [
-        [0.70, 0.20, 0.10],  # From good
-        [0.10, 0.50, 0.40],  # From moderate
-        [0.02, 0.18, 0.80]   # From poor
+        [0.70, 0.20, 0.10],
+        [0.10, 0.50, 0.40],
+        [0.02, 0.18, 0.80]
     ])
+    
+    # Health transition matrix (will be created in __post_init__ if None)
+    P_h: Optional[np.ndarray] = None
     
     # === Price paths (time-varying) ===
-    r_path: Optional[np.ndarray] = None  # Interest rate path
-    w_path: Optional[np.ndarray] = None  # Wage path
+    r_path: Optional[np.ndarray] = None
+    w_path: Optional[np.ndarray] = None
     
     # Default constant prices if paths not provided
-    r_default: float = 0.03              # Default interest rate
-    w_default: float = 1.0               # Default wage
+    r_default: float = 0.03
+    w_default: float = 1.0
     
     # === Tax rate paths (time-varying) ===
-    tau_c_path: Optional[np.ndarray] = None  # Consumption tax rate path
-    tau_l_path: Optional[np.ndarray] = None  # Labor income tax rate path
-    tau_p_path: Optional[np.ndarray] = None  # Payroll tax rate path
-    tau_k_path: Optional[np.ndarray] = None  # Capital income tax rate path
+    tau_c_path: Optional[np.ndarray] = None
+    tau_l_path: Optional[np.ndarray] = None
+    tau_p_path: Optional[np.ndarray] = None
+    tau_k_path: Optional[np.ndarray] = None
     
     # Default tax rates if paths not provided
-    tau_c_default: float = 0.0           # Default consumption tax
-    tau_l_default: float = 0.0           # Default labor income tax
-    tau_p_default: float = 0.0           # Default payroll tax
-    tau_k_default: float = 0.0           # Default capital income tax
+    tau_c_default: float = 0.0
+    tau_l_default: float = 0.0
+    tau_p_default: float = 0.0
+    tau_k_default: float = 0.0
     
     def __post_init__(self):
         """Post-initialization setup and validation."""
@@ -275,11 +274,20 @@ class LifecycleModelPerfectForesight:
         self.h_grid, self.P_h = self._health_process()
         
         # Health expenditure grid (by health state)
-        self.m_grid = np.array([
-            config.m_good,
-            config.m_moderate,  # Fixed: should be m_moderate (not moderate, not h_moderate)
-            config.m_poor
-        ])
+        if self.n_h == 3:
+            self.m_grid = np.array([
+                config.m_good,
+                config.m_moderate,  # ✅ FIXED
+                config.m_poor
+            ])
+        elif self.n_h == 2:
+            self.m_grid = np.array([
+                config.m_good,
+                config.m_poor
+            ])
+        else:
+            # Fallback: linearly spaced from m_good to m_poor
+            self.m_grid = np.linspace(config.m_good, config.m_poor, self.n_h)
         
         # Value and policy functions (earnings history stored as continuous value, not gridded)
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
@@ -306,11 +314,23 @@ class LifecycleModelPerfectForesight:
     def _setup_path(self, path, default_value, name):
         """Set up time-varying path or use default constant."""
         if path is None:
+            # Create path for full lifecycle (T periods total)
             return np.ones(self.T) * default_value
         else:
             path = np.array(path)
-            assert len(path) >= self.T - self.current_age, f"{name} too short"
-            return path
+            # Path must be at least as long as the agent's remaining lifetime
+            required_length = self.T - self.current_age
+            if len(path) < required_length:
+                # If path is too short, pad with the last value
+                padding_needed = required_length - len(path)
+                path = np.concatenate([path, np.ones(padding_needed) * path[-1]])
+            
+            # Create a full-length array initialized with default value
+            full_path = np.ones(self.T) * default_value
+            # Fill in the portion from current_age onwards with the provided path
+            full_path[self.current_age:self.current_age + len(path)] = path[:required_length]
+            
+            return full_path
     
     def _income_process(self):
         """
@@ -380,30 +400,72 @@ class LifecycleModelPerfectForesight:
     
     def _health_process(self):
         """Age-dependent health transition matrix."""
-        # Create health grid
-        h_grid = np.array([
-            self.config.h_good,
-            self.config.h_moderate,
-            self.config.h_poor
-        ])
+        # Create health grid based on n_h
+        if self.n_h == 3:
+            h_grid = np.array([
+                self.config.h_good,
+                self.config.h_moderate,
+                self.config.h_poor
+            ])
+        elif self.n_h == 2:
+            h_grid = np.array([
+                self.config.h_good,
+                self.config.h_poor
+            ])
+        else:
+            # Fallback: equally spaced from 1.0 to 0.3
+            h_grid = np.linspace(1.0, 0.3, self.n_h)
         
         # Age-dependent transition probabilities
         P_h = np.zeros((self.T, self.n_h, self.n_h))
         
-        # Convert lists to numpy arrays
-        P_h_young = np.array(self.config.P_h_young)
-        P_h_middle = np.array(self.config.P_h_middle)
-        P_h_old = np.array(self.config.P_h_old)
-        
-        for t in range(self.T):
-            age = 20 + t
+        if self.n_h == 3:
+            # Use the detailed 3-state transitions from config
+            P_h_young = np.array(self.config.P_h_young)
+            P_h_middle = np.array(self.config.P_h_middle)
+            P_h_old = np.array(self.config.P_h_old)
             
-            if age < 40:
-                P_h[t, :, :] = P_h_young
-            elif age < 60:
-                P_h[t, :, :] = P_h_middle
-            else:
-                P_h[t, :, :] = P_h_old
+            for t in range(self.T):
+                age = 20 + t
+                
+                if age < 40:
+                    P_h[t, :, :] = P_h_young
+                elif age < 60:
+                    P_h[t, :, :] = P_h_middle
+                else:
+                    P_h[t, :, :] = P_h_old
+        
+        elif self.n_h == 2:
+            # Simple 2-state transitions (Good, Poor)
+            # Age-dependent: health deteriorates with age
+            for t in range(self.T):
+                age = 20 + t
+                
+                if age < 40:
+                    # Young: mostly stay in good health
+                    P_h[t, :, :] = np.array([
+                        [0.98, 0.02],  # Good -> Good, Poor
+                        [0.20, 0.80]   # Poor -> Good, Poor
+                    ])
+                elif age < 60:
+                    # Middle age: more health deterioration
+                    P_h[t, :, :] = np.array([
+                        [0.95, 0.05],  # Good -> Good, Poor
+                        [0.15, 0.85]   # Poor -> Good, Poor
+                    ])
+                else:
+                    # Old: significant health deterioration
+                    P_h[t, :, :] = np.array([
+                        [0.90, 0.10],  # Good -> Good, Poor
+                        [0.10, 0.90]   # Poor -> Good, Poor
+                    ])
+        
+        else:
+            # Fallback for other n_h values: use simple persistence
+            for t in range(self.T):
+                persistence = 0.90  # Probability of staying in same state
+                P_h[t, :, :] = (1 - persistence) / (self.n_h - 1) * np.ones((self.n_h, self.n_h))
+                np.fill_diagonal(P_h[t, :, :], persistence)
         
         return h_grid, P_h
     
