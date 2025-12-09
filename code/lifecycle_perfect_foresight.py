@@ -122,28 +122,61 @@ class LifecycleConfig:
     tau_k_default: float = 0.0           # Default capital income tax
     
     def __post_init__(self):
-        """Validate parameters after initialization."""
-        assert self.T > 0, "T must be positive"
-        assert 0 < self.beta < 1, "beta must be in (0, 1)"
-        assert self.gamma > 0, "gamma must be positive"
-        assert self.a_min < self.a_max, "a_min must be less than a_max"
-        assert self.n_a > 1, "n_a must be greater than 1"
-        assert self.n_y >= 2, "n_y must be at least 2 (to include unemployment)"
-        assert self.n_h >= 1, "n_h must be at least 1"
-        assert 0 < self.job_finding_rate <= 1, "job_finding_rate must be in (0, 1]"
-        assert 0 <= self.ui_replacement_rate <= 1, "ui_replacement_rate must be in [0, 1]"
-        assert 0 <= self.kappa <= 1, "kappa must be in [0, 1]"
-        assert self.m_good >= 0 and self.m_moderate >= 0 and self.m_poor >= 0, "Health expenditures must be non-negative"
-        assert self.education_type in self.edu_params, f"education_type must be one of {list(self.edu_params.keys())}"
-        assert 0 <= self.retirement_age < self.T, "retirement_age must be between 0 and T"
-        assert 0 < self.pension_replacement_default <= 1, "pension_replacement_default must be in (0, 1]"
+        """Post-initialization setup and validation."""
         
-        # Validate health transition matrices
-        for P in [self.P_h_young, self.P_h_middle, self.P_h_old]:
-            P_arr = np.array(P)
-            assert P_arr.shape == (self.n_h, self.n_h), "Health transition matrix wrong shape"
-            assert np.allclose(P_arr.sum(axis=1), 1.0), "Health transition rows must sum to 1"
-
+        # Setup income process parameters based on education type
+        if self.education_type == 'low':
+            self.mu_y = 0.05
+            self.sigma_y = 0.03
+            self.rho_y = 0.97
+        elif self.education_type == 'medium':
+            self.mu_y = 0.1
+            self.sigma_y = 0.03
+            self.rho_y = 0.97
+        elif self.education_type == 'high':
+            self.mu_y = 0.12
+            self.sigma_y = 0.03
+            self.rho_y = 0.97
+        
+        # Create health transition matrix if not provided
+        if self.P_h is None:
+            # Age-dependent health transitions (T x n_h x n_h)
+            # For now, use constant transitions across ages
+            
+            if self.n_h == 3:
+                # Default 3-state health transition
+                P_base = np.array([
+                    [0.90, 0.08, 0.02],  # Good -> Good, Moderate, Poor
+                    [0.10, 0.80, 0.10],  # Moderate -> Good, Moderate, Poor
+                    [0.05, 0.15, 0.80]   # Poor -> Good, Moderate, Poor
+                ])
+            elif self.n_h == 2:
+                # 2-state health transition (Good, Poor)
+                P_base = np.array([
+                    [0.95, 0.05],  # Good -> Good, Poor
+                    [0.10, 0.90]   # Poor -> Good, Poor
+                ])
+            else:
+                # Fallback: identity matrix
+                P_base = np.eye(self.n_h)
+            
+            # Replicate across all ages
+            self.P_h = np.tile(P_base, (self.T, 1, 1))
+        else:
+            # Validate provided P_h
+            if self.P_h.ndim == 2:
+                # If 2D, replicate across ages
+                P_arr = self.P_h
+                assert P_arr.shape == (self.n_h, self.n_h), \
+                    f"Health transition matrix wrong shape: expected {(self.n_h, self.n_h)}, got {P_arr.shape}"
+                self.P_h = np.tile(P_arr, (self.T, 1, 1))
+            elif self.P_h.ndim == 3:
+                # Already age-dependent
+                assert self.P_h.shape == (self.T, self.n_h, self.n_h), \
+                    f"Health transition matrix wrong shape: expected {(self.T, self.n_h, self.n_h)}, got {self.P_h.shape}"
+            else:
+                raise ValueError(f"P_h must be 2D or 3D array, got {self.P_h.ndim}D")
+    
 
 class LifecycleModelPerfectForesight:
     """
