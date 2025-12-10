@@ -2,7 +2,7 @@ import numpy as np
 from numba import njit
 import matplotlib.pyplot as plt
 from quantecon.markov import tauchen
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 from multiprocessing import Pool, cpu_count
 from functools import partial
@@ -120,6 +120,14 @@ class LifecycleConfig:
     tau_p_default: float = 0.0
     tau_k_default: float = 0.0
     
+    # === Initial conditions ===
+    initial_assets: Optional[float] = None   # Initial asset level (default: a_min)
+    initial_avg_earnings: Optional[float] = None  # ← ADD THIS LINE
+    
+    def _replace(self, **changes): # <-- 2. Add this method
+        """Return a new instance with specified fields replaced."""
+        return replace(self, **changes) 
+    
     def __post_init__(self):
         """Post-initialization setup and validation."""
         
@@ -191,9 +199,10 @@ class LifecycleModelPerfectForesight:
     - Parallel processing support for faster computation
     """
     
-    def __init__(self, config: LifecycleConfig):
+    def __init__(self, config: LifecycleConfig, verbose: bool = True):
         """Initialize model with configuration."""
         self.config = config
+        self.verbose = verbose
         
         # Extract frequently used parameters
         self.T = config.T
@@ -232,44 +241,45 @@ class LifecycleModelPerfectForesight:
         self.y_grid, self.P_y = self._income_process()
         
         # COMPREHENSIVE DIAGNOSTIC
-        print(f"\n{'='*70}")
-        print(f"INCOME PROCESS DIAGNOSTIC - {self.config.education_type.upper()} EDUCATION")
-        print('='*70)
-        edu_params = self.config.edu_params[self.config.education_type]
-        print(f"Input parameters:")
-        print(f"  mu_y:    {edu_params['mu_y']}")
-        print(f"  sigma_y: {edu_params['sigma_y']}")
-        print(f"  rho_y:   {edu_params['rho_y']}")
-        print(f"\nIncome grid (y_grid):")
-        print(f"  {self.y_grid}")
-        print(f"\nIncome grid details:")
-        for i, y in enumerate(self.y_grid):
-            state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
-            print(f"  State {i} ({state_name}): y = {y:.6f}")
-        
-        # Check stationary distribution
-        from scipy.linalg import eig
-        eigenvalues, eigenvectors = eig(self.P_y.T)
-        stationary_idx = np.argmax(eigenvalues.real)
-        stationary = eigenvectors[:, stationary_idx].real
-        stationary = stationary / stationary.sum()
-        
-        print(f"\nTransition matrix P_y (first 3 rows):")
-        print(self.P_y[:3])
-        
-        print(f"\nStationary distribution:")
-        for i in range(self.n_y):
-            state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
-            print(f"  State {i} ({state_name}, y={self.y_grid[i]:.4f}): {stationary[i]:.4%}")
-        
-        expected_income = np.dot(stationary, self.y_grid)
-        print(f"\nExpected steady-state income: {expected_income:.6f}")
-        
-        if expected_income < 0.01:
-            print(f"\n⚠️  WARNING: Expected income is nearly zero!")
-            print(f"    This will cause zero average income in simulations!")
-        
-        print('='*70)
+        if self.verbose:
+            print(f"\n{'='*70}")
+            print(f"INCOME PROCESS DIAGNOSTIC - {self.config.education_type.upper()} EDUCATION")
+            print('='*70)
+            edu_params = self.config.edu_params[self.config.education_type]
+            print(f"Input parameters:")
+            print(f"  mu_y:    {edu_params['mu_y']}")
+            print(f"  sigma_y: {edu_params['sigma_y']}")
+            print(f"  rho_y:   {edu_params['rho_y']}")
+            print(f"\nIncome grid (y_grid):")
+            print(f"  {self.y_grid}")
+            print(f"\nIncome grid details:")
+            for i, y in enumerate(self.y_grid):
+                state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
+                print(f"  State {i} ({state_name}): y = {y:.6f}")
+            
+            # Check stationary distribution
+            from scipy.linalg import eig
+            eigenvalues, eigenvectors = eig(self.P_y.T)
+            stationary_idx = np.argmax(eigenvalues.real)
+            stationary = eigenvectors[:, stationary_idx].real
+            stationary = stationary / stationary.sum()
+            
+            print(f"\nTransition matrix P_y (first 3 rows):")
+            print(self.P_y[:3])
+            
+            print(f"\nStationary distribution:")
+            for i in range(self.n_y):
+                state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
+                print(f"  State {i} ({state_name}, y={self.y_grid[i]:.4f}): {stationary[i]:.4%}")
+            
+            expected_income = np.dot(stationary, self.y_grid)
+            print(f"\nExpected steady-state income: {expected_income:.6f}")
+            
+            if expected_income < 0.01:
+                print(f"\n⚠️  WARNING: Expected income is nearly zero!")
+                print(f"    This will cause zero average income in simulations!")
+            
+            print('='*70)
         
         self.h_grid, self.P_h = self._health_process()
         
@@ -744,6 +754,12 @@ class LifecycleModelPerfectForesight:
         
         avg_earnings_at_retirement = np.zeros(n_sim)
         
+        # --- FIX STARTS HERE ---
+        # If the cohort starts retired, their "earnings at retirement" is their initial average earnings.
+        if self.current_age >= self.retirement_age and hasattr(self.config, 'initial_avg_earnings') and self.config.initial_avg_earnings is not None:
+            avg_earnings_at_retirement.fill(self.config.initial_avg_earnings)
+        # --- FIX ENDS HERE ---
+
         # Initial conditions
         # Get education-specific unemployment rate
         edu_unemployment_rate = self.config.edu_params[self.config.education_type]['unemployment_rate']
@@ -767,7 +783,11 @@ class LifecycleModelPerfectForesight:
         i_y_last = i_y.copy()
         i_h = np.zeros(n_sim, dtype=int)  # Start in good health
         i_a = np.zeros(n_sim, dtype=int)  # Start at first asset grid point (a_min)
-        avg_earnings = np.zeros(n_sim)  # Start with zero average earnings
+        # Initialize average earnings (use config value for older cohorts)
+        if hasattr(self.config, 'initial_avg_earnings') and self.config.initial_avg_earnings is not None:
+            avg_earnings = np.ones(n_sim) * self.config.initial_avg_earnings
+        else:
+            avg_earnings = np.zeros(n_sim)
         
         if verbose := (n_sim <= 100):  # Add diagnostics for small simulations
             print(f"Initial asset level: {self.a_grid[0]:.3f}")
@@ -822,6 +842,16 @@ class LifecycleModelPerfectForesight:
                 oop_m_sim[t, i] = (1 - self.kappa) * m_sim[t, i]
                 gov_m_sim[t, i] = self.kappa * m_sim[t, i]
                 
+                # --- FIX STARTS HERE: Move Pension Calculation Up ---
+                if is_retired:
+                    # Record avg_earnings at retirement (only once)
+                    if age == self.retirement_age:
+                        avg_earnings_at_retirement[i] = avg_earnings[i]
+                    
+                    pension_replacement = self.pension_replacement_path[age]
+                    pension_sim[t, i] = pension_replacement * avg_earnings_at_retirement[i]
+                # --- FIX ENDS HERE ---
+
                 # Compute tax payments
                 if is_retired:
                     # Pension income is taxable as labor income
@@ -847,12 +877,12 @@ class LifecycleModelPerfectForesight:
                         i_y_last[i] = i_y[i]
                         i_y[i] = np.random.choice(self.n_y, p=self.P_y[i_y[i], :])
                         
-                        # Update average earnings (only while working)
+                        # --- FIX STARTS HERE: Correct Average Earnings Calculation ---
+                        # Update average earnings with an expanding window average
                         current_gross_labor = self.w_path[age] * y_sim[t, i] * h_sim[t, i]
-                        if age < self.N_earnings_history:
-                            avg_earnings[i] = 0.0
-                        else:
-                            avg_earnings[i] = avg_earnings[i] + (current_gross_labor - avg_earnings[i]) / self.N_earnings_history
+                        work_years = age - self.current_age + 1
+                        avg_earnings[i] = (avg_earnings[i] * (work_years - 1) + current_gross_labor) / work_years
+                        # --- FIX ENDS HERE ---
                     
                     # Health transitions happen regardless of retirement status
                     i_h[i] = np.random.choice(self.n_h, p=self.P_h[age, i_h[i], :])
