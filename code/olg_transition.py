@@ -891,6 +891,263 @@ class OLGTransition:
             plt.show()
         else:
             plt.close()
+    
+    def compute_government_budget(self, t, n_sim=10000):
+        """Compute government revenues, expenditures, and deficit for period t."""
+        n_edu = len(self.education_shares)
+        education_types = list(self.education_shares.keys())
+        education_shares_array = np.array([self.education_shares[edu] for edu in education_types])
+        
+        # Initialize aggregates
+        total_tax_c = 0.0
+        total_tax_l = 0.0
+        total_tax_p = 0.0
+        total_tax_k = 0.0
+        total_ui = 0.0
+        total_pension = 0.0
+        total_gov_health = 0.0
+        
+        for edu_idx, edu_type in enumerate(education_types):
+            age_dict = self.cohort_models[t].get(edu_type, {})
+            
+            for age in range(self.T):
+                if age not in age_dict:
+                    continue
+                
+                model = age_dict[age]
+                remaining_periods = self.T - age
+                
+                if remaining_periods <= 0:
+                    continue
+                
+                results = model.simulate(
+                    T_sim=remaining_periods,
+                    n_sim=n_sim,
+                    seed=42 + 1000 * t + 100 * edu_idx + age,
+                )
+                
+                (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim,
+                 employed_sim, ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                 pension_sim, retired_sim) = results
+                
+                # Weight by cohort size and education share
+                weight = self.cohort_sizes[age] * education_shares_array[edu_idx]
+                
+                # Extract period-0 values (current period)
+                if tax_c_sim.ndim >= 2:
+                    tax_c = np.mean(tax_c_sim[0, :])
+                    tax_l = np.mean(tax_l_sim[0, :])
+                    tax_p = np.mean(tax_p_sim[0, :])
+                    tax_k = np.mean(tax_k_sim[0, :])
+                    ui = np.mean(ui_sim[0, :])
+                    pension = np.mean(pension_sim[0, :])
+                    gov_health = np.mean(gov_m_sim[0, :])
+                elif tax_c_sim.ndim == 1:
+                    tax_c = np.mean(tax_c_sim)
+                    tax_l = np.mean(tax_l_sim)
+                    tax_p = np.mean(tax_p_sim)
+                    tax_k = np.mean(tax_k_sim)
+                    ui = np.mean(ui_sim)
+                    pension = np.mean(pension_sim)
+                    gov_health = np.mean(gov_m_sim)
+                else:
+                    tax_c = float(tax_c_sim)
+                    tax_l = float(tax_l_sim)
+                    tax_p = float(tax_p_sim)
+                    tax_k = float(tax_k_sim)
+                    ui = float(ui_sim)
+                    pension = float(pension_sim)
+                    gov_health = float(gov_m_sim)
+                
+                # Aggregate
+                total_tax_c += weight * tax_c
+                total_tax_l += weight * tax_l
+                total_tax_p += weight * tax_p
+                total_tax_k += weight * tax_k
+                total_ui += weight * ui
+                total_pension += weight * pension
+                total_gov_health += weight * gov_health
+        
+        # Compute totals
+        total_revenue = total_tax_c + total_tax_l + total_tax_p + total_tax_k
+        total_spending = total_ui + total_pension + total_gov_health
+        primary_deficit = total_spending - total_revenue
+        
+        return {
+            'tax_c': total_tax_c,
+            'tax_l': total_tax_l,
+            'tax_p': total_tax_p,
+            'tax_k': total_tax_k,
+            'total_revenue': total_revenue,
+            'ui': total_ui,
+            'pension': total_pension,
+            'gov_health': total_gov_health,
+            'total_spending': total_spending,
+            'primary_deficit': primary_deficit
+        }
+    
+    def compute_government_budget_path(self, n_sim=10000, verbose=True):
+        """Compute government budget for all transition periods."""
+        if self.cohort_models is None:
+            raise ValueError("Must simulate transition first")
+        
+        if verbose:
+            print("\nComputing government budget path...")
+        
+        # Initialize storage
+        budget_path = {
+            'tax_c': np.zeros(self.T_transition),
+            'tax_l': np.zeros(self.T_transition),
+            'tax_p': np.zeros(self.T_transition),
+            'tax_k': np.zeros(self.T_transition),
+            'total_revenue': np.zeros(self.T_transition),
+            'ui': np.zeros(self.T_transition),
+            'pension': np.zeros(self.T_transition),
+            'gov_health': np.zeros(self.T_transition),
+            'total_spending': np.zeros(self.T_transition),
+            'primary_deficit': np.zeros(self.T_transition)
+        }
+        
+        for t in range(self.T_transition):
+            if verbose and (t % 10 == 0 or t == self.T_transition - 1):
+                print(f"  Period {t + 1}/{self.T_transition}")
+            
+            budget_t = self.compute_government_budget(t, n_sim=n_sim)
+            
+            for key in budget_path.keys():
+                budget_path[key][t] = budget_t[key]
+        
+        self.budget_path = budget_path
+        
+        if verbose:
+            print("\nGovernment Budget Summary:")
+            print(f"  Average revenue:     {np.mean(budget_path['total_revenue']):.4f}")
+            print(f"    Consumption tax:   {np.mean(budget_path['tax_c']):.4f}")
+            print(f"    Labor income tax:  {np.mean(budget_path['tax_l']):.4f}")
+            print(f"    Payroll tax:       {np.mean(budget_path['tax_p']):.4f}")
+            print(f"    Capital income tax:{np.mean(budget_path['tax_k']):.4f}")
+            print(f"  Average spending:    {np.mean(budget_path['total_spending']):.4f}")
+            print(f"    UI benefits:       {np.mean(budget_path['ui']):.4f}")
+            print(f"    Pensions:          {np.mean(budget_path['pension']):.4f}")
+            print(f"    Health spending:   {np.mean(budget_path['gov_health']):.4f}")
+            print(f"  Average deficit:     {np.mean(budget_path['primary_deficit']):.4f}")
+            print(f"  Deficit/GDP:         {np.mean(budget_path['primary_deficit'] / self.Y_path):.2%}")
+        
+        return budget_path
+    
+    def plot_government_budget(self, save=True, show=True, filename=None):
+        """Plot government budget constraint components."""
+        if not hasattr(self, 'budget_path') or self.budget_path is None:
+            print("Computing government budget path...")
+            self.compute_government_budget_path(n_sim=10000, verbose=True)
+        
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        periods = np.arange(self.T_transition)
+        
+        # Plot 1: Total Revenue and Spending
+        ax = axes[0, 0]
+        ax.plot(periods, self.budget_path['total_revenue'], 
+                label='Total Revenue', linewidth=2, color='green')
+        ax.plot(periods, self.budget_path['total_spending'], 
+                label='Total Spending', linewidth=2, color='red')
+        ax.fill_between(periods, self.budget_path['total_revenue'], 
+                        self.budget_path['total_spending'],
+                        where=(self.budget_path['total_spending'] > self.budget_path['total_revenue']),
+                        alpha=0.3, color='red', label='Deficit')
+        ax.fill_between(periods, self.budget_path['total_revenue'], 
+                        self.budget_path['total_spending'],
+                        where=(self.budget_path['total_revenue'] > self.budget_path['total_spending']),
+                        alpha=0.3, color='green', label='Surplus')
+        ax.set_xlabel('Period')
+        ax.set_ylabel('Amount')
+        ax.set_title('Revenue vs Spending', fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Plot 2: Tax Revenue Breakdown
+        ax = axes[0, 1]
+        ax.plot(periods, self.budget_path['tax_c'], label='Consumption Tax', linewidth=2)
+        ax.plot(periods, self.budget_path['tax_l'], label='Labor Income Tax', linewidth=2)
+        ax.plot(periods, self.budget_path['tax_p'], label='Payroll Tax', linewidth=2)
+        ax.plot(periods, self.budget_path['tax_k'], label='Capital Income Tax', linewidth=2)
+        ax.set_xlabel('Period')
+        ax.set_ylabel('Tax Revenue')
+        ax.set_title('Tax Revenue by Type', fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Plot 3: Spending Breakdown
+        ax = axes[0, 2]
+        ax.plot(periods, self.budget_path['ui'], label='UI Benefits', linewidth=2)
+        ax.plot(periods, self.budget_path['pension'], label='Pensions', linewidth=2)
+        ax.plot(periods, self.budget_path['gov_health'], label='Health Spending', linewidth=2)
+        ax.set_xlabel('Period')
+        ax.set_ylabel('Spending')
+        ax.set_title('Government Spending by Category', fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Plot 4: Primary Deficit
+        ax = axes[1, 0]
+        ax.plot(periods, self.budget_path['primary_deficit'], linewidth=2, color='purple')
+        ax.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+        ax.fill_between(periods, 0, self.budget_path['primary_deficit'],
+                        where=(self.budget_path['primary_deficit'] > 0),
+                        alpha=0.3, color='red', label='Deficit')
+        ax.fill_between(periods, 0, self.budget_path['primary_deficit'],
+                        where=(self.budget_path['primary_deficit'] < 0),
+                        alpha=0.3, color='green', label='Surplus')
+        ax.set_xlabel('Period')
+        ax.set_ylabel('Primary Deficit')
+        ax.set_title('Primary Deficit (Spending - Revenue)', fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Plot 5: Deficit as % of GDP
+        ax = axes[1, 1]
+        deficit_gdp_ratio = (self.budget_path['primary_deficit'] / self.Y_path) * 100
+        ax.plot(periods, deficit_gdp_ratio, linewidth=2, color='darkred')
+        ax.axhline(y=0, color='k', linestyle='--', alpha=0.5)
+        ax.fill_between(periods, 0, deficit_gdp_ratio,
+                        where=(deficit_gdp_ratio > 0),
+                        alpha=0.3, color='red')
+        ax.fill_between(periods, 0, deficit_gdp_ratio,
+                        where=(deficit_gdp_ratio < 0),
+                        alpha=0.3, color='green')
+        ax.set_xlabel('Period')
+        ax.set_ylabel('Deficit/GDP (%)')
+        ax.set_title('Primary Deficit as % of GDP', fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Plot 6: Revenue and Spending as % of GDP
+        ax = axes[1, 2]
+        revenue_gdp = (self.budget_path['total_revenue'] / self.Y_path) * 100
+        spending_gdp = (self.budget_path['total_spending'] / self.Y_path) * 100
+        ax.plot(periods, revenue_gdp, label='Revenue/GDP', linewidth=2, color='green')
+        ax.plot(periods, spending_gdp, label='Spending/GDP', linewidth=2, color='red')
+        ax.set_xlabel('Period')
+        ax.set_ylabel('% of GDP')
+        ax.set_title('Fiscal Ratios to GDP', fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.suptitle('Government Budget Constraint Over Transition', 
+                    fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        if save:
+            if filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"government_budget_{timestamp}.png"
+            filepath = os.path.join(self.output_dir, filename)
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            print(f"Government budget plot saved to: {filepath}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
 
 
 # Test and example code
@@ -988,9 +1245,15 @@ def run_fast_test():
         filename='test_lifecycle_comparison.png'
     )
     
+    # Add government budget plot
+    economy.compute_government_budget_path(n_sim=50, verbose=True)
+    economy.plot_government_budget(save=True, show=False,
+                                   filename='test_government_budget.png')
+    
     print("\nTest plots saved to 'output/test' directory:")
     print("  - test_transition_dynamics.png")
     print("  - test_lifecycle_comparison.png")
+    print("  - test_government_budget.png")
     
     return economy, results
 
@@ -1057,6 +1320,10 @@ def run_full_simulation():
             save=True,
             show=False
         )
+    
+    # Add government budget plot
+    economy.compute_government_budget_path(n_sim=500, verbose=True)
+    economy.plot_government_budget(save=True, show=False)
     
     print("\nAll plots saved to 'output' directory")
     
