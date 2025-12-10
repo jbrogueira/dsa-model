@@ -411,6 +411,12 @@ class LifecycleModelPerfectForesight:
     def _health_process(self):
         """Age-dependent health transition matrix."""
         # Create health grid based on n_h
+        if self.n_h == 1:
+            # If only one health state, it's a single good state with no medical costs
+            m_grid = np.array([self.config.m_good])
+            # The transition matrix is trivial: always stay in the single state
+            P_h = np.ones((self.T, 1, 1))
+            return m_grid, P_h
         if self.n_h == 3:
             h_grid = np.array([
                 self.config.h_good,
@@ -731,12 +737,14 @@ class LifecycleModelPerfectForesight:
                 self.c_policy[t, i_a, :, :, :] = c_pol_slice
 
     def _simulate_sequential(self, T_sim, n_sim):
-        """Sequential simulation (original implementation)."""
+        """Sequential simulation with correct indexing."""
+        
         a_sim = np.zeros((T_sim, n_sim))
         c_sim = np.zeros((T_sim, n_sim))
         y_sim = np.zeros((T_sim, n_sim))
         h_sim = np.zeros((T_sim, n_sim))
         h_idx_sim = np.zeros((T_sim, n_sim), dtype=int)
+        effective_y_sim = np.zeros((T_sim, n_sim))  # ← INITIALIZE AS ARRAY
         ui_sim = np.zeros((T_sim, n_sim))
         m_sim = np.zeros((T_sim, n_sim))
         oop_m_sim = np.zeros((T_sim, n_sim))
@@ -754,140 +762,107 @@ class LifecycleModelPerfectForesight:
         
         avg_earnings_at_retirement = np.zeros(n_sim)
         
-        # --- FIX STARTS HERE ---
         # If the cohort starts retired, their "earnings at retirement" is their initial average earnings.
         if self.current_age >= self.retirement_age and hasattr(self.config, 'initial_avg_earnings') and self.config.initial_avg_earnings is not None:
             avg_earnings_at_retirement.fill(self.config.initial_avg_earnings)
-        # --- FIX ENDS HERE ---
 
         # Initial conditions
-        # Get education-specific unemployment rate
         edu_unemployment_rate = self.config.edu_params[self.config.education_type]['unemployment_rate']
         
         if edu_unemployment_rate < 1e-10:
-            # Start only in employed states (states 1 to n_y-1)
             n_employed = self.n_y - 1
             i_y = np.random.choice(range(1, self.n_y), size=n_sim, 
                                   p=np.ones(n_employed) / n_employed)
         else:
-            # Non-zero unemployment: use stationary distribution of income process
             from scipy.linalg import eig
             eigenvalues, eigenvectors = eig(self.P_y.T)
             stationary_idx = np.argmax(eigenvalues.real)
             stationary = eigenvectors[:, stationary_idx].real
             stationary = stationary / stationary.sum()
             
-            # Draw initial income states from stationary distribution
             i_y = np.random.choice(self.n_y, size=n_sim, p=stationary)
         
         i_y_last = i_y.copy()
-        i_h = np.zeros(n_sim, dtype=int)  # Start in good health
-        i_a = np.zeros(n_sim, dtype=int)  # Start at first asset grid point (a_min)
-        # Initialize average earnings (use config value for older cohorts)
+        i_h = np.zeros(n_sim, dtype=int)
+        i_a = np.zeros(n_sim, dtype=int)
         if hasattr(self.config, 'initial_avg_earnings') and self.config.initial_avg_earnings is not None:
             avg_earnings = np.ones(n_sim) * self.config.initial_avg_earnings
         else:
             avg_earnings = np.zeros(n_sim)
         
-        if verbose := (n_sim <= 100):  # Add diagnostics for small simulations
-            print(f"Initial asset level: {self.a_grid[0]:.3f}")
-            print(f"Asset grid range: [{self.a_grid.min():.3f}, {self.a_grid.max():.3f}]")
-            print(f"Income grid: {self.y_grid}")
-        
-        for t in range(T_sim):
-            age = self.current_age + t
-            is_retired = (age >= self.retirement_age)
+        for t_sim in range(T_sim):
+            lifecycle_age = self.current_age + t_sim
+            is_retired = (lifecycle_age >= self.retirement_age)
             
             for i in range(n_sim):
-                # Record current state
-                a_sim[t, i] = self.a_grid[i_a[i]]
-                h_sim[t, i] = self.h_grid[i_h[i]]
-                h_idx_sim[t, i] = i_h[i]
-                avg_earnings_sim[t, i] = avg_earnings[i]
-                retired_sim[t, i] = is_retired
+                a_sim[t_sim, i] = self.a_grid[i_a[i]]
+                h_sim[t_sim, i] = self.h_grid[i_h[i]]
+                h_idx_sim[t_sim, i] = i_h[i]
+                avg_earnings_sim[t_sim, i] = avg_earnings[i]
+                retired_sim[t_sim, i] = is_retired
                 
                 if is_retired:
-                    # RETIREMENT: Receive pension based on avg_earnings at retirement
-                    if t == self.retirement_age - self.current_age:
-                        # Record avg_earnings at retirement (only once)
+                    # Lock in average earnings at retirement
+                    if t_sim == self.retirement_age - self.current_age:
                         avg_earnings_at_retirement[i] = avg_earnings[i]
                     
-                    pension_replacement = self.pension_replacement_path[age]
-                    pension_sim[t, i] = pension_replacement * avg_earnings_at_retirement[i]
+                    pension_replacement = self.pension_replacement_path[lifecycle_age]
+                    pension_sim[t_sim, i] = pension_replacement * avg_earnings_at_retirement[i]
                     
-                    y_sim[t, i] = 0.0  # No labor income
-                    employed_sim[t, i] = False
-                    ui_sim[t, i] = 0.0
+                    y_sim[t_sim, i] = 0.0
+                    employed_sim[t_sim, i] = False
+                    ui_sim[t_sim, i] = 0.0
                     
-                    # Set income states to unemployed (0) for retired
                     i_y[i] = 0
                     i_y_last[i] = 0
                     
                 else:
-                    # WORKING: Labor income with potential UI
-                    y_sim[t, i] = self.y_grid[i_y[i]]
-                    employed_sim[t, i] = (i_y[i] > 0)
-                    pension_sim[t, i] = 0.0
+                    # WORKING PERIOD
+                    y_sim[t_sim, i] = self.y_grid[i_y[i]]
+                    employed_sim[t_sim, i] = (i_y[i] > 0)
+                    pension_sim[t_sim, i] = 0.0
                     
-                    # Compute UI benefits
                     if i_y[i] == 0:
-                        ui_sim[t, i] = self.ui_replacement_rate * self.w_path[age] * self.y_grid[i_y_last[i]]
+                        ui_sim[t_sim, i] = self.ui_replacement_rate * self.w_path[lifecycle_age] * self.y_grid[i_y_last[i]]
                     else:
-                        ui_sim[t, i] = 0.0
-                
-                c_sim[t, i] = self.c_policy[age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                
-                # Compute health expenditures
-                m_sim[t, i] = self.m_grid[i_h[i]]
-                oop_m_sim[t, i] = (1 - self.kappa) * m_sim[t, i]
-                gov_m_sim[t, i] = self.kappa * m_sim[t, i]
-                
-                # --- FIX STARTS HERE: Move Pension Calculation Up ---
-                if is_retired:
-                    # Record avg_earnings at retirement (only once)
-                    if age == self.retirement_age:
-                        avg_earnings_at_retirement[i] = avg_earnings[i]
+                        ui_sim[t_sim, i] = 0.0
                     
-                    pension_replacement = self.pension_replacement_path[age]
-                    pension_sim[t, i] = pension_replacement * avg_earnings_at_retirement[i]
-                # --- FIX ENDS HERE ---
+                    # --- FIX: UPDATE AVERAGE EARNINGS DURING WORKING YEARS ---
+                    # Compute gross labor income (w * y * h, before taxes, excluding UI)
+                    gross_labor_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i]
+                    
+                    # Update average earnings using expanding average
+                    # Total working years = lifecycle_age + 1 (ages 0, 1, ..., lifecycle_age)
+                    total_work_years = lifecycle_age + 1
+                    
+                    # Expanding average formula: new_avg = (old_avg * (n-1) + new_value) / n
+                    avg_earnings[i] = (avg_earnings[i] * (total_work_years - 1) + gross_labor_income) / total_work_years
+                
+                c_sim[t_sim, i] = self.c_policy[t_sim, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                
+                m_sim[t_sim, i] = self.m_grid[i_h[i]]
+                oop_m_sim[t_sim, i] = (1 - self.kappa) * m_sim[t_sim, i]
+                gov_m_sim[t_sim, i] = self.kappa * m_sim[t_sim, i]
 
-                # Compute tax payments
-                if is_retired:
-                    # Pension income is taxable as labor income
-                    gross_labor_income = pension_sim[t, i]
-                    gross_wage_income = 0.0
-                else:
-                    gross_wage_income = self.w_path[age] * y_sim[t, i] * h_sim[t, i]
-                    gross_labor_income = gross_wage_income + ui_sim[t, i]
+                # --- FIX: Include health multiplier h in effective_y_sim ---
+                effective_y_sim[t_sim, i] = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] + ui_sim[t_sim, i]
                 
-                tax_p_sim[t, i] = self.tau_p_path[age] * gross_wage_income
-                tax_l_sim[t, i] = self.tau_l_path[age] * (gross_labor_income - tax_p_sim[t, i])
-                tax_c_sim[t, i] = self.tau_c_path[age] * c_sim[t, i]
+                gross_labor_income = effective_y_sim[t_sim, i]
+                tax_c_sim[t_sim, i] = self.tau_c_path[lifecycle_age] * c_sim[t_sim, i]
+                tax_l_sim[t_sim, i] = self.tau_l_path[lifecycle_age] * gross_labor_income
+                tax_p_sim[t_sim, i] = self.tau_p_path[lifecycle_age] * pension_sim[t_sim, i]
                 
-                gross_capital_income = self.r_path[age] * a_sim[t, i]
-                tax_k_sim[t, i] = self.tau_k_path[age] * gross_capital_income
+                gross_capital_income = self.r_path[lifecycle_age] * a_sim[t_sim, i]
+                tax_k_sim[t_sim, i] = self.tau_k_path[lifecycle_age] * gross_capital_income
                 
-                # Transition to next period (if not last)
-                if t < T_sim - 1:
-                    i_a[i] = self.a_policy[age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                if t_sim < T_sim - 1:
+                    i_a[i] = self.a_policy[t_sim, i_a[i], i_y[i], i_h[i], i_y_last[i]]
                     
                     if not is_retired:
-                        # Update income states only if not retired
                         i_y_last[i] = i_y[i]
-                        i_y[i] = np.random.choice(self.n_y, p=self.P_y[i_y[i], :])
-                        
-                        # --- FIX STARTS HERE: Correct Average Earnings Calculation ---
-                        # Update average earnings with an expanding window average
-                        current_gross_labor = self.w_path[age] * y_sim[t, i] * h_sim[t, i]
-                        work_years = age - self.current_age + 1
-                        avg_earnings[i] = (avg_earnings[i] * (work_years - 1) + current_gross_labor) / work_years
-                        # --- FIX ENDS HERE ---
+                        i_y[i] = np.searchsorted(np.cumsum(self.P_y[i_y[i], :]), np.random.random())
                     
-                    # Health transitions happen regardless of retirement status
-                    i_h[i] = np.random.choice(self.n_h, p=self.P_h[age, i_h[i], :])
-        
-        effective_y_sim = y_sim * h_sim
+                    i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
         
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
@@ -1153,7 +1128,6 @@ def _solve_and_simulate_education_type(args):
     
     return edu_type, result_dict
 
-
 if __name__ == "__main__":
     import sys
     
@@ -1164,79 +1138,158 @@ if __name__ == "__main__":
         use_parallel_all = "--parallel-all" in sys.argv
         
         print("\n" + "="*70)
-        print("TESTING LIFECYCLE MODEL WITH RETIREMENT")
+        print("TESTING LIFECYCLE MODEL WITH MINIMAL STATE CONFIGURATION")
+        print("  n_h = 1 (single health state)")
+        print("  n_y = 2 (unemployment + 1 employed state)")
+        print("  Single education group (medium)")
+        print("="*70)
         if use_parallel_all:
             print(f"FULL PARALLEL MODE: Using {cpu_count()} CPU cores")
-            print(f"  - Each education type uses internal parallelism")
-            print(f"  - Education types solved sequentially (to avoid nested parallelism)")
         elif use_parallel:
             print(f"PARALLEL MODE: Using {cpu_count()} CPU cores")
-            print(f"  - Solving 3 education types in parallel")
-            print(f"  - Each education type uses sequential solving/simulation")
         print("="*70)
         
-        # Test different education types
-        education_types = ['low', 'medium', 'high']
-        n_sim = 1000
+        # Test with minimal configuration - only medium education
+        education_types = ['medium']  # Only one education type
+        n_sim = 500  # Reduced for faster testing
         
         # Store results for plotting
         all_results = {}
         
-        if use_parallel_all:
-            # FULL PARALLEL: Sequential education types, but parallel internally
-            # This avoids nested parallelism issues
-            for edu_type in education_types:
-                edu_type, result_dict = _solve_and_simulate_education_type(
-                    (edu_type, n_sim, True)  # Enable internal parallelism
-                )
-                all_results[edu_type] = result_dict
-        elif use_parallel:
-            # EDUCATION-LEVEL PARALLEL: Parallel education types, sequential internally
-            args_list = [(edu_type, n_sim, False) for edu_type in education_types]
+        # Run sequentially (only one education type)
+        for edu_type in education_types:
+            print(f"\n{'='*70}")
+            print(f"Education type: {edu_type.upper()}")
+            print('='*70)
             
-            with Pool(processes=min(3, cpu_count())) as pool:
-                results = pool.map(_solve_and_simulate_education_type, args_list)
+            # Create minimal configuration
+            config = LifecycleConfig(
+                T=10,                      # Shorter lifecycle for testing
+                beta=0.96,
+                gamma=2.0,
+                current_age=0,
+                retirement_age=8,          # Retire at age 8 (= real age 28)
+                pension_replacement_default=0.40,
+                education_type=edu_type,
+                n_a=10,                    # Minimal asset grid
+                n_y=2,                     # Just unemployment + 1 employed state
+                n_h=1,                     # Single health state (no health risk)
+                # Override health parameters for n_h=1
+                m_good=0.0,                # No medical costs with single health state
+            )
             
-            # Convert results to dictionary
-            for edu_type, result_dict in results:
-                all_results[edu_type] = result_dict
-        else:
-            # SEQUENTIAL: No parallelism at all
-            for edu_type in education_types:
-                edu_type, result_dict = _solve_and_simulate_education_type(
-                    (edu_type, n_sim, False)
-                )
-                all_results[edu_type] = result_dict
+            # Create and solve model
+            model = LifecycleModelPerfectForesight(config, verbose=True)
+            print(f"\nSolving model for {edu_type}...")
+            model.solve(verbose=True, parallel=use_parallel or use_parallel_all)
+            
+            # Simulate
+            print(f"\nSimulating {n_sim} agents for {edu_type}...")
+            results = model.simulate(n_sim=n_sim, seed=42, parallel=use_parallel or use_parallel_all)
+            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
+             ui_sim, m_sim, oop_m_sim, gov_m_sim,
+             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+             pension_sim, retired_sim) = results
+            
+            # Compute statistics
+            unemployment_rate = np.mean(~employed_sim & ~retired_sim)
+            retirement_rate = np.mean(retired_sim)
+            total_tax = tax_c_sim + tax_l_sim + tax_p_sim + tax_k_sim
+            total_gov_spending = gov_m_sim + ui_sim + pension_sim
+            
+            print(f"\n{'-'*70}")
+            print(f"RESULTS FOR {edu_type.upper()} EDUCATION (MINIMAL CONFIG):")
+            print(f"{'-'*70}")
+            print(f"  Mean assets:              {np.mean(a_sim):.2f}")
+            print(f"  Mean consumption:         {np.mean(c_sim):.3f}")
+            print(f"  Mean effective income:    {np.mean(effective_y_sim):.3f}")
+            print(f"  Mean avg earnings:        {np.mean(avg_earnings_sim):.3f}")
+            
+            if np.any(retired_sim):
+                print(f"  Mean pension (retired):   {np.mean(pension_sim[retired_sim]):.3f}")
+            else:
+                print(f"  Mean pension (retired):   N/A (no retirement periods)")
+            
+            print(f"  Unemployment rate:        {unemployment_rate:.2%}")
+            print(f"  Retirement rate:          {retirement_rate:.2%}")
+            print(f"  Mean total taxes:         {np.mean(total_tax):.4f}")
+            print(f"  Mean gov spending:        {np.mean(total_gov_spending):.4f}")
+            print(f"  Mean UI benefits:         {np.mean(ui_sim):.4f}")
+            print(f"  Mean gov health spending: {np.mean(gov_m_sim):.4f}")
+            
+            # Age-specific statistics
+            print(f"\n  Age-specific means (age 20 = lifecycle age 0):")
+            ages_to_check = list(range(config.T))  # All ages in short lifecycle
+            for age_idx in ages_to_check:
+                if age_idx < len(a_sim):
+                    is_retired_age = age_idx >= (config.retirement_age - config.current_age)
+                    status = "RETIRED" if is_retired_age else "WORKING"
+                    print(f"    Age {20+age_idx} (lifecycle {age_idx}, {status}):")
+                    print(f"      Assets:      {np.mean(a_sim[age_idx, :]):.2f}")
+                    print(f"      Consumption: {np.mean(c_sim[age_idx, :]):.3f}")
+                    print(f"      Employment:  {np.mean(employed_sim[age_idx, :]):.2%}")
+                    if is_retired_age and np.any(pension_sim[age_idx, :] > 0):
+                        print(f"      Pension:     {np.mean(pension_sim[age_idx, :]):.3f}")
+                    else:
+                        print(f"      Income:      {np.mean(effective_y_sim[age_idx, :]):.3f}")
+            
+            # Store results for plotting
+            result_dict = {
+                'a_sim': a_sim,
+                'c_sim': c_sim,
+                'effective_y_sim': effective_y_sim,
+                'pension_sim': pension_sim,
+                'retired_sim': retired_sim,
+                'avg_earnings_sim': avg_earnings_sim,
+                'employed_sim': employed_sim,
+                'ui_sim': ui_sim,
+                'total_tax': total_tax,
+                'total_gov_spending': total_gov_spending,
+                'config': config
+            }
+            
+            all_results[edu_type] = result_dict
         
         print(f"\n{'='*70}")
-        print("GENERATING PLOTS")
+        print("GENERATING PLOTS (MINIMAL CONFIG)")
         print('='*70)
         
-        # Create comprehensive plots
+        # Create comprehensive plots (simplified for single education type)
         fig, axes = plt.subplots(3, 2, figsize=(14, 12))
-        fig.suptitle('Lifecycle Profiles by Education Type', fontsize=16, fontweight='bold')
+        fig.suptitle('Lifecycle Profiles - Minimal Configuration Test', fontsize=16, fontweight='bold')
         
-        colors = {'low': 'C0', 'medium': 'C1', 'high': 'C2'}
+        edu_type = 'medium'
+        res = all_results[edu_type]
+        T_sim = res['a_sim'].shape[0]
+        ages = np.arange(20, 20 + T_sim)
+        retirement_age = res['config'].retirement_age + 20
         
-        for edu_type in education_types:
-            res = all_results[edu_type]
-            T_sim = res['a_sim'].shape[0]
-            ages = np.arange(20, 20 + T_sim)
-            retirement_age = res['config'].retirement_age + 20
-            
-            # Plot mean paths
-            axes[0, 0].plot(ages, res['a_sim'].mean(axis=1), 
-                           label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-            axes[0, 1].plot(ages, res['c_sim'].mean(axis=1), 
-                           label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-            axes[1, 0].plot(ages, res['effective_y_sim'].mean(axis=1), 
-                           label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-            axes[1, 1].plot(ages, res['pension_sim'].mean(axis=1), 
-                           label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-            axes[2, 0].plot(ages, res['total_tax'].mean(axis=1), 
-                           label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-            axes[2, 1].plot(ages, res['total_gov_spending'].mean(axis=1), 
-                           label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
+        # Plot mean paths (no multiple education types, so simpler)
+        axes[0, 0].plot(ages, res['a_sim'].mean(axis=1), 
+                       label='Mean', color='C0', linewidth=2)
+        axes[0, 0].fill_between(ages, 
+                               res['a_sim'].mean(axis=1) - res['a_sim'].std(axis=1),
+                               res['a_sim'].mean(axis=1) + res['a_sim'].std(axis=1),
+                               alpha=0.2, color='C0', label='±1 Std Dev')
+        
+        axes[0, 1].plot(ages, res['c_sim'].mean(axis=1), 
+                       label='Mean', color='C0', linewidth=2)
+        axes[0, 1].fill_between(ages,
+                               res['c_sim'].mean(axis=1) - res['c_sim'].std(axis=1),
+                               res['c_sim'].mean(axis=1) + res['c_sim'].std(axis=1),
+                               alpha=0.2, color='C0')
+        
+        axes[1, 0].plot(ages, res['effective_y_sim'].mean(axis=1), 
+                       label='Mean', color='C0', linewidth=2)
+        
+        axes[1, 1].plot(ages, res['pension_sim'].mean(axis=1), 
+                       label='Mean', color='C0', linewidth=2)
+        
+        axes[2, 0].plot(ages, res['total_tax'].mean(axis=1), 
+                       label='Mean', color='C0', linewidth=2)
+        
+        axes[2, 1].plot(ages, res['total_gov_spending'].mean(axis=1), 
+                       label='Mean', color='C0', linewidth=2)
         
         # Add retirement age vertical line to all plots
         for ax in axes.flat:
@@ -1277,83 +1330,79 @@ if __name__ == "__main__":
         axes[2, 1].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig('lifecycle_profiles_retirement.png', dpi=300, bbox_inches='tight')
-        print("  Saved: lifecycle_profiles_retirement.png")
+        plt.savefig('lifecycle_profiles_minimal_test.png', dpi=300, bbox_inches='tight')
+        print("  Saved: lifecycle_profiles_minimal_test.png")
         
-        # Additional plot: Detailed retirement transition
+        # Additional plot: Employment and earnings details
         fig2, axes2 = plt.subplots(2, 2, figsize=(12, 10))
-        fig2.suptitle('Retirement Transition Details', fontsize=16, fontweight='bold')
+        fig2.suptitle('Employment and Earnings Details - Minimal Config', fontsize=16, fontweight='bold')
         
-        for edu_type in education_types:
-            res = all_results[edu_type]
-            T_sim = res['a_sim'].shape[0]
-            ages = np.arange(20, 20 + T_sim)
-            retirement_age = res['config'].retirement_age + 20
-            
-            # Focus on ages around retirement (60-79)
-            age_mask = (ages >= 60) & (ages <= 79)
-            if np.any(age_mask):
-                ages_focus = ages[age_mask]
-                
-                # Plot average earnings history
-                axes2[0, 0].plot(ages_focus, res['avg_earnings_sim'][age_mask].mean(axis=1),
-                               label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-                
-                # Plot pension benefits
-                axes2[0, 1].plot(ages_focus, res['pension_sim'][age_mask].mean(axis=1),
-                               label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-                
-                # Plot employment rate
-                employment_rate = res['employed_sim'][age_mask].mean(axis=1)
-                axes2[1, 0].plot(ages_focus, employment_rate,
-                               label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
-                
-                # Plot assets
-                axes2[1, 1].plot(ages_focus, res['a_sim'][age_mask].mean(axis=1),
-                               label=edu_type.capitalize(), color=colors[edu_type], linewidth=2)
+        # Average earnings history
+        axes2[0, 0].plot(ages, res['avg_earnings_sim'].mean(axis=1),
+                       label='Mean', color='C0', linewidth=2)
+        axes2[0, 0].axvline(x=retirement_age, color='red', linestyle='--', 
+                          linewidth=1.5, alpha=0.7, label='Retirement Age')
         
-        # Add retirement age line
-        for ax in axes2.flat:
-            ax.axvline(x=retirement_age, color='red', linestyle='--', 
-                      linewidth=1.5, alpha=0.7, label='Retirement Age' if ax == axes2[0, 0] else '')
+        # Employment rate
+        employment_rate = res['employed_sim'].mean(axis=1)
+        axes2[0, 1].plot(ages, employment_rate,
+                       label='Employment Rate', color='C0', linewidth=2)
+        axes2[0, 1].axvline(x=retirement_age, color='red', linestyle='--', 
+                          linewidth=1.5, alpha=0.7)
+        
+        # UI benefits
+        axes2[1, 0].plot(ages, res['ui_sim'].mean(axis=1),
+                       label='UI Benefits', color='C0', linewidth=2)
+        axes2[1, 0].axvline(x=retirement_age, color='red', linestyle='--', 
+                          linewidth=1.5, alpha=0.7)
+        
+        # Savings rate
+        capital_income = res['config'].r_default * res['a_sim']
+        labor_income_flow = res['effective_y_sim'] + res['pension_sim']
+        total_income = capital_income + labor_income_flow
+        savings = total_income - res['c_sim']
+        savings_rate = savings / (total_income + 1e-10)
+        axes2[1, 1].plot(ages, savings_rate.mean(axis=1),
+                       label='Savings Rate', color='C0', linewidth=2)
+        axes2[1, 1].axvline(x=retirement_age, color='red', linestyle='--', 
+                          linewidth=1.5, alpha=0.7)
         
         axes2[0, 0].set_title('Average Earnings History', fontweight='bold')
         axes2[0, 0].set_ylabel('Avg Earnings')
         axes2[0, 0].legend()
         axes2[0, 0].grid(True, alpha=0.3)
         
-        axes2[0, 1].set_title('Pension Benefits', fontweight='bold')
-        axes2[0, 1].set_ylabel('Pension')
+        axes2[0, 1].set_title('Employment Rate', fontweight='bold')
+        axes2[0, 1].set_ylabel('Employment Rate')
         axes2[0, 1].legend()
         axes2[0, 1].grid(True, alpha=0.3)
         
-        axes2[1, 0].set_title('Employment Rate', fontweight='bold')
-        axes2[1, 0].set_ylabel('Employment Rate')
+        axes2[1, 0].set_title('UI Benefits', fontweight='bold')
+        axes2[1, 0].set_ylabel('UI Benefits')
         axes2[1, 0].set_xlabel('Age')
         axes2[1, 0].legend()
         axes2[1, 0].grid(True, alpha=0.3)
         
-        axes2[1, 1].set_title('Assets Around Retirement', fontweight='bold')
-        axes2[1, 1].set_ylabel('Assets')
+        axes2[1, 1].set_title('Savings Rate', fontweight='bold')
+        axes2[1, 1].set_ylabel('Savings Rate')
         axes2[1, 1].set_xlabel('Age')
         axes2[1, 1].legend()
         axes2[1, 1].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig('retirement_transition_details.png', dpi=300, bbox_inches='tight')
-        print("  Saved: retirement_transition_details.png")
+        plt.savefig('employment_earnings_minimal_test.png', dpi=300, bbox_inches='tight')
+        print("  Saved: employment_earnings_minimal_test.png")
         
         # Show plots
         plt.show()
         
         print(f"\n{'='*70}")
-        print("TESTING COMPLETE")
+        print("MINIMAL CONFIGURATION TESTING COMPLETE")
         print('='*70)
     
     else:
         print("Usage: python lifecycle_perfect_foresight.py --test [--parallel] [--parallel-all]")
-        print("  --test         Run testing suite")
-        print("  --parallel     Parallelize across education types (3 parallel jobs)")
-        print("  --parallel-all Maximum parallelism within each education type (sequential education types)")
-        print("")
-        print("Note: --parallel and --parallel-all cannot be combined due to nested parallelism restrictions")
+        print("  --test         Run minimal configuration testing suite")
+        print("                 (n_h=1, n_y=2, T=10, single education group)")
+        print("  --parallel     Use parallel processing within education type")
+        print("  --parallel-all Maximum parallelism (same as --parallel for single education type)")

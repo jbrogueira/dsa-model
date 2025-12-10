@@ -196,7 +196,11 @@ class OLGTransition:
                           verbose=False):
         """
         Solve lifecycle problems for all cohorts given full price paths.
-        OPTIMIZED: Solves only for unique birth cohorts to avoid redundant calculations.
+        
+        Key indexing:
+        - r_path, w_path, etc. are indexed by CALENDAR TIME (0 to T_transition + T - 1)
+        - Each cohort born at calendar time t faces prices from t to t+T-1
+        - Policy functions are indexed by LIFECYCLE AGE (0 to T-1)
         """
         if verbose:
             print("\nSolving cohort lifecycle problems with perfect foresight...")
@@ -229,16 +233,14 @@ class OLGTransition:
             if verbose:
                 print(f"    {edu_type}: age {self.retirement_age} assets = {self.ss_asset_profiles[edu_type][self.retirement_age]:.4f}, avg_earnings = {self.ss_earnings_profiles[edu_type][self.retirement_age]:.4f}")
 
-        # --- OPTIMIZED SOLVER LOOP ---
-        # This dictionary will store solved models for each birth cohort
+        # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
         
         if verbose: print("\n  Solving for unique birth cohorts...")
         
         # Define the range of birth cohorts we need to solve for
-        # Cohorts born before t=0 up to cohorts born at the end of the transition
-        min_birth_period = 1 - self.T
-        max_birth_period = self.T_transition - 1
+        min_birth_period = 1 - self.T  # Oldest cohort alive at t=0
+        max_birth_period = self.T_transition - 1  # Last cohort born during transition
         
         for edu_type in self.education_shares.keys():
             birth_cohort_solutions[edu_type] = {}
@@ -247,27 +249,58 @@ class OLGTransition:
                 if verbose and birth_period % 10 == 0:
                     print(f"    Solving for cohort born at t={birth_period}...")
 
-                # Get the price paths for this specific birth cohort
-                cohort_r = r_path[max(0, birth_period) : birth_period + self.T]
-                cohort_w = w_path[max(0, birth_period) : birth_period + self.T]
+                # --- KEY FIX: Extract the correct calendar time slice ---
+                # This cohort is born at calendar time 'birth_period'
+                # They will live from birth_period to birth_period + T - 1
                 
-                # Pad with initial steady-state prices for cohorts born before t=0
                 if birth_period < 0:
+                    # Cohort born before transition starts
+                    # They experience steady-state until t=0, then transition prices
                     pre_periods = -birth_period
-                    cohort_r = np.concatenate([np.ones(pre_periods) * r_path[0], cohort_r])
-                    cohort_w = np.concatenate([np.ones(pre_periods) * w_path[0], cohort_w])
-
-                # For simplicity, assume taxes are constant for this optimization
-                # A full implementation would handle time-varying taxes similarly
-                cohort_tau_c = np.ones(self.T) * (tau_c_path[0] if tau_c_path is not None else 0)
-                cohort_tau_l = np.ones(self.T) * (tau_l_path[0] if tau_l_path is not None else 0)
-                cohort_tau_p = np.ones(self.T) * (tau_p_path[0] if tau_p_path is not None else 0)
-                cohort_tau_k = np.ones(self.T) * (tau_k_path[0] if tau_k_path is not None else 0)
-                cohort_pension = np.ones(self.T) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4)
+                    cohort_r = np.concatenate([
+                        np.ones(pre_periods) * r_path[0],  # Steady state before t=0
+                        r_path[0:self.T - pre_periods]      # Transition prices
+                    ])
+                    cohort_w = np.concatenate([
+                        np.ones(pre_periods) * w_path[0],
+                        w_path[0:self.T - pre_periods]
+                    ])
+                    cohort_tau_c = np.concatenate([
+                        np.ones(pre_periods) * (tau_c_path[0] if tau_c_path is not None else 0),
+                        (tau_c_path[0:self.T - pre_periods] if tau_c_path is not None else np.zeros(self.T - pre_periods))
+                    ])
+                    cohort_tau_l = np.concatenate([
+                        np.ones(pre_periods) * (tau_l_path[0] if tau_l_path is not None else 0),
+                        (tau_l_path[0:self.T - pre_periods] if tau_l_path is not None else np.zeros(self.T - pre_periods))
+                    ])
+                    cohort_tau_p = np.concatenate([
+                        np.ones(pre_periods) * (tau_p_path[0] if tau_p_path is not None else 0),
+                        (tau_p_path[0:self.T - pre_periods] if tau_p_path is not None else np.zeros(self.T - pre_periods))
+                    ])
+                    cohort_tau_k = np.concatenate([
+                        np.ones(pre_periods) * (tau_k_path[0] if tau_k_path is not None else 0),
+                        (tau_k_path[0:self.T - pre_periods] if tau_k_path is not None else np.zeros(self.T - pre_periods))
+                    ])
+                    cohort_pension = np.concatenate([
+                        np.ones(pre_periods) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4),
+                        (pension_replacement_path[0:self.T - pre_periods] if pension_replacement_path is not None else np.ones(self.T - pre_periods) * 0.4)
+                    ])
+                else:
+                    # Cohort born during or after transition starts
+                    # Extract prices from birth_period to birth_period + T - 1
+                    end_period = birth_period + self.T
+                    
+                    cohort_r = r_path[birth_period:end_period]
+                    cohort_w = w_path[birth_period:end_period]
+                    cohort_tau_c = tau_c_path[birth_period:end_period] if tau_c_path is not None else np.zeros(self.T)
+                    cohort_tau_l = tau_l_path[birth_period:end_period] if tau_l_path is not None else np.zeros(self.T)
+                    cohort_tau_p = tau_p_path[birth_period:end_period] if tau_p_path is not None else np.zeros(self.T)
+                    cohort_tau_k = tau_k_path[birth_period:end_period] if tau_k_path is not None else np.zeros(self.T)
+                    cohort_pension = pension_replacement_path[birth_period:end_period] if pension_replacement_path is not None else np.ones(self.T) * 0.4
 
                 # Create and solve the model for this birth cohort
                 config = LifecycleConfig(
-                    T=self.T, beta=self.beta, gamma=self.gamma, current_age=0, # Always solve from age 0
+                    T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
                     education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
                     retirement_age=self.retirement_age,
                     r_path=cohort_r, w_path=cohort_w,
@@ -293,29 +326,38 @@ class OLGTransition:
                     # Get the pre-solved model for this cohort's birth period
                     solved_model = birth_cohort_solutions[edu_type][birth_period]
                     
-                    # Create a new config with the correct current_age and initial conditions
+                    # Set initial conditions
                     if birth_period < 0:
-                        initial_assets = self.ss_asset_profiles[edu_type][age]
-                        initial_avg_earnings = self.ss_earnings_profiles[edu_type][age]
-                    else:
-                        initial_assets = 0.0
-                        initial_avg_earnings = 0.0
+                        # Cohort born before transition: use steady-state initial conditions
+                        cohort_age_at_transition = -birth_period  # How old they are when transition starts
+                        
+                        # Get steady-state asset and earnings profiles
+                        initial_assets = self.ss_asset_profiles[edu_type][cohort_age_at_transition]
+                        initial_avg_earnings = self.ss_earnings_profiles[edu_type][cohort_age_at_transition]
+                        
+                        # Update config with initial conditions
+                        solved_model.config = solved_model.config._replace(
+                            initial_assets=initial_assets,
+                            initial_avg_earnings=initial_avg_earnings
+                        )
 
-                    # Create a new config for this specific (t, age) instance
-                    # This is cheap as it just copies data
+                    # Create instance config with current age
                     instance_config = solved_model.config._replace(
-                        current_age=age,
-                        initial_assets=initial_assets,
-                        initial_avg_earnings=initial_avg_earnings
+                        current_age=age
                     )
                     
-                    # Create a new model instance, but copy the solved policy functions
-                    # This avoids re-solving the model
+                    # Create a new model instance
                     instance_model = LifecycleModelPerfectForesight(instance_config, verbose=False)
-                    instance_model.V = solved_model.V
-                    instance_model.c_policy = solved_model.c_policy
-                    instance_model.a_policy = solved_model.a_policy
                     
+                    # Copy the relevant slice of policy functions
+                    # The solved model has policies indexed by lifecycle age (0 to T-1)
+                    # This agent is currently at lifecycle age 'age'
+                    # So they need policies from age to T-1
+                    instance_model.V = solved_model.V[age:, :, :, :, :]
+                    instance_model.c_policy = solved_model.c_policy[age:, :, :, :, :]
+                    instance_model.a_policy = solved_model.a_policy[age:, :, :, :, :]
+                    
+                    # Store under the LOOP variable age (not reassigned age!)
                     self.cohort_models[t][edu_type][age] = instance_model
 
         if verbose:
@@ -339,6 +381,12 @@ class OLGTransition:
                 # Simulate from current age to end of life
                 remaining_periods = self.T - age
                 
+                # Handle edge case: agents in their last period
+                if remaining_periods <= 0:
+                    assets_by_age_edu[edu_idx, age] = 0.0
+                    labor_by_age_edu[edu_idx, age] = 0.0
+                    continue
+                
                 results = model.simulate(T_sim=remaining_periods, n_sim=n_sim, 
                                         seed=42 + t * 100 + age)
                 
@@ -347,40 +395,47 @@ class OLGTransition:
                  tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                  pension_sim, retired_sim) = results
                 
+                # --- ENHANCED DEBUG: Check what simulate() returned ---
+                if t == 0 and edu_idx == 0 and age < 5:
+                    print(f"    Age {age}: remaining_periods={remaining_periods}")
+                    print(f"             effective_y_sim type={type(effective_y_sim)}, shape={effective_y_sim.shape if hasattr(effective_y_sim, 'shape') else 'N/A'}")
+                    print(f"             y_sim shape={y_sim.shape if hasattr(y_sim, 'shape') else 'N/A'}")
+                    if effective_y_sim.ndim >= 1:
+                        print(f"             effective_y_sim[0] sample: {effective_y_sim[0] if effective_y_sim.ndim == 1 else effective_y_sim[0, :3]}")
+                
                 # CRITICAL FIX: Manually set initial assets for cohorts born before transition
                 if birth_period < 0 and hasattr(self, 'ss_asset_profiles'):
                     initial_assets = self.ss_asset_profiles[edu_type][age]
-                    
-                    # DEBUG OUTPUT for first period, first few ages
-                    if t == 0 and age < 5:
-                        print(f"\n  DEBUG compute_aggregates: t={t}, age={age}, birth_period={birth_period}")
-                        print(f"    initial_assets from ss_profile: {initial_assets:.4f}")
-                        print(f"    a_sim[0, :5] BEFORE override: {a_sim[0, :5]}")
-                    
-                    a_sim[0, :] = initial_assets  # Override simulated initial assets
-                    
-                    if t == 0 and age < 5:
-                        print(f"    a_sim[0, :5] AFTER override: {a_sim[0, :5]}")
+                    if a_sim.ndim >= 1:
+                        a_sim[0, :] = initial_assets  # Override simulated initial assets
                 
-                # Take assets and labor at time 0 of simulation (which is their current age)
-                assets_by_age_edu[edu_idx, age] = np.mean(a_sim[0, :])
-                labor_by_age_edu[edu_idx, age] = np.mean(effective_y_sim[0, :])
-        
-        # DEBUG: Print aggregation for first period
-        if t == 0:
-            print(f"\n  DEBUG Aggregation at t=0:")
-            print(f"    assets_by_age_edu[0, :]: {assets_by_age_edu[0, :]}")
-            print(f"    labor_by_age_edu[0, :]: {labor_by_age_edu[0, :]}")
-            print(f"    cohort_sizes: {self.cohort_sizes}")
-            print(f"    education_shares_array: {education_shares_array}")
+                # --- FIX: Robust handling of all array dimensions ---
+                # Extract mean asset value for this age/education group
+                if np.isscalar(a_sim) or a_sim.ndim == 0:
+                    assets_by_age_edu[edu_idx, age] = float(a_sim)
+                elif a_sim.ndim == 1:
+                    assets_by_age_edu[edu_idx, age] = np.mean(a_sim)
+                else:  # ndim == 2
+                    assets_by_age_edu[edu_idx, age] = np.mean(a_sim[0, :])
+                
+                # Extract mean labor supply for this age/education group
+                if np.isscalar(effective_y_sim) or effective_y_sim.ndim == 0:
+                    labor_by_age_edu[edu_idx, age] = float(effective_y_sim)
+                elif effective_y_sim.ndim == 1:
+                    labor_by_age_edu[edu_idx, age] = np.mean(effective_y_sim)
+                else:  # ndim == 2
+                    labor_by_age_edu[edu_idx, age] = np.mean(effective_y_sim[0, :])
+                
+                # --- DEBUG: Print to diagnose zero labor issue ---
+                if t == 0 and edu_idx == 0 and age < 5:
+                    print(f"    Age {age}: assets={assets_by_age_edu[edu_idx, age]:.4f}, "
+                          f"labor={labor_by_age_edu[edu_idx, age]:.4f}, "
+                          f"effective_y_sim shape={effective_y_sim.shape}")
         
         K, L = self._aggregate_capital_labor_njit(
             assets_by_age_edu, labor_by_age_edu,
             self.cohort_sizes, education_shares_array
         )
-        
-        if t == 0:
-            print(f"    Aggregated K: {K:.4f}, L: {L:.4f}")
         
         return K, L
     
@@ -640,22 +695,9 @@ class OLGTransition:
             plt.close()
     
     def plot_lifecycle_comparison(self, periods_to_plot, edu_type='medium',
-                                  ages_to_plot=None,  # ← NEW parameter
+                                  ages_to_plot=None,
                                   n_sim=5000, save=True, show=True, filename=None):
-        """Compare lifecycle profiles at different points in transition.
-        
-        Parameters
-        ----------
-        periods_to_plot : list
-            List of transition periods to plot
-        edu_type : str
-            Education type to plot
-        ages_to_plot : list or None
-            List of ages at period 0 to plot. If None, plots only newborns (age 0).
-            E.g., [0, 5, 8] plots cohorts aged 0, 5, and 8 at the start of transition.
-        n_sim : int
-            Number of simulations for each cohort
-        """
+        """Compare lifecycle profiles at different points in transition."""
         if self.cohort_models is None:
             raise ValueError("Must simulate transition first")
         
@@ -678,6 +720,10 @@ class OLGTransition:
                 model = self.cohort_models[t][edu_type][age_at_t]
                 remaining_life = self.T - age_at_t
                 
+                # Skip if no remaining life
+                if remaining_life <= 0:
+                    continue
+                
                 results = model.simulate(T_sim=remaining_life, n_sim=n_sim, seed=42)
                 
                 (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
@@ -685,8 +731,31 @@ class OLGTransition:
                  tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                  pension_sim, retired_sim) = results
                 
+                # --- FIX: Handle different array shapes ---
+                # Ensure all arrays are 2D (T_sim, n_sim)
+                def ensure_2d(arr):
+                    """Convert scalar or 1D array to 2D array."""
+                    if np.isscalar(arr) or arr.ndim == 0:
+                        return np.array([[arr]])
+                    elif arr.ndim == 1:
+                        return arr.reshape(-1, 1)
+                    else:
+                        return arr
+                
+                a_sim = ensure_2d(a_sim)
+                c_sim = ensure_2d(c_sim)
+                effective_y_sim = ensure_2d(effective_y_sim)
+                pension_sim = ensure_2d(pension_sim)
+                employed_sim = ensure_2d(employed_sim)
+                oop_m_sim = ensure_2d(oop_m_sim)
+                avg_earnings_sim = ensure_2d(avg_earnings_sim)
+                tax_c_sim = ensure_2d(tax_c_sim)
+                tax_l_sim = ensure_2d(tax_l_sim)
+                tax_p_sim = ensure_2d(tax_p_sim)
+                tax_k_sim = ensure_2d(tax_k_sim)
+                
                 # Adjust ages to show actual age (20 + lifecycle age)
-                ages = np.arange(remaining_life) + 20 + age_at_t
+                ages = np.arange(a_sim.shape[0]) + 20 + age_at_t
                 
                 # Create label showing period, starting age, and interest rate
                 label = f't={t}, start_age={20+age_at_t}, r={self.r_path[t]:.3f}'
@@ -719,7 +788,8 @@ class OLGTransition:
                 # Plot 7: Savings Rate
                 plt.subplot(3, 3, 7)
                 capital_income = self.r_path[t] * a_sim
-                labor_income_flow = effective_y_sim * self.w_path[t] + pension_sim
+                # FIX: effective_y_sim already includes wage (w*y*h), don't multiply again
+                labor_income_flow = effective_y_sim + pension_sim
                 total_income = capital_income + labor_income_flow
                 savings = total_income - c_sim
                 savings_rate = savings / (total_income + 1e-10)
@@ -825,15 +895,15 @@ class OLGTransition:
 
 # Test and example code
 def get_test_config():
-    """Return a minimal configuration for fast testing."""
+    """Return a 'lightning fast' configuration for quick structural tests."""
     config = LifecycleConfig(
-        T=20,                    # Short lifecycle (20 years)
+        T=10,
         beta=0.96,
         gamma=2.0,
-        n_a=20,                  # Small asset grid
-        n_y=3,                   # Fewer income states
-        n_h=2,
-        retirement_age=15,       # Retire at period 15 (e.g., age 35)
+        n_a=10,
+        n_y=2,
+        n_h=1,
+        retirement_age=8,
         education_type='medium'
     )
     return config
@@ -854,7 +924,7 @@ def run_fast_test():
     print(f"  T = {config.T} periods (e.g., ages 20-{20 + config.T - 1})")
     print(f"  retirement_age = {config.retirement_age} (e.g., age {20 + config.retirement_age})")
     print(f"  n_a = {config.n_a} asset grid points")
-    print(f"  n_sim = 100 simulations")
+    print(f"  n_sim = 50 simulations")
     print()
 
     economy = OLGTransition(
@@ -869,7 +939,7 @@ def run_fast_test():
         output_dir='output/test'
     )
     
-    T_transition = 10  # Short transition period
+    T_transition = 5  # Very short transition period
     r_initial = 0.04
     r_final = 0.02
     
@@ -895,7 +965,7 @@ def run_fast_test():
         tau_p_path=tau_p_path,
         tau_k_path=tau_k_path,
         pension_replacement_path=pension_replacement_path,
-        n_sim=100,
+        n_sim=50, # Reduced simulations
         verbose=True
     )
     end = time.time()
@@ -910,9 +980,9 @@ def run_fast_test():
     
     economy.plot_lifecycle_comparison(
         periods_to_plot=[0],
-        ages_to_plot=[0, 10, 16],  # Newborn (20), Mid-career (30), and Retiree (36)
+        ages_to_plot=[0, 5, 9],  # Adjusted for T=10
         edu_type='medium',
-        n_sim=100,
+        n_sim=50, # Reduced simulations
         save=True,
         show=False,
         filename='test_lifecycle_comparison.png'
