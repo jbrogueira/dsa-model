@@ -731,15 +731,15 @@ class LifecycleModelJAX:
             
             # Update average earnings (if working)
             gross_labor_income = w_t * y * h
-            total_work_years = jnp.maximum(lifecycle_age + 1, 1)
+            total_work_years = jnp.maximum(lifecycle_age - self.current_age + 1, 1)
             avg_earnings = jnp.where(
                 ~is_retired,
                 (avg_earnings * (total_work_years - 1) + gross_labor_income) / total_work_years,
                 avg_earnings
             )
             
-            # Policy functions
-            c = self.c_policy[t, i_a, i_y, i_h, i_y_last]
+            # Policy functions - use lifecycle_age to index
+            c = self.c_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
             
             # Medical costs
             m = self.m_grid[i_h]
@@ -753,10 +753,10 @@ class LifecycleModelJAX:
             tax_k = self.tau_k_path[lifecycle_age] * r_t * a
             
             # Next period states
-            # Asset policy
+            # Asset policy - use lifecycle_age to index
             i_a_next = jnp.where(
                 t < T_sim - 1,
-                self.a_policy[t, i_a, i_y, i_h, i_y_last],
+                self.a_policy[lifecycle_age, i_a, i_y, i_h, i_y_last],
                 i_a
             )
             
@@ -827,7 +827,8 @@ class LifecycleModelJAX:
                 'key': key
             }
             
-            return new_state, output        
+            return new_state, output
+        
         # Run scan over time periods
         _, outputs = lax.scan(scan_body, init_state, jnp.arange(T_sim))
         
@@ -877,12 +878,12 @@ if __name__ == "__main__":
         
         # Production configuration with high resolution
         config = LifecycleConfigJAX(
-            T=60,                      # Full lifecycle
-            beta=0.96,
+            T=60,                      # Full lifecycle (age 20-80)
+            beta=0.97,                 # Higher discount factor (more patient)
             gamma=2.0,
             current_age=20,
             retirement_age=65,
-            pension_replacement_default=0.40,
+            pension_replacement_default=0.60,  # More generous pension (60% replacement)
             education_type='medium',
             n_a=100,                   # High resolution for assets
             n_y=7,                     # More income states
@@ -890,7 +891,42 @@ if __name__ == "__main__":
             a_max=100.0,               # Larger asset range
             m_good=0.05,
             m_moderate=0.15,
-            m_poor=0.30
+            m_poor=0.30,
+            # Adjust income process for realistic lifecycle profile
+            edu_params={
+                'low': {
+                    'mu_y': 0.0,       # Mean of log income (will be exp(0.0) = 1.0)
+                    'sigma_y': 0.15,   # Standard deviation
+                    'rho_y': 0.95,     # High persistence
+                    'unemployment_rate': 0.08,
+                },
+                'medium': {
+                    'mu_y': 0.3,       # Higher mean (exp(0.3) ≈ 1.35)
+                    'sigma_y': 0.20,   # More variance
+                    'rho_y': 0.96,     # High persistence
+                    'unemployment_rate': 0.05,
+                },
+                'high': {
+                    'mu_y': 0.5,       # Even higher mean (exp(0.5) ≈ 1.65)
+                    'sigma_y': 0.25,   # More variance
+                    'rho_y': 0.97,     # Very high persistence
+                    'unemployment_rate': 0.03,
+                }
+            },
+            # More realistic initial conditions
+            initial_assets=0.5,        # Start with some assets
+            initial_avg_earnings=0.8,  # Start below average earnings
+            # Adjust wage path to show lifecycle earnings growth
+            w_path=np.concatenate([
+                # Ages 20-35: Rapid growth (entry to mid-career)
+                np.linspace(0.7, 1.2, 15),
+                # Ages 35-50: Continued growth (mid to senior)
+                np.linspace(1.2, 1.5, 15),
+                # Ages 50-65: Peak and slight decline (senior to retirement)
+                np.linspace(1.5, 1.45, 15),
+                # Ages 65-80: Retirement (wage irrelevant but set for consistency)
+                np.ones(15) * 1.45
+            ])
         )
         
         n_sim = 50000  # Large simulation
