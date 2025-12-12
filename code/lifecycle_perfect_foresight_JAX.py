@@ -604,9 +604,14 @@ class LifecycleModelJAX:
         Simulate lifecycle paths (batched on GPU).
         
         Uses JAX's random number generation and vectorized operations.
+        
+        Args:
+            T_sim: Number of periods to simulate (default: full lifecycle T)
+            n_sim: Number of agents to simulate
+            seed: Random seed
         """
         if T_sim is None:
-            T_sim = self.T - self.current_age
+            T_sim = self.T  # Changed from: self.T - self.current_age
         
         key = jax.random.PRNGKey(seed)
         
@@ -847,7 +852,7 @@ if __name__ == "__main__":
         print("TESTING JAX LIFECYCLE MODEL (GPU-ACCELERATED)")
         print("="*70)
         
-        # Create minimal config
+        # Create minimal config for quick testing
         config = LifecycleConfigJAX(
             T=10,
             beta=0.96,
@@ -862,10 +867,93 @@ if __name__ == "__main__":
             m_good=0.0
         )
         
-        # Create and solve model
-        print("\nCreating model...")
-        model = LifecycleModelJAX(config, verbose=True)
+        n_sim = 5000
         
+    else:
+        # PRODUCTION MODE - larger state space
+        print("\n" + "="*70)
+        print("PRODUCTION RUN - JAX LIFECYCLE MODEL")
+        print("="*70)
+        
+        # Production configuration with high resolution
+        config = LifecycleConfigJAX(
+            T=60,                      # Full lifecycle
+            beta=0.96,
+            gamma=2.0,
+            current_age=20,
+            retirement_age=65,
+            pension_replacement_default=0.40,
+            education_type='medium',
+            n_a=100,                   # High resolution for assets
+            n_y=7,                     # More income states
+            n_h=3,                     # Full health states
+            a_max=100.0,               # Larger asset range
+            m_good=0.05,
+            m_moderate=0.15,
+            m_poor=0.30
+        )
+        
+        n_sim = 50000  # Large simulation
+    
+    # ============================================================
+    # Common code for both test and production
+    # ============================================================
+    
+    # Create model
+    print("\nCreating model...")
+    model = LifecycleModelJAX(config, verbose=True)
+    
+    # ============================================================
+    # Solve and simulate (WITH warm-up for production only)
+    # ============================================================
+    
+    if "--test" not in sys.argv:
+        # PRODUCTION: Run with warm-up to show compilation overhead
+        print("\nSolving model...")
+        start = time.time()
+        model.solve(verbose=True)
+        warmup_solve_time = time.time() - start
+        
+        print(f"\n{'='*70}")
+        print(f"SOLVE TIME: {warmup_solve_time:.2f} seconds")
+        print(f"{'='*70}")
+        
+        print("\nSimulating...")
+        start = time.time()
+        results = model.simulate(n_sim=n_sim, seed=42)
+        warmup_sim_time = time.time() - start
+        
+        print(f"\n{'='*70}")
+        print(f"SIMULATION TIME: {warmup_sim_time:.2f} seconds ({n_sim:,} agents)")
+        print(f"{'='*70}")
+        
+        # Run again to show speedup from compiled code
+        print("\nRunning compiled version...")
+        start = time.time()
+        model.solve(verbose=False)
+        actual_solve_time = time.time() - start
+        
+        start = time.time()
+        results = model.simulate(n_sim=n_sim, seed=42)
+        actual_sim_time = time.time() - start
+        
+        # Show performance improvement
+        solve_speedup = warmup_solve_time / actual_solve_time
+        sim_speedup = warmup_sim_time / actual_sim_time
+        
+        if solve_speedup > 1.5 or sim_speedup > 1.5:
+            print("\n" + "="*70)
+            print("PERFORMANCE NOTE")
+            print("="*70)
+            if solve_speedup > 1.5:
+                print(f"Solve: JIT compilation overhead was {warmup_solve_time - actual_solve_time:.2f}s")
+                print(f"       ({solve_speedup:.1f}x speedup after compilation)")
+            if sim_speedup > 1.5:
+                print(f"Simulation: JIT compilation overhead was {warmup_sim_time - actual_sim_time:.2f}s")
+                print(f"            ({sim_speedup:.1f}x speedup after compilation)")
+    
+    else:
+        # TEST: Just run once (no warm-up comparison)
         print("\nSolving model...")
         start = time.time()
         model.solve(verbose=True)
@@ -875,9 +963,7 @@ if __name__ == "__main__":
         print(f"SOLVE TIME: {solve_time:.2f} seconds")
         print(f"{'='*70}")
         
-        # Simulate
         print("\nSimulating...")
-        n_sim = 5000
         start = time.time()
         results = model.simulate(n_sim=n_sim, seed=42)
         sim_time = time.time() - start
@@ -885,59 +971,79 @@ if __name__ == "__main__":
         print(f"\n{'='*70}")
         print(f"SIMULATION TIME: {sim_time:.2f} seconds ({n_sim:,} agents)")
         print(f"{'='*70}")
-        
-        # Extract results
-        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
-         ui_sim, m_sim, oop_m_sim, gov_m_sim, tax_c_sim, tax_l_sim, tax_p_sim, 
-         tax_k_sim, avg_earnings_sim, pension_sim, retired_sim) = results
-        
-        # Convert to numpy for plotting
-        a_sim_np = np.array(a_sim)
-        c_sim_np = np.array(c_sim)
-        effective_y_sim_np = np.array(effective_y_sim)
-        pension_sim_np = np.array(pension_sim)
-        
-        # Print statistics
-        print(f"\nRESULTS:")
-        print(f"  Mean assets:       {np.mean(a_sim_np):.2f}")
-        print(f"  Mean consumption:  {np.mean(c_sim_np):.3f}")
-        print(f"  Mean income:       {np.mean(effective_y_sim_np):.3f}")
-        
-        # For pension, only compute mean for retired periods
-        retired_mask = np.array(retired_sim).flatten()
-        pension_flat = pension_sim_np.flatten()
-        if np.any(retired_mask):
-            mean_pension = np.mean(pension_flat[retired_mask])
-            print(f"  Mean pension:      {mean_pension:.3f}")
-        else:
-            print(f"  Mean pension:      N/A (no retirement periods)")
-        
-        # Simple plot
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        ages = np.arange(20, 20 + config.T)
-        
-        axes[0, 0].plot(ages, a_sim_np.mean(axis=1))
-        axes[0, 0].set_title('Assets')
-        axes[0, 0].axvline(x=20+config.retirement_age, color='r', linestyle='--')
-        
-        axes[0, 1].plot(ages, c_sim_np.mean(axis=1))
-        axes[0, 1].set_title('Consumption')
-        axes[0, 1].axvline(x=20+config.retirement_age, color='r', linestyle='--')
-        
-        axes[1, 0].plot(ages, effective_y_sim_np.mean(axis=1))
-        axes[1, 0].set_title('Income')
-        axes[1, 0].axvline(x=20+config.retirement_age, color='r', linestyle='--')
-        
-        axes[1, 1].plot(ages, pension_sim_np.mean(axis=1))
-        axes[1, 1].set_title('Pension')
-        axes[1, 1].axvline(x=20+config.retirement_age, color='r', linestyle='--')
-        
-        plt.tight_layout()
-        plt.savefig('jax_test_results.png', dpi=300)
-        print("\nPlot saved: jax_test_results.png")
-        
-        plt.show()
-        
+    
+    # ============================================================
+    # Extract and display results (common for both modes)
+    # ============================================================
+    
+    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+     ui_sim, m_sim, oop_m_sim, gov_m_sim, tax_c_sim, tax_l_sim, tax_p_sim, 
+     tax_k_sim, avg_earnings_sim, pension_sim, retired_sim) = results
+    
+    # Convert to numpy for plotting
+    a_sim_np = np.array(a_sim)
+    c_sim_np = np.array(c_sim)
+    effective_y_sim_np = np.array(effective_y_sim)
+    pension_sim_np = np.array(pension_sim)
+    
+    # Print statistics
+    print(f"\nRESULTS:")
+    print(f"  Mean assets:       {np.mean(a_sim_np):.2f}")
+    print(f"  Mean consumption:  {np.mean(c_sim_np):.3f}")
+    print(f"  Mean income:       {np.mean(effective_y_sim_np):.3f}")
+    
+    # For pension, only compute mean for retired periods
+    retired_mask = np.array(retired_sim).flatten()
+    pension_flat = pension_sim_np.flatten()
+    if np.any(retired_mask):
+        mean_pension = np.mean(pension_flat[retired_mask])
+        print(f"  Mean pension:      {mean_pension:.3f}")
+    else:
+        print(f"  Mean pension:      N/A (no retirement periods)")
+    
+    # Simple plot
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # Get actual simulation length from data and create age array
+    T_sim = a_sim_np.shape[0]
+    ages = np.arange(config.current_age, config.current_age + T_sim)
+    
+    axes[0, 0].plot(ages, a_sim_np.mean(axis=1))
+    axes[0, 0].set_title('Assets')
+    axes[0, 0].axvline(x=config.retirement_age, color='r', linestyle='--', label='Retirement')
+    axes[0, 0].legend()
+    axes[0, 0].set_xlabel('Age')
+    
+    axes[0, 1].plot(ages, c_sim_np.mean(axis=1))
+    axes[0, 1].set_title('Consumption')
+    axes[0, 1].axvline(x=config.retirement_age, color='r', linestyle='--')
+    axes[0, 1].set_xlabel('Age')
+    
+    axes[1, 0].plot(ages, effective_y_sim_np.mean(axis=1))
+    axes[1, 0].set_title('Income')
+    axes[1, 0].axvline(x=config.retirement_age, color='r', linestyle='--')
+    axes[1, 0].set_xlabel('Age')
+    
+    axes[1, 1].plot(ages, pension_sim_np.mean(axis=1))
+    axes[1, 1].set_title('Pension')
+    axes[1, 1].axvline(x=config.retirement_age, color='r', linestyle='--')
+    axes[1, 1].set_xlabel('Age')
+    
+    plt.tight_layout()
+    
+    # Save with different names for test vs production
+    if "--test" in sys.argv:
+        filename = 'jax_test_results.png'
         print(f"\n{'='*70}")
         print("JAX TEST COMPLETE")
         print(f"{'='*70}")
+    else:
+        filename = 'jax_production_results.png'
+        print(f"\n{'='*70}")
+        print("JAX PRODUCTION RUN COMPLETE")
+        print(f"{'='*70}")
+    
+    plt.savefig(filename, dpi=300)
+    print(f"\nPlot saved: {filename}")
+    
+    plt.show()
