@@ -232,6 +232,9 @@ class OLGTransition:
             self.ss_earnings_profiles[edu_type] = np.mean(results[15], axis=1)
             if verbose:
                 print(f"    {edu_type}: age {self.retirement_age} assets = {self.ss_asset_profiles[edu_type][self.retirement_age]:.4f}, avg_earnings = {self.ss_earnings_profiles[edu_type][self.retirement_age]:.4f}")
+            print(f"\nSteady-state asset profile for {edu_type}:")
+            for age in range(min(5, len(self.ss_asset_profiles[edu_type]))):
+                print(f"  Age {age}: {self.ss_asset_profiles[edu_type][age]:.4f}")
 
         # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
@@ -345,6 +348,14 @@ class OLGTransition:
                     instance_config = solved_model.config._replace(
                         current_age=age
                     )
+
+                    # DEBUG: Check if initial_assets is being preserved
+                    if birth_period < 0 and age >= 2 and age <= 4 and t == 0:
+                        print(f"\nDEBUG solve_cohort_problems: t={t}, age={age}, birth_period={birth_period}")
+                        print(f"  cohort_age_at_transition: {-birth_period}")
+                        print(f"  SS profile initial_assets: {self.ss_asset_profiles[edu_type][-birth_period]:.4f}")
+                        print(f"  solved_model.config.initial_assets: {solved_model.config.initial_assets}")
+                        print(f"  instance_config.initial_assets: {instance_config.initial_assets}")
                     
                     # Create a new model instance
                     instance_model = LifecycleModelPerfectForesight(instance_config, verbose=False)
@@ -403,11 +414,11 @@ class OLGTransition:
                     if effective_y_sim.ndim >= 1:
                         print(f"             effective_y_sim[0] sample: {effective_y_sim[0] if effective_y_sim.ndim == 1 else effective_y_sim[0, :3]}")
                 
-                # CRITICAL FIX: Manually set initial assets for cohorts born before transition
-                if birth_period < 0 and hasattr(self, 'ss_asset_profiles'):
-                    initial_assets = self.ss_asset_profiles[edu_type][age]
-                    if a_sim.ndim >= 1:
-                        a_sim[0, :] = initial_assets  # Override simulated initial assets
+                # # CRITICAL FIX: Manually set initial assets for cohorts born before transition
+                # if birth_period < 0 and hasattr(self, 'ss_asset_profiles'):
+                #     initial_assets = self.ss_asset_profiles[edu_type][age]
+                #     if a_sim.ndim >= 1:
+                #         a_sim[0, :] = initial_assets  # Override simulated initial assets
                 
                 # --- FIX: Robust handling of all array dimensions ---
                 # Extract mean asset value for this age/education group
@@ -1157,7 +1168,7 @@ def get_test_config():
         T=10,
         beta=0.96,
         gamma=2.0,
-        n_a=10,
+        n_a=50,
         n_y=2,
         n_h=1,
         retirement_age=8,
@@ -1271,7 +1282,7 @@ def run_full_simulation():
         T=40,
         beta=0.98,
         gamma=2.0,
-        n_a=30,
+        n_a=50,
         n_y=3,
         n_h=3,
         retirement_age=30,

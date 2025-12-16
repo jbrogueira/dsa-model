@@ -784,7 +784,23 @@ class LifecycleModelPerfectForesight:
         
         i_y_last = i_y.copy()
         i_h = np.zeros(n_sim, dtype=int)
-        i_a = np.zeros(n_sim, dtype=int)
+        if hasattr(self.config, 'initial_assets') and self.config.initial_assets is not None:
+        # Find closest grid point to initial_assets
+            i_a_initial = np.argmin(np.abs(self.a_grid - self.config.initial_assets))
+            i_a = np.full(n_sim, i_a_initial, dtype=int)
+
+               # DEBUG: Print what's happening
+            if self.current_age >= 2 and self.current_age <= 4:
+                print(f"\nDEBUG _simulate_sequential: age={self.current_age}")
+                print(f"  config.initial_assets = {self.config.initial_assets:.4f}")
+                print(f"  a_grid range: [{self.a_grid[0]:.4f}, {self.a_grid[-1]:.4f}]")
+                print(f"  a_grid length: {len(self.a_grid)}")  # ← ADD THIS
+                print(f"  a_grid first 5 points: {self.a_grid[:5]}")  # ← ADD THIS
+                print(f"  i_a_initial = {i_a_initial}")
+                print(f"  a_grid[i_a_initial] = {self.a_grid[i_a_initial]:.4f}")
+        else:
+        # Default: start with zero assets
+            i_a = np.zeros(n_sim, dtype=int)
         if hasattr(self.config, 'initial_avg_earnings') and self.config.initial_avg_earnings is not None:
             avg_earnings = np.ones(n_sim) * self.config.initial_avg_earnings
         else:
@@ -1171,7 +1187,7 @@ if __name__ == "__main__":
                 retirement_age=8,          # Retire at age 8 (= real age 28)
                 pension_replacement_default=0.40,
                 education_type=edu_type,
-                n_a=10,                    # Minimal asset grid
+                n_a=50,                    # Minimal asset grid
                 n_y=2,                     # Just unemployment + 1 employed state
                 n_h=1,                     # Single health state (no health risk)
                 # Override health parameters for n_h=1
