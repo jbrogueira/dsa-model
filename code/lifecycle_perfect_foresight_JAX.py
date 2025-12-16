@@ -862,7 +862,7 @@ if __name__ == "__main__":
             retirement_age=8,
             pension_replacement_default=0.40,
             education_type='medium',
-            n_a=10,
+            n_a=50,  # Changed from 10 to 50
             n_y=2,
             n_h=1,
             m_good=0.0
