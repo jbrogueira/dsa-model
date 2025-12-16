@@ -232,9 +232,6 @@ class OLGTransition:
             self.ss_earnings_profiles[edu_type] = np.mean(results[15], axis=1)
             if verbose:
                 print(f"    {edu_type}: age {self.retirement_age} assets = {self.ss_asset_profiles[edu_type][self.retirement_age]:.4f}, avg_earnings = {self.ss_earnings_profiles[edu_type][self.retirement_age]:.4f}")
-            print(f"\nSteady-state asset profile for {edu_type}:")
-            for age in range(min(5, len(self.ss_asset_profiles[edu_type]))):
-                print(f"  Age {age}: {self.ss_asset_profiles[edu_type][age]:.4f}")
 
         # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
@@ -349,14 +346,6 @@ class OLGTransition:
                         current_age=age
                     )
 
-                    # DEBUG: Check if initial_assets is being preserved
-                    if birth_period < 0 and age >= 2 and age <= 4 and t == 0:
-                        print(f"\nDEBUG solve_cohort_problems: t={t}, age={age}, birth_period={birth_period}")
-                        print(f"  cohort_age_at_transition: {-birth_period}")
-                        print(f"  SS profile initial_assets: {self.ss_asset_profiles[edu_type][-birth_period]:.4f}")
-                        print(f"  solved_model.config.initial_assets: {solved_model.config.initial_assets}")
-                        print(f"  instance_config.initial_assets: {instance_config.initial_assets}")
-                    
                     # Create a new model instance
                     instance_model = LifecycleModelPerfectForesight(instance_config, verbose=False)
                     
@@ -406,14 +395,6 @@ class OLGTransition:
                  tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                  pension_sim, retired_sim) = results
                 
-                # --- ENHANCED DEBUG: Check what simulate() returned ---
-                if t == 0 and edu_idx == 0 and age < 5:
-                    print(f"    Age {age}: remaining_periods={remaining_periods}")
-                    print(f"             effective_y_sim type={type(effective_y_sim)}, shape={effective_y_sim.shape if hasattr(effective_y_sim, 'shape') else 'N/A'}")
-                    print(f"             y_sim shape={y_sim.shape if hasattr(y_sim, 'shape') else 'N/A'}")
-                    if effective_y_sim.ndim >= 1:
-                        print(f"             effective_y_sim[0] sample: {effective_y_sim[0] if effective_y_sim.ndim == 1 else effective_y_sim[0, :3]}")
-                
                 # # CRITICAL FIX: Manually set initial assets for cohorts born before transition
                 # if birth_period < 0 and hasattr(self, 'ss_asset_profiles'):
                 #     initial_assets = self.ss_asset_profiles[edu_type][age]
@@ -437,12 +418,6 @@ class OLGTransition:
                 else:  # ndim == 2
                     labor_by_age_edu[edu_idx, age] = np.mean(effective_y_sim[0, :])
                 
-                # --- DEBUG: Print to diagnose zero labor issue ---
-                if t == 0 and edu_idx == 0 and age < 5:
-                    print(f"    Age {age}: assets={assets_by_age_edu[edu_idx, age]:.4f}, "
-                          f"labor={labor_by_age_edu[edu_idx, age]:.4f}, "
-                          f"effective_y_sim shape={effective_y_sim.shape}")
-        
         K, L = self._aggregate_capital_labor_njit(
             assets_by_age_edu, labor_by_age_edu,
             self.cohort_sizes, education_shares_array

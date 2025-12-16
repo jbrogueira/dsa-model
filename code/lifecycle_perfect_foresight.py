@@ -789,15 +789,6 @@ class LifecycleModelPerfectForesight:
             i_a_initial = np.argmin(np.abs(self.a_grid - self.config.initial_assets))
             i_a = np.full(n_sim, i_a_initial, dtype=int)
 
-               # DEBUG: Print what's happening
-            if self.current_age >= 2 and self.current_age <= 4:
-                print(f"\nDEBUG _simulate_sequential: age={self.current_age}")
-                print(f"  config.initial_assets = {self.config.initial_assets:.4f}")
-                print(f"  a_grid range: [{self.a_grid[0]:.4f}, {self.a_grid[-1]:.4f}]")
-                print(f"  a_grid length: {len(self.a_grid)}")  # ← ADD THIS
-                print(f"  a_grid first 5 points: {self.a_grid[:5]}")  # ← ADD THIS
-                print(f"  i_a_initial = {i_a_initial}")
-                print(f"  a_grid[i_a_initial] = {self.a_grid[i_a_initial]:.4f}")
         else:
         # Default: start with zero assets
             i_a = np.zeros(n_sim, dtype=int)
