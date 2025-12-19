@@ -25,7 +25,7 @@ class LifecycleConfig:
     
     # === Asset grid parameters ===
     a_min: float = 0.0                   # Borrowing constraint
-    a_max: float = 50.0                  # Maximum assets
+    a_max: float = 100.0                  # Maximum assets
     n_a: int = 100                       # Asset grid points
     
     # === Income process parameters ===
@@ -121,8 +121,8 @@ class LifecycleConfig:
     tau_k_default: float = 0.0
     
     # === Initial conditions ===
-    initial_assets: Optional[float] = None   # Initial asset level (default: a_min)
-    initial_avg_earnings: Optional[float] = None  # ← ADD THIS LINE
+    initial_assets: Optional[float] = 0.1   # Initial asset level (default: a_min)
+    initial_avg_earnings: Optional[float] = 0.0  
     
     def _replace(self, **changes): # <-- 2. Add this method
         """Return a new instance with specified fields replaced."""
@@ -287,7 +287,7 @@ class LifecycleModelPerfectForesight:
         if self.n_h == 3:
             self.m_grid = np.array([
                 config.m_good,
-                config.m_moderate,  # ✅ FIXED
+                config.m_moderate,  
                 config.m_poor
             ])
         elif self.n_h == 2:
