@@ -115,10 +115,10 @@ class LifecycleConfig:
     tau_k_path: Optional[np.ndarray] = None
     
     # Default tax rates if paths not provided
-    tau_c_default: float = 0.0
-    tau_l_default: float = 0.0
-    tau_p_default: float = 0.0
-    tau_k_default: float = 0.0
+    tau_c_default: float = 0.2
+    tau_l_default: float = 0.2
+    tau_p_default: float = 0.2
+    tau_k_default: float = 0.2
     
     # === Initial conditions ===
     initial_assets: Optional[float] = 0.1   # Initial asset level (default: a_min)

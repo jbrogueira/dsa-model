@@ -936,12 +936,18 @@ class OLGTransition:
         filename=None,
     ):
         """
-        Plot mean assets by age for two (possibly incomplete) cohorts along the transition.
+        Plot lifecycle profiles (possibly incomplete) for two cohorts along the transition.
 
-        birth_period b is the calendar period index when the cohort is age 0 (born).
-        For cohort b, at calendar time t the lifecycle age is:
-            age = t - b
-        We simulate the corresponding (t, age) cell and take period-0 mean assets.
+        Shows mean by age for:
+        - assets a
+        - consumption c
+        - (effective) income y_eff (proxy for labor earnings / labor input)
+        - employment rate
+        - unemployment (UI receipt) rate
+
+        Cohort identity: birth_period b is the calendar period index when the cohort is age 0.
+        We only plot ages that are observed within the transition window:
+            max_age = min(T-1, (T_transition - 1) - b)
         """
         if self.cohort_models is None:
             raise ValueError("Run simulate_transition() before plotting.")
@@ -950,15 +956,10 @@ class OLGTransition:
         if len(birth_periods) != 2:
             raise ValueError("birth_periods must have length 2.")
 
-        # Label lines as requested
         cohort_labels = [f"cohort born in period t={int(b)}" for b in birth_periods]
 
         series = []
         for b in birth_periods:
-            ages = []
-            mean_a = []
-
-            # Simulate full cohort from age 0 once, then plot by age
             seed = 999 + 10_000 * int(b)
             results = self._simulate_birth_cohort_cached(
                 edu_type=edu_type,
@@ -966,43 +967,74 @@ class OLGTransition:
                 n_sim=n_sim,
                 seed=seed,
             )
-            a_sim = results[0]  # (T, n_sim)
 
-            # cohort is only observed up to age max_age where calendar time <= T_transition-1:
+            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+             ui_sim, m_sim, oop_m_sim, gov_m_sim,
+             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+             pension_sim, retired_sim) = results
+
             max_age = min(self.T - 1, self.T_transition - 1 - int(b))
             ages = np.arange(0, max_age + 1, dtype=int)
+
             mean_a = np.mean(a_sim[ages, :], axis=1)
+            mean_c = np.mean(c_sim[ages, :], axis=1)
+            mean_y_eff = np.mean(effective_y_sim[ages, :], axis=1)
+            emp_rate = np.mean(employed_sim[ages, :], axis=1)
+            ui_rate = np.mean(ui_sim[ages, :] > 0, axis=1).astype(float)
 
-            series.append({"b": int(b), "ages": ages, "a": mean_a})
+            # NEW: pension payments by age (mean)
+            mean_pension = np.mean(pension_sim[ages, :], axis=1)
 
-        # --- Plot: ONE panel, two lines (assets by age) ---
-        fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-
-        for s, lbl in zip(series, cohort_labels):
-            if s["ages"].size == 0:
-                continue
-            order = np.argsort(s["ages"])
-            ax.plot(
-                s["ages"][order],
-                s["a"][order],
-                marker="o",
-                linewidth=2,
-                label=lbl,
+            series.append(
+                {
+                    "b": int(b),
+                    "ages": ages,
+                    "a": mean_a,
+                    "c": mean_c,
+                    "y_eff": mean_y_eff,
+                    "emp": emp_rate,
+                    "ui": ui_rate,
+                    "pension": mean_pension,   # NEW
+                }
             )
 
-        ax.set_title(f"Mean assets by age (edu={edu_type})")
-        ax.set_xlabel("Lifecycle age")
-        ax.set_ylabel("Mean assets")
-        ax.set_xticks(np.arange(0, self.T, 1))
-        ax.grid(True, alpha=0.3)
-        ax.legend()
+        # --- Plot: 6 panels (2x3), no empty panel now ---
+        fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+        axes = axes.ravel()
 
+        def _plot_panel(ax, key, title, ylabel):
+            for s, lbl in zip(series, cohort_labels):
+                if s["ages"].size == 0:
+                    continue
+                order = np.argsort(s["ages"])
+                ax.plot(
+                    s["ages"][order],
+                    s[key][order],
+                    marker="o",
+                    linewidth=2,
+                    label=lbl,
+                )
+            ax.set_title(title)
+            ax.set_xlabel("Lifecycle age")
+            ax.set_ylabel(ylabel)
+            ax.set_xticks(np.arange(0, self.T, 1))
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+        _plot_panel(axes[0], "a", f"Mean assets by age (edu={edu_type})", "Mean assets")
+        _plot_panel(axes[1], "c", f"Mean consumption by age (edu={edu_type})", "Mean consumption")
+        _plot_panel(axes[2], "y_eff", f"Mean effective income by age (edu={edu_type})", "Mean effective income")
+        _plot_panel(axes[3], "emp", f"Employment rate by age (edu={edu_type})", "Employment rate")
+        _plot_panel(axes[4], "ui", f"Unemployment/UI receipt rate by age (edu={edu_type})", "UI receipt rate")
+        _plot_panel(axes[5], "pension", f"Mean pension payments by age (edu={edu_type})", "Mean pension")
+
+        plt.suptitle("Lifecycle Profiles for Two Cohorts Along the Transition", fontsize=14, fontweight="bold")
         plt.tight_layout()
 
         if save:
             if filename is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"lifecycle_assets_two_cohorts_{timestamp}.png"
+                filename = f"lifecycle_profiles_two_cohorts_{timestamp}.png"
             filepath = os.path.join(self.output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"Lifecycle comparison plot saved to: {filepath}")
@@ -1131,11 +1163,11 @@ def run_full_simulation():
     
     config = LifecycleConfig(
         T=40,
-        beta=0.98,
+        beta=0.99,
         gamma=2.0,
         n_a=100,
-        n_y=3,
-        n_h=3,
+        n_y=2,
+        n_h=2,
         retirement_age=30,
         education_type='medium'
     )
