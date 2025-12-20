@@ -21,7 +21,7 @@ class LifecycleConfig:
     # === Retirement parameters ===
     retirement_age: int = 45             # Mandatory retirement age (period index, e.g., 45 = age 65)
     pension_replacement_path: Optional[np.ndarray] = None  # Pension replacement rate path (fraction of avg earnings)
-    pension_replacement_default: float = 0.60  # Default pension replacement rate (60% of avg earnings)
+    pension_replacement_default: float = 0.80  # Default pension replacement rate (60% of avg earnings)
     
     # === Asset grid parameters ===
     a_min: float = 0.0                   # Borrowing constraint
@@ -61,8 +61,8 @@ class LifecycleConfig:
     
     # === Unemployment parameters ===
     job_finding_rate: float = 0.5
-    max_job_separation_rate: float = 0.1
-    ui_replacement_rate: float = 0.4
+    max_job_separation_rate: float = 0.02
+    ui_replacement_rate: float = 0.3
     
     # === Health process parameters ===
     n_h: int = 3
@@ -72,11 +72,11 @@ class LifecycleConfig:
     
     # Health expenditure by health state
     m_good: float = 0.05
-    m_moderate: float = 0.15
-    m_poor: float = 0.30
+    m_moderate: float = 0.55
+    m_poor: float = 0.99
     
     # Government health coverage rate
-    kappa: float = 0.7
+    kappa: float = 0.9
     
     # Health transition probabilities by age group
     P_h_young: list = field(default_factory=lambda: [
@@ -121,7 +121,7 @@ class LifecycleConfig:
     tau_k_default: float = 0.2
     
     # === Initial conditions ===
-    initial_assets: Optional[float] = 0.1   # Initial asset level (default: a_min)
+    initial_assets: Optional[float] = 1   # Initial asset level (default: a_min)
     initial_avg_earnings: Optional[float] = 0.0  
     
     def _replace(self, **changes): # <-- 2. Add this method
