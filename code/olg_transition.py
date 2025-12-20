@@ -1370,18 +1370,21 @@ def run_fast_test():
     """Run OLG transition with minimal parameters for fast testing."""
     import sys
     import time
-    
+
+    # Single MC knob for this run
+    N_SIM_TEST = 100
+
     print("=" * 60)
     print("RUNNING FAST TEST MODE")
     print("=" * 60)
-    
+
     config = get_test_config()
-    
+
     print("\nTest configuration:")
     print(f"  T = {config.T} periods (e.g., ages 20-{20 + config.T - 1})")
     print(f"  retirement_age = {config.retirement_age} (e.g., age {20 + config.retirement_age})")
     print(f"  n_a = {config.n_a} asset grid points")
-    print(f"  n_sim = 50 simulations")
+    print(f"  n_sim = {N_SIM_TEST} simulations")
     print()
 
     economy = OLGTransition(
@@ -1425,8 +1428,8 @@ def run_fast_test():
         tau_p_path=tau_p_path,
         tau_k_path=tau_k_path,
         pension_replacement_path=pension_replacement_path,
-        n_sim=100, # Reduced simulations
-        pop_growth_path=pop_growth_path,  # NEW
+        n_sim=N_SIM_TEST,  # <-- single knob
+        pop_growth_path=pop_growth_path,
         verbose=True
     )
     end = time.time()
@@ -1442,14 +1445,14 @@ def run_fast_test():
     economy.plot_lifecycle_comparison(
         birth_periods=[0, 5],
         edu_type='medium',
-        n_sim=None,  # <-- reuse economy._last_n_sim
+        n_sim=None,  # reuse economy._last_n_sim (== N_SIM_TEST)
         save=True,
         show=False,
         filename='test_lifecycle_comparison.png'
     )
     
     # Add government budget plot
-    economy.compute_government_budget_path(n_sim=None, verbose=True)  # <-- reuse
+    economy.compute_government_budget_path(n_sim=None, verbose=True)  # reuse economy._last_n_sim
     economy.plot_government_budget(save=True, show=False,
                                    filename='test_government_budget.png')
     
@@ -1465,11 +1468,14 @@ def run_full_simulation():
     """Run full OLG transition simulation."""
     import sys
     import time
-    
+
+    # Single MC knob for this run
+    N_SIM_FULL = 500
+
     print("=" * 60)
     print("RUNNING FULL SIMULATION")
     print("=" * 60)
-    
+
     config = LifecycleConfig(
         T=40,
         beta=0.99,
@@ -1480,13 +1486,13 @@ def run_full_simulation():
         retirement_age=30,
         education_type='medium'
     )
-    
+
     economy = OLGTransition(
         lifecycle_config=config,
         alpha=0.33,
         delta=0.05,
         A=1.0,
-        pop_growth=0.01,  # baseline (still used for the time-invariant cohort_sizes)
+        pop_growth=0.01,
         birth_year=1960,
         current_year=2020,
         education_shares={'low': 0.3, 'medium': 0.5, 'high': 0.2},
@@ -1495,7 +1501,7 @@ def run_full_simulation():
     
     T_transition = 60  # Longer transition period
     r_initial = 0.04
-    r_final = 0.03
+    r_final = 0.04
 
     # Tax rates and pension
     tau_c_path = np.ones(T_transition) * 0.18
@@ -1508,7 +1514,7 @@ def run_full_simulation():
     r_path = r_initial + (r_final - r_initial) * (1 - np.exp(-periods / 5))
     
     # NEW: ageing population experiment (declining pop growth over time)
-    pop_growth_path = np.linspace(0.01, 0.01, T_transition)
+    pop_growth_path = np.linspace(0.01, 0.00, T_transition)
     
     print(f"\nSimulating transition from r={r_initial:.3f} to r={r_final:.3f}")
     
@@ -1521,9 +1527,9 @@ def run_full_simulation():
         tau_p_path=tau_p_path,
         tau_k_path=tau_k_path,
         pension_replacement_path=pension_replacement_path,
-        n_sim=500,
+        n_sim=N_SIM_FULL,  # <-- single knob
         verbose=True,
-        pop_growth_path=pop_growth_path,  # NEW
+        pop_growth_path=pop_growth_path,
     )
     end = time.time()
     
@@ -1535,12 +1541,12 @@ def run_full_simulation():
         economy.plot_lifecycle_comparison(
             birth_periods=[0, 5],
             edu_type=edu_type,
-            n_sim=None,  # <-- reuse economy._last_n_sim
+            n_sim=None,  # reuse economy._last_n_sim (== N_SIM_FULL)
             save=True,
             show=False
         )
     
-    economy.compute_government_budget_path(n_sim=None, verbose=True)  # <-- reuse
+    economy.compute_government_budget_path(n_sim=None, verbose=True)  # reuse economy._last_n_sim
     economy.plot_government_budget(save=True, show=False)
     
     print("\nAll plots saved to 'output' directory")
