@@ -1022,6 +1022,18 @@ class OLGTransition:
         
         return budget_path
     
+    def _default_plot_filename(self, prefix: str, ext: str = "png") -> str:
+        """
+        Default unique filename for plots to avoid accidental overwrites.
+
+        Includes timestamp + key scenario parameters.
+        """
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        n_sim = getattr(self, "_last_n_sim", None)
+        ttr = getattr(self, "T_transition", None)
+        edu_tag = "x".join(sorted(list(getattr(self, "education_shares", {}).keys()))) or "edu"
+        return f"{prefix}_{ts}_Ttr{ttr}_T{self.T}_nsim{n_sim}_{edu_tag}.{ext}"
+
     def plot_government_budget(self, save=True, show=True, filename=None):
         """Plot government budget constraint components (drops an initial burn-in window)."""
         if not hasattr(self, "budget_path") or self.budget_path is None:
@@ -1135,8 +1147,7 @@ class OLGTransition:
 
         if save:
             if filename is None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"government_budget_{timestamp}.png"
+                filename = self._default_plot_filename("government_budget")
             filepath = os.path.join(self.output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"Government budget plot saved to: {filepath}")
@@ -1218,8 +1229,7 @@ class OLGTransition:
 
         if save:
             if filename is None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"transition_{timestamp}.png"
+                filename = self._default_plot_filename("transition")
             filepath = os.path.join(self.output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"Transition plot saved to: {filepath}")
@@ -1340,8 +1350,7 @@ class OLGTransition:
 
         if save:
             if filename is None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"lifecycle_comparison_{timestamp}.png"
+                filename = self._default_plot_filename("lifecycle_comparison")
             filepath = os.path.join(self.output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"Lifecycle comparison plot saved to: {filepath}")
@@ -1470,7 +1479,7 @@ def run_full_simulation():
     import time
 
     # Single MC knob for this run
-    N_SIM_FULL = 500
+    N_SIM_FULL = 15000
 
     print("=" * 60)
     print("RUNNING FULL SIMULATION")
@@ -1501,7 +1510,7 @@ def run_full_simulation():
     
     T_transition = 60  # Longer transition period
     r_initial = 0.04
-    r_final = 0.04
+    r_final = 0.03
 
     # Tax rates and pension
     tau_c_path = np.ones(T_transition) * 0.18
@@ -1514,7 +1523,7 @@ def run_full_simulation():
     r_path = r_initial + (r_final - r_initial) * (1 - np.exp(-periods / 5))
     
     # NEW: ageing population experiment (declining pop growth over time)
-    pop_growth_path = np.linspace(0.01, 0.00, T_transition)
+    pop_growth_path = np.linspace(0.01, 0.01, T_transition)
     
     print(f"\nSimulating transition from r={r_initial:.3f} to r={r_final:.3f}")
     
