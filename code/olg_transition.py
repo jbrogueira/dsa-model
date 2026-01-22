@@ -106,10 +106,7 @@ class OLGTransition:
         self.K_path = None
         self.L_path = None
         self.Y_path = None
-        self.cohort_models = None
-
-        # Cache for stochastic simulations (avoid re-simulating same cell in multiple routines)
-        self._sim_cache = {}
+        self.birth_cohort_solutions = None
 
         # NEW: remember last Monte Carlo size used in simulate_transition()
         self._last_n_sim: Optional[int] = None
@@ -186,17 +183,42 @@ class OLGTransition:
                 tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
                 ui_mean, pension_mean, gov_health_mean)
 
-    def _simulate_cached(self, t, edu_type, age, remaining_periods, n_sim, seed):
-        """Run model.simulate(...) once per key and reuse results."""
-        seed = self._seed_u32(seed)
-        key = (t, edu_type, age, remaining_periods, n_sim, seed)
-        if key in self._sim_cache:
-            return self._sim_cache[key]
-        model = self.cohort_models[t][edu_type][age]
-        res = model.simulate(T_sim=remaining_periods, n_sim=n_sim, seed=seed)
-        self._sim_cache[key] = res
-        return res
-    
+    @staticmethod
+    @njit
+    def _slice_mean_single_age_njit(a_sim, effective_y_sim, tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
+                                    ui_sim, pension_sim, gov_m_sim, age: int):
+        """
+        Compute means for a SINGLE age from cohort simulation arrays (shape (T, n_sim)).
+        Returns 9 scalar values. O(n_sim) instead of O(T × n_sim).
+        """
+        n_sim = a_sim.shape[1]
+        inv = 1.0 / n_sim
+
+        sa = 0.0
+        sl = 0.0
+        stc = 0.0
+        stl = 0.0
+        stp = 0.0
+        stk = 0.0
+        sui = 0.0
+        spen = 0.0
+        sg = 0.0
+
+        for j in range(n_sim):
+            sa += a_sim[age, j]
+            sl += effective_y_sim[age, j]
+            stc += tax_c_sim[age, j]
+            stl += tax_l_sim[age, j]
+            stp += tax_p_sim[age, j]
+            stk += tax_k_sim[age, j]
+            sui += ui_sim[age, j]
+            spen += pension_sim[age, j]
+            sg += gov_m_sim[age, j]
+
+        return (sa * inv, sl * inv,
+                stc * inv, stl * inv, stp * inv, stk * inv,
+                sui * inv, spen * inv, sg * inv)
+
     def _simulate_birth_cohort_cached(self, edu_type, birth_period, n_sim, seed):
         """Simulate a full birth cohort once from age 0 and cache it."""
         if not hasattr(self, "_birth_sim_cache"):
@@ -497,54 +519,27 @@ class OLGTransition:
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
 
-        # --- ASSIGN SOLVED MODELS TO THE COHORT_MODELS GRID ---
-        if verbose: print("\n  Assigning solved models to transition grid...")
-        self.cohort_models = {}
-        for t in range(self.T_transition):
-            self.cohort_models[t] = {}
-            for edu_type in self.education_shares.keys():
-                self.cohort_models[t][edu_type] = {}
-                for age in range(self.T):
-                    birth_period = t - age
-                    
-                    # Get the pre-solved model for this cohort's birth period
-                    solved_model = birth_cohort_solutions[edu_type][birth_period]
-                    
-                    # Set initial conditions
-                    if birth_period < 0:
-                        # Cohort born before transition: use steady-state initial conditions
-                        cohort_age_at_transition = -birth_period  # How old they are when transition starts
-                        
-                        # Get steady-state asset and earnings profiles
-                        initial_assets = self.ss_asset_profiles[edu_type][cohort_age_at_transition]
-                        initial_avg_earnings = self.ss_earnings_profiles[edu_type][cohort_age_at_transition]
-                        
-                        # Update config with initial conditions
-                        solved_model.config = solved_model.config._replace(
-                            initial_assets=initial_assets,
-                            initial_avg_earnings=initial_avg_earnings
-                        )
+        # --- SET INITIAL CONDITIONS FOR COHORTS BORN BEFORE TRANSITION ---
+        # Cohorts with birth_period < 0 need steady-state initial conditions
+        if verbose: print("\n  Setting initial conditions for pre-transition cohorts...")
+        for edu_type in self.education_shares.keys():
+            for birth_period in range(-(self.T - 1), 0):
+                # Cohort born before transition: use steady-state initial conditions
+                cohort_age_at_transition = -birth_period  # How old they are when transition starts
 
-                    # Create instance config with current age
-                    instance_config = solved_model.config._replace(
-                        current_age=age
-                    )
+                # Get steady-state asset and earnings profiles
+                initial_assets = self.ss_asset_profiles[edu_type][cohort_age_at_transition]
+                initial_avg_earnings = self.ss_earnings_profiles[edu_type][cohort_age_at_transition]
 
-                    # Create a new model instance
-                    instance_model = LifecycleModelPerfectForesight(instance_config, verbose=False)
-
-                    # IMPORTANT: do NOT slice policies.
-                    # The model's simulation uses t_sim indexed from 0 but maps to lifecycle_age
-                    # using current_age. Policies should remain indexed on absolute lifecycle age (0..T-1).
-                    instance_model.V = solved_model.V
-                    instance_model.c_policy = solved_model.c_policy
-                    instance_model.a_policy = solved_model.a_policy
-                    
-                    # Store under the LOOP variable age (not reassigned age!)
-                    self.cohort_models[t][edu_type][age] = instance_model
+                # Update config with initial conditions
+                model = birth_cohort_solutions[edu_type][birth_period]
+                model.config = model.config._replace(
+                    initial_assets=initial_assets,
+                    initial_avg_earnings=initial_avg_earnings
+                )
 
         if verbose:
-            print("All cohort problems assigned!")
+            print("All cohort problems ready!")
     
     def _crn_seed(self, *, edu_idx: int, birth_period: int, base: int = 42) -> int:
         """
@@ -664,40 +659,27 @@ class OLGTransition:
                  tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                  pension_sim, retired_sim) = edu_panels[int(birth_period)]
 
-                # Fast per-age means (Numba kernel if you added it; else fallback to np.mean)
-                if hasattr(self, "_slice_means_njit"):
-                    (a_mean, labor_mean,
-                     tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
-                     ui_mean, pension_mean, gov_health_mean) = self._slice_means_njit(
-                        a_sim, effective_y_sim,
-                        tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
-                        ui_sim, pension_sim, gov_m_sim,
-                        int(self.T)
-                    )
+                # Fast single-age means using Numba - O(n_sim) instead of O(T × n_sim)
+                (a_mean, labor_mean,
+                 tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
+                 ui_mean, pension_mean, gov_health_mean) = self._slice_mean_single_age_njit(
+                    a_sim, effective_y_sim,
+                    tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
+                    ui_sim, pension_sim, gov_m_sim,
+                    int(age)
+                )
 
-                    assets_by_age_edu[edu_idx, age] = float(a_mean[age])
-                    labor_by_age_edu[edu_idx, age] = float(labor_mean[age])
+                assets_by_age_edu[edu_idx, age] = a_mean
+                labor_by_age_edu[edu_idx, age] = labor_mean
 
-                    tax_c_by_age_edu[edu_idx, age] = float(tax_c_mean[age])
-                    tax_l_by_age_edu[edu_idx, age] = float(tax_l_mean[age])
-                    tax_p_by_age_edu[edu_idx, age] = float(tax_p_mean[age])
-                    tax_k_by_age_edu[edu_idx, age] = float(tax_k_mean[age])
+                tax_c_by_age_edu[edu_idx, age] = tax_c_mean
+                tax_l_by_age_edu[edu_idx, age] = tax_l_mean
+                tax_p_by_age_edu[edu_idx, age] = tax_p_mean
+                tax_k_by_age_edu[edu_idx, age] = tax_k_mean
 
-                    ui_by_age_edu[edu_idx, age] = float(ui_mean[age])
-                    pension_by_age_edu[edu_idx, age] = float(pension_mean[age])
-                    gov_health_by_age_edu[edu_idx, age] = float(gov_health_mean[age])
-                else:
-                    assets_by_age_edu[edu_idx, age] = float(np.mean(a_sim[age, :]))
-                    labor_by_age_edu[edu_idx, age] = float(np.mean(effective_y_sim[age, :]))
-
-                    tax_c_by_age_edu[edu_idx, age] = float(np.mean(tax_c_sim[age, :]))
-                    tax_l_by_age_edu[edu_idx, age] = float(np.mean(tax_l_sim[age, :]))
-                    tax_p_by_age_edu[edu_idx, age] = float(np.mean(tax_p_sim[age, :]))
-                    tax_k_by_age_edu[edu_idx, age] = float(np.mean(tax_k_sim[age, :]))
-
-                    ui_by_age_edu[edu_idx, age] = float(np.mean(ui_sim[age, :]))
-                    pension_by_age_edu[edu_idx, age] = float(np.mean(pension_sim[age, :]))
-                    gov_health_by_age_edu[edu_idx, age] = float(np.mean(gov_m_sim[age, :]))
+                ui_by_age_edu[edu_idx, age] = ui_mean
+                pension_by_age_edu[edu_idx, age] = pension_mean
+                gov_health_by_age_edu[edu_idx, age] = gov_health_mean
 
         out = {
             "education_types": education_types,
@@ -893,7 +875,6 @@ class OLGTransition:
         self._last_n_sim = int(n_sim)
 
         # clear caches for this run
-        self._sim_cache = {}
         self._birth_sim_cache = {}
         self._period_cache = {}
         self._cohort_panel_cache = {}
@@ -970,7 +951,7 @@ class OLGTransition:
     
     def compute_government_budget_path(self, n_sim: Optional[int] = None, verbose=True):
         """Compute government budget for all transition periods."""
-        if self.cohort_models is None:
+        if self.birth_cohort_solutions is None:
             raise ValueError("Must simulate transition first")
 
         if n_sim is None:
@@ -1256,7 +1237,7 @@ class OLGTransition:
         If use_crn=True, reuse the same cohort Monte Carlo draws as aggregates/budget
         (seed depends only on cohort + education), avoiding extra MC runs.
         """
-        if self.cohort_models is None:
+        if self.birth_cohort_solutions is None:
             raise ValueError("Run simulate_transition() before plotting.")
 
         if n_sim is None:
