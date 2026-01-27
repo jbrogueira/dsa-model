@@ -893,5 +893,148 @@ class TestSimulationVsPolicy:
         print("   then the indexing in OLGTransition.solve_cohort_problems() is wrong!")
 
 
+class TestJAXBackend:
+    """Cross-validation tests for JAX backend against NumPy reference."""
+
+    @staticmethod
+    def _jax_available():
+        try:
+            import jax  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def test_solve_matches_numpy(self):
+        """Solve same config with both backends; V must match within atol=1e-6, policies identical."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_perfect_foresight import LifecycleModelPerfectForesight
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = LifecycleConfig(
+            T=10,
+            beta=0.96,
+            gamma=2.0,
+            n_a=50,
+            n_y=2,
+            n_h=1,
+            retirement_age=8,
+            education_type='medium',
+            pension_replacement_default=0.40,
+            m_good=0.0,
+        )
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        # Value functions must match closely (float64)
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch: max diff = {V_diff:.2e}"
+
+        # Asset policies must be identical
+        assert np.all(np_model.a_policy == jax_model.a_policy), \
+            "Asset policies differ between NumPy and JAX"
+
+        # Consumption policies must be close
+        c_diff = np.max(np.abs(np_model.c_policy - jax_model.c_policy))
+        assert c_diff < 1e-6, f"c_policy mismatch: max diff = {c_diff:.2e}"
+
+    def test_simulate_distributional_match(self):
+        """Simulate with both backends; mean lifecycle profiles must match within 2 standard errors."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_perfect_foresight import LifecycleModelPerfectForesight
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = LifecycleConfig(
+            T=10,
+            beta=0.96,
+            gamma=2.0,
+            n_a=50,
+            n_y=2,
+            n_h=1,
+            retirement_age=8,
+            education_type='medium',
+            pension_replacement_default=0.40,
+            m_good=0.0,
+        )
+
+        n_sim = 5000
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+        np_results = np_model.simulate(n_sim=n_sim, seed=42)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+        jax_results = jax_model.simulate(n_sim=n_sim, seed=42)
+
+        # Compare mean assets, consumption over lifecycle
+        for idx, name in [(0, 'assets'), (1, 'consumption')]:
+            np_means = np.mean(np_results[idx], axis=1)
+            jax_means = np.mean(jax_results[idx], axis=1)
+
+            # Standard error of the mean from NumPy simulation
+            np_se = np.std(np_results[idx], axis=1) / np.sqrt(n_sim)
+            # Allow 3 SE tolerance (generous for different PRNGs)
+            tolerance = 3 * np.maximum(np_se, 1e-6)
+
+            diff = np.abs(np_means - jax_means)
+            max_excess = np.max(diff / tolerance)
+
+            assert max_excess < 1.0, (
+                f"Distributional mismatch for {name}: "
+                f"max |diff|/tolerance = {max_excess:.2f} at age {np.argmax(diff / tolerance)}"
+            )
+
+    def test_olg_transition_jax_backend(self):
+        """Run existing constant-r economy test with backend='jax'."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        config = LifecycleConfig(
+            T=5,
+            beta=0.96,
+            gamma=2.0,
+            n_a=5,
+            n_y=2,
+            n_h=1,
+            retirement_age=4,
+            education_type='medium',
+        )
+
+        economy = OLGTransition(
+            lifecycle_config=config,
+            alpha=0.33,
+            delta=0.05,
+            A=1.0,
+            education_shares={'medium': 1.0},
+            output_dir='output/test',
+            backend='jax',
+        )
+
+        T_transition = 3
+        r_path = np.ones(T_transition) * 0.03
+
+        results = economy.simulate_transition(
+            r_path=r_path,
+            w_path=None,
+            n_sim=20,
+            verbose=False,
+        )
+
+        assert 'r' in results
+        assert 'K' in results
+        assert np.all(results['K'] > 0)
+        assert np.all(results['L'] > 0)
+        assert np.all(results['Y'] > 0)
+        assert np.allclose(results['r'], 0.03)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

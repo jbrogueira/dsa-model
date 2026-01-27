@@ -8,6 +8,16 @@ from datetime import datetime
 from numba import njit
 from typing import Optional
 
+def _get_lifecycle_model_class(backend: str):
+    """Return the lifecycle model class for the given backend."""
+    if backend == 'numpy':
+        return LifecycleModelPerfectForesight
+    elif backend == 'jax':
+        from lifecycle_jax import LifecycleModelJAX
+        return LifecycleModelJAX
+    else:
+        raise ValueError(f"Unknown backend: {backend!r}. Use 'numpy' or 'jax'.")
+
 # Suppress RuntimeWarning from numpy
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -36,7 +46,9 @@ class OLGTransition:
                  # Education distribution
                  education_shares=None,
                  # Output settings
-                 output_dir='output'):
+                 output_dir='output',
+                 # Backend selection
+                 backend='numpy'):
         
         # Use provided config or create default
         if lifecycle_config is None:
@@ -87,13 +99,17 @@ class OLGTransition:
         self.Y_path = None
         self.birth_cohort_solutions = None
 
+        # Backend selection ('numpy' or 'jax')
+        self.backend = backend
+        self._lifecycle_model_class = _get_lifecycle_model_class(backend)
+
         # NEW: remember last Monte Carlo size used in simulate_transition()
         self._last_n_sim: Optional[int] = None
 
     @staticmethod
     def _seed_u32(x: int) -> int:
         """Map any integer (incl. negative/large) into NumPy's allowed seed range."""
-        return int(np.uint32(x))
+        return int(x % (2**32))
 
     @staticmethod
     def _sparse_int_ticks(x_min: int, x_max: int, step: int = 5):
@@ -382,7 +398,7 @@ class OLGTransition:
                 tau_k_path=np.ones(self.T) * (tau_k_path[0] if tau_k_path is not None else 0),
                 pension_replacement_path=np.ones(self.T) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4)
             )
-            ss_model = LifecycleModelPerfectForesight(ss_config, verbose=False)
+            ss_model = self._lifecycle_model_class(ss_config, verbose=False)
             ss_model.solve(verbose=False)
             results = ss_model.simulate(T_sim=self.T, n_sim=100, seed=42)
             self.ss_asset_profiles[edu_type] = np.mean(results[0], axis=1)
@@ -466,7 +482,7 @@ class OLGTransition:
                     pension_replacement_path=cohort_pension
                 )
                 
-                model = LifecycleModelPerfectForesight(config, verbose=False)
+                model = self._lifecycle_model_class(config, verbose=False)
                 model.solve(verbose=False)
 
                  # DEBUG: Print asset policy for cohorts born during transition
@@ -1335,7 +1351,7 @@ def get_test_config():
     return config
 
 
-def run_fast_test():
+def run_fast_test(backend='numpy'):
     """Run OLG transition with minimal parameters for fast testing."""
     import sys
     import time
@@ -1365,10 +1381,11 @@ def run_fast_test():
         birth_year=2005,
         current_year=2020,
         education_shares={'medium': 1.0},
-        output_dir='output/test'
+        output_dir='output/test',
+        backend=backend,
     )
-    
-    T_transition = 25  
+
+    T_transition = 25
     r_initial = 0.04
     r_final = 0.03
     
@@ -1433,7 +1450,7 @@ def run_fast_test():
     return economy, results
 
 
-def run_full_simulation():
+def run_full_simulation(backend='numpy'):
     """Run full OLG transition simulation."""
     import sys
     import time
@@ -1465,7 +1482,8 @@ def run_full_simulation():
         birth_year=1960,
         current_year=2020,
         education_shares={'low': 0.3, 'medium': 0.5, 'high': 0.2},
-        output_dir='output'
+        output_dir='output',
+        backend=backend,
     )
     
     T_transition = 60  # Longer transition period
@@ -1523,15 +1541,27 @@ def run_full_simulation():
     return economy, results
 
 
+def _parse_backend():
+    """Parse --backend flag from sys.argv."""
+    for i, arg in enumerate(sys.argv):
+        if arg == '--backend' and i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return 'numpy'
+
+
 def main():
     """
     Main entry point. Check for --test flag and run accordingly.
     """
+    backend = _parse_backend()
+    if backend != 'numpy':
+        print(f"Using backend: {backend}")
+
     if '--test' in sys.argv:
-        economy, results = run_fast_test()
+        economy, results = run_fast_test(backend=backend)
     else:
-        economy, results = run_full_simulation()
-    
+        economy, results = run_full_simulation(backend=backend)
+
     return economy, results
 
 

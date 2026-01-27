@@ -6,31 +6,38 @@ Overlapping Generations (OLG) model simulating demographic and policy transition
 
 ```
 olg_transition.py              # Entry point - OLG transition simulation
-lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices
-test_olg_transition.py         # Pytest tests (17 tests)
+lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices (NumPy)
+lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simulate)
+test_olg_transition.py         # Pytest tests (20 tests, incl. 3 JAX cross-validation)
 ISSUES.md                      # Bug tracking
 ```
 
 ## Run
 
 ```bash
-# Fast test mode
+# Fast test mode (NumPy backend, default)
 python olg_transition.py --test
 
-# Full simulation (edit main() parameters)
+# Fast test mode (JAX backend)
+python olg_transition.py --test --backend jax
+
+# Full simulation
 python olg_transition.py
+python olg_transition.py --backend jax
 
-# Lifecycle standalone test
+# Lifecycle standalone tests
 python lifecycle_perfect_foresight.py --test
+python lifecycle_jax.py --test              # JAX cross-validation vs NumPy
 
-# Run pytest suite
+# Run pytest suite (includes JAX cross-validation tests)
 pytest test_olg_transition.py -v
 ```
 
 ## Key Classes
 
-- `OLGTransition`: Manages transition dynamics, aggregation, government budget
-- `LifecycleModelPerfectForesight`: Solves individual lifecycle problem via backward induction
+- `OLGTransition`: Manages transition dynamics, aggregation, government budget. Accepts `backend='numpy'|'jax'`
+- `LifecycleModelPerfectForesight`: Solves individual lifecycle problem via backward induction (NumPy/Numba)
+- `LifecycleModelJAX`: JAX-accelerated lifecycle model. Same interface, vectorized solve via `jax.lax.scan`, simulation via `jax.vmap`
 - `LifecycleConfig`: Configuration dataclass for lifecycle parameters
 
 ## Key Methods
@@ -60,3 +67,14 @@ pytest test_olg_transition.py -v
 - `n_sim` controls Monte Carlo simulation size
 - Output plots saved to `output/` directory
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
+
+## JAX Backend
+
+- `lifecycle_jax.py` provides `LifecycleModelJAX` — same interface as `LifecycleModelPerfectForesight`
+- Solve: vectorized grid search over all `(n_a, n_y, n_h, n_y_last)` states per period, backward induction via `jax.lax.scan`
+- Simulate: `jax.vmap` over agents, `jax.lax.scan` over time steps
+- Uses `jax_enable_x64=True` for float64 precision (matches NumPy reference within ~1e-14)
+- Different PRNG (ThreeFry vs MT19937): simulation paths differ individually but match distributionally
+- `OLGTransition(backend='jax')` uses JAX for all cohort solves and simulations
+- Aggregation stays in NumPy (already fast with Numba, not a bottleneck)
+- Requires ARM Python on Apple Silicon (x86 Python via Rosetta hits AVX issues with jaxlib)
