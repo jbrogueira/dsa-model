@@ -305,7 +305,6 @@ class LifecycleModelPerfectForesight:
         self.V = None
         self.a_policy = None
         self.c_policy = None
-        self.pension_avg_policy = None  # Stores next period's pension average
     
     def _create_asset_grid(self):
         """Create non-linear asset grid with more points near borrowing constraint."""
@@ -1077,98 +1076,6 @@ def _simulate_agent_batch(args, model, T_sim):
     
     return result
 
-
-def _solve_and_simulate_education_type(args):
-    """Solve and simulate a single education type (for parallel execution)."""
-    edu_type, n_sim, use_parallel_internal = args
-    
-    print(f"\n{'='*70}")
-    print(f"Education type: {edu_type.upper()}")
-    print('='*70)
-    
-    # Create configuration
-    config = LifecycleConfig(
-        T=60,
-        beta=0.96,
-        gamma=2.0,
-        current_age=0,
-        retirement_age=45,
-        pension_replacement_default=0.60,
-        education_type=edu_type,
-        n_a=50,
-        n_y=5,
-    )
-    
-    # Create and solve model
-    model = LifecycleModelPerfectForesight(config)
-    print(f"\nSolving model for {edu_type}...")
-    model.solve(verbose=True, parallel=use_parallel_internal)
-    
-    # Simulate
-    print(f"\nSimulating {n_sim} agents for {edu_type}...")
-    results = model.simulate(n_sim=n_sim, seed=42, parallel=use_parallel_internal)
-    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
-     ui_sim, m_sim, oop_m_sim, gov_m_sim,
-     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-     pension_sim, retired_sim) = results
-    
-    # Compute statistics
-    unemployment_rate = np.mean(~employed_sim & ~retired_sim)
-    retirement_rate = np.mean(retired_sim)
-    total_tax = tax_c_sim + tax_l_sim + tax_p_sim + tax_k_sim
-    total_gov_spending = gov_m_sim + ui_sim + pension_sim
-    
-    print(f"\n{'-'*70}")
-    print(f"RESULTS FOR {edu_type.upper()} EDUCATION:")
-    print(f"{'-'*70}")
-    print(f"  Mean assets:              {np.mean(a_sim):.2f}")
-    print(f"  Mean consumption:         {np.mean(c_sim):.3f}")
-    print(f"  Mean effective income:    {np.mean(effective_y_sim):.3f}")
-    print(f"  Mean avg earnings:        {np.mean(avg_earnings_sim):.3f}")
-    
-    if np.any(retired_sim):
-        print(f"  Mean pension (retired):   {np.mean(pension_sim[retired_sim]):.3f}")
-    else:
-        print(f"  Mean pension (retired):   N/A (no retirement periods)")
-    
-    print(f"  Unemployment rate:        {unemployment_rate:.2%}")
-    print(f"  Retirement rate:          {retirement_rate:.2%}")
-    print(f"  Mean total taxes:         {np.mean(total_tax):.4f}")
-    print(f"  Mean gov spending:        {np.mean(total_gov_spending):.4f}")
-    print(f"  Mean UI benefits:         {np.mean(ui_sim):.4f}")
-    print(f"  Mean gov health spending: {np.mean(gov_m_sim):.4f}")
-    
-    # Age-specific statistics
-    print(f"\n  Age-specific means:")
-    ages_to_check = [0, 20, 40, 45, 50, 59]
-    for age_idx in ages_to_check:
-        if age_idx < len(a_sim):
-            is_retired_age = age_idx >= (config.retirement_age - config.current_age)
-            status = "RETIRED" if is_retired_age else "WORKING"
-            print(f"    Age {20+age_idx} ({status}):")
-            print(f"      Assets:      {np.mean(a_sim[age_idx, :]):.2f}")
-            print(f"      Consumption: {np.mean(c_sim[age_idx, :]):.3f}")
-            if is_retired_age and np.any(pension_sim[age_idx, :] > 0):
-                print(f"      Pension:     {np.mean(pension_sim[age_idx, :]):.3f}")
-            else:
-                print(f"      Income:      {np.mean(effective_y_sim[age_idx, :]):.3f}")
-    
-    # Store results for plotting
-    result_dict = {
-        'a_sim': a_sim,
-        'c_sim': c_sim,
-        'effective_y_sim': effective_y_sim,
-        'pension_sim': pension_sim,
-        'retired_sim': retired_sim,
-        'avg_earnings_sim': avg_earnings_sim,
-        'employed_sim': employed_sim,
-        'ui_sim': ui_sim,
-        'total_tax': total_tax,
-        'total_gov_spending': total_gov_spending,
-        'config': config
-    }
-    
-    return edu_type, result_dict
 
 if __name__ == "__main__":
     import sys

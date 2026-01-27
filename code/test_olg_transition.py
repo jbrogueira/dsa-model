@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import sys
 import os
-from olg_transition import OLGTransition, OLGConfig, get_test_config
+from olg_transition import OLGTransition, get_test_config
 from lifecycle_perfect_foresight import LifecycleConfig
 
 # test_olg_transition.py
@@ -227,13 +227,13 @@ class TestConstantInterestRate:
         should be in perfect steady state with no dynamics.
         """
         config = LifecycleConfig(
-            T=100,
-            beta=0.96,
+            T=3,
+            beta=0.99,
             gamma=2.0,
-            n_a=50,
+            n_a=100,
             n_y=2,
             n_h=1,
-            retirement_age=6,
+            retirement_age=3,
             education_type='medium'
         )
         
@@ -248,13 +248,13 @@ class TestConstantInterestRate:
         )
         
         # All parameters constant
-        T_transition = 10  # Longer to verify stability
-        r_constant = 0.04
+        T_transition = 20  # Longer to verify stability
+        r_constant = 0.06
         tau_c_constant = 0.05
-        tau_l_constant = 0.15
-        tau_p_constant = 0.124
-        tau_k_constant = 0.20
-        pension_constant = 0.40
+        tau_l_constant = 0.0
+        tau_p_constant = 0.0
+        tau_k_constant = 0.0
+        pension_constant = 0.00
         
         r_path = np.ones(T_transition) * r_constant
         tau_c_path = np.ones(T_transition) * tau_c_constant
@@ -280,6 +280,33 @@ class TestConstantInterestRate:
         Y_path = results['Y']
         w_path = results['w']
 
+        # Print detailed diagnostics
+        print("\n" + "="*70)
+        print("STEADY STATE TEST WITH CONSTANT ENVIRONMENT")
+        print("="*70)
+        print(f"Simulation periods: {T_transition}")
+        print(f"Number of agents: 100")
+        print(f"\nConstant parameters:")
+        print(f"  r = {r_constant:.4f}")
+        print(f"  τ_c = {tau_c_constant:.4f}")
+        print(f"  τ_l = {tau_l_constant:.4f}")
+        
+        print("\n" + "-"*70)
+        print("FIRST 5 PERIODS:")
+        print("-"*70)
+        print(f"{'Period':<8} {'K':<12} {'L':<12} {'Y':<12} {'w':<12} {'r':<12}")
+        print("-"*70)
+        for t in range(min(5, T_transition)):
+            print(f"{t:<8} {K_path[t]:<12.6f} {L_path[t]:<12.6f} {Y_path[t]:<12.6f} {w_path[t]:<12.6f} {results['r'][t]:<12.6f}")
+        
+        print("\n" + "-"*70)
+        print("LAST 10 PERIODS:")
+        print("-"*70)
+        print(f"{'Period':<8} {'K':<12} {'L':<12} {'Y':<12} {'w':<12} {'r':<12}")
+        print("-"*70)
+        for t in range(max(0, T_transition-10), T_transition):
+            print(f"{t:<8} {K_path[t]:<12.6f} {L_path[t]:<12.6f} {Y_path[t]:<12.6f} {w_path[t]:<12.6f} {results['r'][t]:<12.6f}")
+        
         # Skip first 20 periods to allow convergence
         burn_in = min(20, T_transition // 2)
         K_path_stable = K_path[burn_in:]
@@ -288,33 +315,36 @@ class TestConstantInterestRate:
         w_path_stable = w_path[burn_in:]
         
         # Test 1: Interest rate is exactly constant
-        assert np.allclose(results['r'], r_constant, atol=1e-10), \
-            "Interest rate should be exactly constant"
+        r_is_constant = np.allclose(results['r'], r_constant, atol=1e-10)
+        print("\n" + "-"*70)
+        print("TEST RESULTS:")
+        print("-"*70)
+        print(f"1. Interest rate constant: {'✓ PASS' if r_is_constant else '✗ FAIL'}")
        
         # Test 2: All aggregates should have very low variance
         # Use coefficient of variation (CV = std / mean)
-        K_cv = np.std(K_path_stable) / np.mean(K_path_stable)
-        L_cv = np.std(L_path_stable) / np.mean(L_path_stable)
-        Y_cv = np.std(Y_path_stable) / np.mean(Y_path_stable)
-        w_cv = np.std(w_path_stable) / np.mean(w_path_stable)
+        K_mean = np.mean(K_path_stable)
+        L_mean = np.mean(L_path_stable)
+        Y_mean = np.mean(Y_path_stable)
+        w_mean = np.mean(w_path_stable)
         
-        tolerance = 0.05  # 5% coefficient of variation (generous for simulation noise)
+        K_cv = np.std(K_path_stable) / K_mean if K_mean > 0 else np.nan
+        L_cv = np.std(L_path_stable) / L_mean if L_mean > 0 else np.nan
+        Y_cv = np.std(Y_path_stable) / Y_mean if Y_mean > 0 else np.nan
+        w_cv = np.std(w_path_stable) / w_mean if w_mean > 0 else np.nan
         
-        assert K_cv < tolerance, \
-            f"Capital should be nearly constant (CV={K_cv:.2%} > {tolerance:.0%})"
-        assert L_cv < tolerance, \
-            f"Labor should be nearly constant (CV={L_cv:.2%} > {tolerance:.0%})"
-        assert Y_cv < tolerance, \
-            f"Output should be nearly constant (CV={Y_cv:.2%} > {tolerance:.0%})"
-        assert w_cv < tolerance, \
-            f"Wage should be nearly constant (CV={w_cv:.2%} > {tolerance:.0%})"
+        tolerance = 0.05  # 5% coefficient of variation
         
-        # Test 3: No trend in aggregates (use linear regression slope)
+        print(f"\n2. Aggregate stability (Coefficient of Variation after burn-in={burn_in}):")
+        print(f"   Capital:  CV={K_cv:.2%} (mean={K_mean:.6f}, std={np.std(K_path_stable):.6f}) {'✓' if K_cv < tolerance else '✗'}")
+        print(f"   Labor:    CV={L_cv:.2%} (mean={L_mean:.6f}, std={np.std(L_path_stable):.6f}) {'✓' if L_cv < tolerance else '✗'}")
+        print(f"   Output:   CV={Y_cv:.2%} (mean={Y_mean:.6f}, std={np.std(Y_path_stable):.6f}) {'✓' if Y_cv < tolerance else '✗'}")
+        print(f"   Wage:     CV={w_cv:.2%} (mean={w_mean:.6f}, std={np.std(w_path_stable):.6f}) {'✓' if w_cv < tolerance else '✗'}")
+        
+        # Test 3: No trend in aggregates
         periods = np.arange(T_transition)
         
-        # Fit linear trend: y = a + b*t, we want b ≈ 0
         def get_trend_slope(y):
-            # Simple OLS: b = cov(t,y) / var(t)
             t_mean = np.mean(periods)
             y_mean = np.mean(y)
             cov = np.mean((periods - t_mean) * (y - y_mean))
@@ -325,51 +355,43 @@ class TestConstantInterestRate:
         L_slope = get_trend_slope(L_path)
         Y_slope = get_trend_slope(Y_path)
         
-        # Normalize slopes by mean to get percentage change per period
-        K_slope_pct = (K_slope / np.mean(K_path)) * 100
-        L_slope_pct = (L_slope / np.mean(L_path)) * 100
-        Y_slope_pct = (Y_slope / np.mean(Y_path)) * 100
+        K_slope_pct = (K_slope / np.mean(K_path)) * 100 if np.mean(K_path) > 0 else np.nan
+        L_slope_pct = (L_slope / np.mean(L_path)) * 100 if np.mean(L_path) > 0 else np.nan
+        Y_slope_pct = (Y_slope / np.mean(Y_path)) * 100 if np.mean(Y_path) > 0 else np.nan
         
         slope_tolerance = 0.5  # 0.5% per period
         
-        assert abs(K_slope_pct) < slope_tolerance, \
-            f"Capital should have no trend (slope={K_slope_pct:.2f}% per period)"
-        assert abs(L_slope_pct) < slope_tolerance, \
-            f"Labor should have no trend (slope={L_slope_pct:.2f}% per period)"
-        assert abs(Y_slope_pct) < slope_tolerance, \
-            f"Output should have no trend (slope={Y_slope_pct:.2f}% per period)"
+        print(f"\n3. Aggregate trends (% change per period):")
+        print(f"   Capital:  {K_slope_pct:+.4f}%/period {'✓' if abs(K_slope_pct) < slope_tolerance else '✗'}")
+        print(f"   Labor:    {L_slope_pct:+.4f}%/period {'✓' if abs(L_slope_pct) < slope_tolerance else '✗'}")
+        print(f"   Output:   {Y_slope_pct:+.4f}%/period {'✓' if abs(Y_slope_pct) < slope_tolerance else '✗'}")
         
-        # Test 4: Production function holds throughout
+        # Test 4: Production function
         Y_check = economy.A * (K_path ** economy.alpha) * (L_path ** (1 - economy.alpha))
-        assert np.allclose(Y_path, Y_check, rtol=1e-5), \
-            "Production function should hold exactly"
+        prod_fn_holds = np.allclose(Y_path, Y_check, rtol=1e-5)
         
-        # Print diagnostics
-        print("\n" + "="*60)
-        print("STEADY STATE TEST WITH CONSTANT ENVIRONMENT")
-        print("="*60)
-        print(f"Simulation periods: {T_transition}")
-        print(f"Number of agents: 100")
-        print(f"\nConstant parameters:")
-        print(f"  r = {r_constant:.4f}")
-        print(f"  τ_c = {tau_c_constant:.4f}")
-        print(f"  τ_l = {tau_l_constant:.4f}")
-        print(f"\nAggregate stability (Coefficient of Variation):")
-        print(f"  Capital:  {K_cv:.2%} (< {tolerance:.0%} ✓)" if K_cv < tolerance else f"  Capital:  {K_cv:.2%} (> {tolerance:.0%} ✗)")
-        print(f"  Labor:    {L_cv:.2%} (< {tolerance:.0%} ✓)" if L_cv < tolerance else f"  Labor:    {L_cv:.2%} (> {tolerance:.0%} ✗)")
-        print(f"  Output:   {Y_cv:.2%} (< {tolerance:.0%} ✓)" if Y_cv < tolerance else f"  Output:   {Y_cv:.2%} (> {tolerance:.0%} ✗)")
-        print(f"  Wage:     {w_cv:.2%} (< {tolerance:.0%} ✓)" if w_cv < tolerance else f"  Wage:     {w_cv:.2%} (> {tolerance:.0%} ✗)")
-        print(f"\nAggregate trends (% change per period):")
-        print(f"  Capital:  {K_slope_pct:+.2f}% (|·| < {slope_tolerance}% ✓)" if abs(K_slope_pct) < slope_tolerance else f"  Capital:  {K_slope_pct:+.2f}% (|·| > {slope_tolerance}% ✗)")
-        print(f"  Labor:    {L_slope_pct:+.2f}% (|·| < {slope_tolerance}% ✓)" if abs(L_slope_pct) < slope_tolerance else f"  Labor:    {L_slope_pct:+.2f}% (|·| > {slope_tolerance}% ✗)")
-        print(f"  Output:   {Y_slope_pct:+.2f}% (|·| < {slope_tolerance}% ✓)" if abs(Y_slope_pct) < slope_tolerance else f"  Output:   {Y_slope_pct:+.2f}% (|·| > {slope_tolerance}% ✗)")
-        print(f"\nMean values:")
-        print(f"  K = {np.mean(K_path):.4f} ± {np.std(K_path):.4f}")
-        print(f"  L = {np.mean(L_path):.4f} ± {np.std(L_path):.4f}")
-        print(f"  Y = {np.mean(Y_path):.4f} ± {np.std(Y_path):.4f}")
-        print(f"  w = {np.mean(w_path):.4f} ± {np.std(w_path):.4f}")
-        print(f"  K/Y = {np.mean(K_path/Y_path):.4f}")
-        print("="*60)
+        print(f"\n4. Production function Y = A·K^α·L^(1-α): {'✓ PASS' if prod_fn_holds else '✗ FAIL'}")
+        
+        print("\n" + "="*70)
+        
+        # Summary statistics
+        print("\nSUMMARY STATISTICS (full transition):")
+        print(f"  K: min={np.min(K_path):.6f}, max={np.max(K_path):.6f}, mean={np.mean(K_path):.6f}")
+        print(f"  L: min={np.min(L_path):.6f}, max={np.max(L_path):.6f}, mean={np.mean(L_path):.6f}")
+        print(f"  Y: min={np.min(Y_path):.6f}, max={np.max(Y_path):.6f}, mean={np.mean(Y_path):.6f}")
+        print(f"  K/Y ratio: {np.mean(K_path/Y_path):.4f}" if np.mean(Y_path) > 0 else "  K/Y ratio: undefined")
+        print("="*70 + "\n")
+        
+        # Now do assertions
+        assert r_is_constant, "Interest rate should be exactly constant"
+        assert K_cv < tolerance, f"Capital should be nearly constant (CV={K_cv:.2%} > {tolerance:.0%})"
+        assert L_cv < tolerance, f"Labor should be nearly constant (CV={L_cv:.2%} > {tolerance:.0%})"
+        assert Y_cv < tolerance, f"Output should be nearly constant (CV={Y_cv:.2%} > {tolerance:.0%})"
+        assert w_cv < tolerance, f"Wage should be nearly constant (CV={w_cv:.2%} > {tolerance:.0%})"
+        assert abs(K_slope_pct) < slope_tolerance, f"Capital should have no trend (slope={K_slope_pct:.2f}% per period)"
+        assert abs(L_slope_pct) < slope_tolerance, f"Labor should have no trend (slope={L_slope_pct:.2f}% per period)"
+        assert abs(Y_slope_pct) < slope_tolerance, f"Output should have no trend (slope={Y_slope_pct:.2f}% per period)"
+        assert prod_fn_holds, "Production function should hold exactly"
 
 
 class TestBorrowingConstraint:

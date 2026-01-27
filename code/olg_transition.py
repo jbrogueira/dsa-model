@@ -6,32 +6,11 @@ from lifecycle_perfect_foresight import LifecycleModelPerfectForesight, Lifecycl
 import os
 from datetime import datetime
 from numba import njit
-from functools import partial
-from dataclasses import dataclass, field, replace
-from typing import Optional  # <-- Add this import
-import matplotlib.ticker as mticker
+from typing import Optional
 
 # Suppress RuntimeWarning from numpy
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
-
-
-@dataclass
-class OLGConfig:
-    pension_replacement_default: float = 0.40
-
-    # === Initial conditions ===
-    initial_assets: Optional[float] = None
-    initial_avg_earnings: Optional[float] = None
-
-    def _replace(self, **changes):  # <-- Add this method
-        """Return a new instance with specified fields replaced."""
-        return replace(self, **changes)
-
-    def __post_init__(self):
-        """Post-initialization setup and validation."""
-        # Add derived parameters to edu_params
-        pass
 
 
 class OLGTransition:
