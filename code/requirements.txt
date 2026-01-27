@@ -3,3 +3,8 @@ numba>=0.55.0
 matplotlib>=3.5.0
 quantecon>=0.5.0
 scipy>=1.7.0
+pytest>=7.0.0
+
+# Optional: JAX backend (install for accelerated solve/simulate)
+# Requires Python 3.10+ and native-arch Python on Apple Silicon
+jax[cpu]>=0.4.20
