@@ -1,0 +1,70 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{lmodern}
+\usepackage{xcolor}
+
+% toggle comments on/off
+\newif\ifcomments
+\commentstrue    % set to \commentsfalse to hide all comments
+
+% generic author note macro: \authnote[color]{INITIALS}{text}
+\ifcomments
+  \newcommand{\authnote}[3][red]{\textcolor{#1}{[\textsf{#2}: #3]}}
+\else
+  \newcommand{\authnote}[3]{} % no output when comments are off
+\fi
+
+% convenient per-author shorthands
+\newcommand{\JS}[1]{\authnote[blue]{JS}{#1}}
+\newcommand{\RM}[1]{\authnote[teal]{RM}{#1}}
+\newcommand{\LZ}[1]{\authnote[magenta]{LZ}{#1}}
+\newcommand{\KS}[1]{\authnote[purple]{KS}{#1}}
+\geometry{margin=1in}
+\title{Extended Government Budget Identity}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{equation}
+    G_t + I^g_t + i_t B_{t-1} + S_t + L_t + I^h_t + N^h_t = T_t + R_t + \Delta B_t
+\end{equation}
+
+Notation:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item $G_t$: Government expenditure (goods and services)
+    \item $I^g_t = K^g_{t+1}-(1-\delta^g)K^g_t$: Public capital investment (public infrastructure, buildings, equipment, etc.)
+    \item $K^g_t$: Government capital stock in period $t$ (input in the aggregate production function)
+    \item $i_t B_{t-1}$: Interest payments on debt from previous period
+    \item $S_t$: Subsidies or net transfers to private firms, agriculture
+    \item $L_t$: Government income subsidies and transfers to households (unemployment benefits, pensions, etc.)
+    \item $I^h_t=  K^h_{t+1}-(1-\delta^h)K^h_t$: Government capital investment (welfare state functions)
+    \item $N^h_t$: Government labor costs (welfare state functions)
+    %\item $H_t$: Government provided goods and services (healthcare, childcare, etc.)
+    \item $T_t$: Tax revenues (income, corporate, VAT, etc.)
+    \item $R_t$: (-) Subsidies or net transfers to state owned enterprises (SOE, PPP), Sales, net capital transfers from EU, etc.
+    \item $\Delta B_t = B_t - B_{t-1}$: Net borrowing (change in government debt)
+    \item $B_t$: Debt at the end of the period
+\end{itemize}
+
+\begin{equation}
+    H_t = F^W(K^h_t,N^h_t)
+\end{equation}
+$H_t$: Government provided goods and services (healthcare, childcare, etc.)\\
+\bigskip 
+
+To do:
+\begin{itemize}
+    \item Specify what exactly goes into "welfare state functions"
+    \item Data on Healthcare and Education sectors (Private) spending
+    \item How to model private and public provision of (e.g. health)  services jointly?
+    \item Write down rest of the model.
+    \item (Later) How to deal with defense spending?
+    \item (Later) Private healthcare, childcare, etc.?
+\end{itemize}
+\end{document}

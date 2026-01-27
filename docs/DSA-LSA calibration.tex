@@ -1,0 +1,453 @@
+This appendix describes the calibration strategy for the computational implementation of the model. The current implementation is a simplified version of the full theoretical framework (see Section~\ref{s:model}); the calibration plan below refers to the parameters and mechanisms as implemented in the code.
+
+\subsection{Model Overview}
+
+The implemented model is an overlapping generations (OLG) model with heterogeneous agents featuring:
+\begin{enumerate}
+    \item Lifecycle structure: agents live for $J$ periods, with exogenous retirement at age $J_R$.
+    \item Idiosyncratic risk: stochastic income ($n_z$ states), health ($n_s$ states), and employment shocks.
+    \item Education heterogeneity: multiple education types (low, medium, high) with different income profiles.
+    \item Perfect foresight over aggregates: agents know the full path of interest rates and wages.
+    \item Government sector: consumption/labor/payroll/capital taxes, unemployment insurance, pensions, and health spending.
+    \item Demographics: time-varying population growth allowing for aging experiments.
+    \item No intensive-margin labor supply: agents are either employed, unemployed, or retired.
+\end{enumerate}
+
+\subsection{Externally Calibrated Parameters}
+
+These parameters are set directly from data or existing literature estimates.
+
+\paragraph{Preferences and lifecycle.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Description & Source & Range \\
+\midrule
+$J$ & Lifecycle length & Life expectancy $-$ entry age & 40--60 \\
+$J_R$ & Retirement age & Statutory/effective retirement & 30--45 \\
+$\sigma$ & Risk aversion (CRRA) & Chetty (2006), Attanasio \& Weber & 1--4 \\
+$\underline{a}$ & Borrowing constraint & Institutional & $\geq 0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Production.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Description & Source & Range \\
+\midrule
+$\alpha$ & Capital share & National accounts & 0.33 \\
+$\delta$ & Depreciation rate & Investment/capital ratio & 0.05--0.10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Tax rates.}
+Tax rates can be time-varying paths $\{\tau^c_t, \tau^l_t, \tau^p_t, \tau^k_t\}$ for transition experiments.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Description & Source & Range \\
+\midrule
+$\tau^c$ & Consumption tax & Effective rate from fiscal data & 0.05--0.25 \\
+$\tau^l$ & Labor income tax & Effective rate from fiscal data & 0.10--0.30 \\
+$\tau^p$ & Payroll tax (wages only) & Social security contributions & 0.10--0.25 \\
+$\tau^k$ & Capital income tax & Effective rate from fiscal data & 0.15--0.30 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Transfers.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Description & Source & Range \\
+\midrule
+$\rho^{\text{pens}}$ & Pension replacement rate & SS replacement rate data & 0.40--0.80 \\
+$\rho^{\text{ui}}$ & UI wage replacement rate & Statutory UI rules & 0.20--0.60 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Health.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Description & Source & Range \\
+\midrule
+$\kappa$ & Govt.\ coverage of medical costs & MEPS / CMS data & 0.50--0.90 \\
+$m_{\text{good}}$ & Medical cost, good health (share of income) & MEPS & 0.02--0.10 \\
+$m_{\text{mod}}$ & Medical cost, moderate health & MEPS & 0.30--0.60 \\
+$m_{\text{poor}}$ & Medical cost, poor health & MEPS & 0.70--1.00 \\
+$f_{\text{good}}$ & Productivity in good health & Normalized & 1.0 \\
+$f_{\text{mod}}$ & Productivity in moderate health & MEPS / HRS & 0.5--0.8 \\
+$f_{\text{poor}}$ & Productivity in poor health & MEPS / HRS & 0.1--0.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Note: in the current implementation, medical costs $m(s)$ depend only on health state $s$, not on age $j$. The theoretical model specifies $m^{\text{need}}(j,s)$; extending the implementation to age-dependent costs is left for future work.
+
+\paragraph{Education and demographics.}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Description & Source & Range \\
+\midrule
+Education shares & Population shares by education & Census / Eurostat & Country-specific \\
+$\mu_z^{(e)}$ & Mean log income by education $e$ & CPS / EU-SILC & Education-specific \\
+$u^{(e)}$ & Unemployment rate by education $e$ & CPS / BLS / Eurostat & Education-specific \\
+$g_N$ & Population growth rate & Demographic projections & $-0.01$--$0.02$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Internally Calibrated Parameters}
+
+These parameters are calibrated via moment matching using the Simulated Method of Moments (SMM).
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Parameter & Role & Identified by & Notes \\
+\midrule
+$\beta$ & Discount factor & Capital-output ratio $K/Y$ & GE parameter \\
+$Z$ & TFP level & Output/wage normalization & Production side \\
+$\rho_z^{(e)}$ & Income persistence & Consumption-income comovement & Per education \\
+$\sigma_z^{(e)}$ & Income shock variance & Wealth Gini, zero-wealth fraction & Per education \\
+$\lambda^{\text{find}}$ & Job finding rate & Unemployment duration & Shared \\
+$\bar{\lambda}^{\text{sep}}$ & Max separation rate & Unemployment rate & Cap on derived rate \\
+$P_s^{\text{young}}, P_s^{\text{mid}}, P_s^{\text{old}}$ & Health transitions & Health distribution by age & $3 \times n_s^2$ entries \\
+$a_0$ & Initial assets & Wealth at entry age & Scalar \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Notes.}
+\begin{itemize}[leftmargin=*]
+    \item The income persistence $\rho_z$ and shock variance $\sigma_z$ are defined per education type. They can be calibrated jointly (same for all types) or separately; joint calibration reduces dimensionality.
+    \item The job separation rate is not a free parameter---it is derived from $u^{(e)}$ and $\lambda^{\text{find}}$: $\lambda^{\text{sep}} = \min\!\big(\frac{u}{1-u}\lambda^{\text{find}},\;\bar{\lambda}^{\text{sep}}\big)$.
+    \item Changing $Z$ or $\beta$ requires re-solving the full general equilibrium (price iteration).
+\end{itemize}
+
+\subsection{Target Moments}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+Moment & Data source & Identifies \\
+\midrule
+\multicolumn{3}{l}{\textit{Macro aggregates}} \\
+Capital-output ratio $K/Y$ & National accounts & $\beta$, $Z$ \\
+Labor share of income & National accounts & $\alpha$ (validation) \\
+\midrule
+\multicolumn{3}{l}{\textit{Wealth distribution}} \\
+Wealth Gini coefficient & SCF / HFCS & $\sigma_z$, $\underline{a}$ \\
+Fraction with zero/negative wealth & SCF / HFCS & $\underline{a}$, $\sigma_z$ \\
+Median wealth-to-income ratio & SCF / HFCS & $\beta$ \\
+Wealth-to-income by age & SCF / PSID / HFCS & $\beta$, income process \\
+Wealth-to-income by education & SCF / HFCS & $\mu_z^{(e)}$ (validation) \\
+\midrule
+\multicolumn{3}{l}{\textit{Income dynamics}} \\
+Consumption-income comovement & CEX / PSID / HBS & $\rho_z$ \\
+Earnings variance by age & PSID / EU-SILC & $\sigma_z$ \\
+\midrule
+\multicolumn{3}{l}{\textit{Labor market}} \\
+Unemployment rate (aggregate) & CPS / BLS / Eurostat & $u^{(e)}$, $\lambda^{\text{find}}$ \\
+Average unemployment duration & CPS / Eurostat & $\lambda^{\text{find}}$ \\
+Unemployment rate by education & CPS / Eurostat & $u^{(e)}$ \\
+\midrule
+\multicolumn{3}{l}{\textit{Health}} \\
+Fraction in poor health by age & MEPS / HRS / SHARE & Health transition matrices \\
+Medical spending by age & MEPS / Eurostat & $m(\cdot)$, $\kappa$ (validation) \\
+\midrule
+\multicolumn{3}{l}{\textit{Fiscal}} \\
+Government spending / GDP & NIPA / Eurostat & Pension/health (validation) \\
+Tax revenue / GDP & NIPA / Eurostat & Tax rates (validation) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Notes.}
+\begin{itemize}[leftmargin=*]
+    \item The model's separation rate is not age-varying---it depends only on education type. Age-specific unemployment moments can validate the aggregate fit but cannot identify age-specific parameters without model extension.
+    \item The borrowing constraint $\underline{a}$ strongly affects wealth distribution moments. If $\underline{a} = 0$ is imposed externally, $\sigma_z$ bears more of the identification burden for wealth dispersion.
+\end{itemize}
+
+\subsection{Calibration Algorithm}
+
+\subsubsection{Two-Stage Structure}
+
+We split calibration into two stages to reduce dimensionality and avoid unnecessary general equilibrium iterations.
+
+\paragraph{Stage A: Partial equilibrium (fixed prices).}
+Fix $r$ and $w$ at empirically reasonable values. Calibrate parameters that primarily affect individual behavior:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+Parameter & Target \\
+\midrule
+$\rho_z$, $\sigma_z$ & Earnings variance by age, consumption-income comovement \\
+$\lambda^{\text{find}}$ & Average unemployment duration \\
+$u^{(e)}$ & Unemployment rate by education \\
+$P_s$ matrices & Fraction in poor health by age \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Stage B: General equilibrium.}
+With Stage~A parameters fixed, calibrate GE parameters by iterating on market clearing:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+Parameter & Target \\
+\midrule
+$\beta$ & Capital-output ratio $K/Y$ \\
+$Z$ & Wage level normalization (or set $Z=1$ and target $w$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{SMM Objective Function}
+
+The objective minimizes the distance between data and simulated moments:
+\begin{equation}
+Q(\theta) = \big[m^{\text{data}} - m^{\text{model}}(\theta)\big]'\, W\, \big[m^{\text{data}} - m^{\text{model}}(\theta)\big],
+\end{equation}
+where $m^{\text{data}}$ is the vector of empirical target moments, $m^{\text{model}}(\theta)$ collects the corresponding simulated moments at parameter vector $\theta$, and $W$ is a weighting matrix.
+
+\paragraph{Weighting matrix.}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Identity matrix} (equal weights): simple, robust, suitable for initial exploration.
+    \item \textbf{Diagonal of inverse variances}: weights moments by precision of data estimates.
+    \item \textbf{Optimal (two-step)}: use first-stage identity estimates to compute the optimal $W$ from the simulated moment covariance matrix.
+\end{itemize}
+We start with diagonal weighting and move to the two-step optimal weighting matrix if needed.
+
+\subsubsection{Optimizer}
+
+We use derivative-free methods, as the objective is noisy (simulation-based) and non-smooth (grid search in the inner loop):
+\begin{enumerate}
+    \item \textbf{Nelder--Mead simplex} for Stage~A (moderate dimensionality).
+    \item \textbf{Brent's method} or bisection for Stage~B (1--2 parameters).
+\end{enumerate}
+For Stage~B, the GE loop provides a natural fixed-point iteration: guess $\beta$, solve all lifecycle problems, simulate, aggregate $K$ and $L$, compute new prices, and check $K/Y$. Bisect on $\beta$ until the target is matched.
+
+\subsubsection{Simulation Requirements}
+
+\begin{itemize}[leftmargin=*]
+    \item Use $n_{\text{sim}} \geq 10{,}000$ agents per education type to reduce simulation noise.
+    \item Fix the random seed across objective function evaluations for a smooth optimization landscape.
+    \item Discard initial periods as burn-in if agents start from non-ergodic initial conditions.
+\end{itemize}
+
+\subsubsection{Convergence Criteria}
+
+\begin{itemize}[leftmargin=*]
+    \item Stage~A: $Q(\theta) < \text{tol}$ or parameter changes $< 10^{-5}$ across iterations.
+    \item Stage~B: $|K/Y_{\text{model}} - K/Y_{\text{target}}| < 0.01$ (1\% tolerance).
+    \item Full convergence: all target moments within 5\% of data values, or within 2 standard errors of data estimates.
+\end{itemize}
+
+\subsubsection{Practical Workflow}
+
+\begin{enumerate}
+    \item Set externally calibrated parameters (Step~1) from data.
+    \item Run Stage~A calibration with fixed prices.
+    \item Validate Stage~A: check that simulated income dynamics, unemployment rates, and health distributions match data.
+    \item Run Stage~B GE calibration.
+    \item Validate Stage~B: check fiscal moments (tax revenue/GDP, spending/GDP) as untargeted predictions.
+    \item Sensitivity analysis: vary $\sigma$, $\underline{a}$, key tax rates to check robustness.
+\end{enumerate}
+
+\subsection{Missing Model Features (Implementation To-Do)}
+
+The following features are present in the theoretical model (Section~\ref{s:model}) but not yet implemented in the code. They are listed roughly in order of priority for calibration.
+
+\begin{enumerate}
+    \item \textbf{Endogenous labor supply.} The model specifies $u(c,\ell) = \frac{c^{1-\sigma}}{1-\sigma} - \nu\frac{\ell^{1+\varphi}}{1+\varphi}$; the code uses CRRA over consumption only with no hours choice.
+    \item \textbf{Survival risk.} Stochastic survival $\pi(j,s)$ enters the Bellman as $\beta\,\pi_j(s)\,\mathbb{E}[V_{j+1}]$; the code assumes deterministic survival (all agents live exactly $J$ periods).
+    \item \textbf{Human capital accumulation.} The model has a continuous human capital state $h$ with deterministic age growth $g_j$ and stochastic shocks; the code uses a discrete AR(1) income process without a human capital state variable.
+    \item \textbf{Schooling phase and children.} Working households have children with consumption costs $c_y(j)$ and education expenditures $e_s = (1-\kappa^{\text{school}}_t)\,e(j)$; the code has no children, no schooling, and no education subsidies.
+    \item \textbf{Sovereign debt and SOE equilibrium.} The model is a small open economy with government bonds $B_t$ held by external lenders at rate $r^*$; the code uses closed-economy capital market clearing with no government debt.
+    \item \textbf{Public capital in production.} The production function includes public capital: $Y = Z_t (K^g)^{\eta_g} K^{\alpha} L^{1-\alpha}$ (with CES generalization); the code uses $Y = Z K^{\alpha} L^{1-\alpha}$ with no public capital.
+    \item \textbf{Pension formula.} The model specifies $\text{PENS}_t = \max\{\rho\,\bar{y},\; b_{\min}\}$ based on lifetime average earnings with a minimum floor; the code uses last working-period income state with no floor.
+    \item \textbf{Means-tested transfers.} The model includes $T^W(\cdot)$ and $T^R(\cdot)$ for workers and retirees; the code has no means-tested transfers.
+    \item \textbf{Progressive taxation.} The model allows $\tau^l(y) = 1 - \kappa\, y^{-\eta}$; the code uses proportional rates only.
+    \item \textbf{Bequest taxation.} Assets of deceased are taxed at rate $\tau^{\text{beq}}$ and redistributed; not implemented (requires survival risk).
+    \item \textbf{Age-dependent medical costs and health coverage.} The model specifies $m^{\text{need}}(j,s)$ and $\kappa^{\text{health}}_t(j,s)$; the code uses health-only costs $m(s)$ and a scalar $\kappa$.
+    \item \textbf{Government spending on goods.} The model includes $G_t$ (non-transfer purchases) and public investment $I^g_t$; the code has neither.
+    \item \textbf{Age- and health-dependent income transitions.} The model specifies $P_z(z'|z,j,s)$; the code uses a constant transition matrix $P_z$.
+\end{enumerate}
+
+\subsubsection{Additional Parameters Required}
+
+Table~\ref{tab:future-params} lists the parameters that would be added once the missing features are implemented.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Parameters required by missing model features.}
+\label{tab:future-params}
+\begin{tabular}{lllll}
+\toprule
+Feature & Parameter & Description & Calibration & Range \\
+\midrule
+\multicolumn{5}{l}{\textit{1. Endogenous labor supply}} \\
+& $\nu$ & Disutility of labor weight & Internal (SMM) & 0.5--5.0 \\
+& $\varphi$ & Inverse Frisch elasticity & External & 1.0--2.0 \\
+\midrule
+\multicolumn{5}{l}{\textit{2. Survival risk}} \\
+& $\pi(j,s)$ & Survival prob.\ by age and health & External & Life tables \\
+& $\tau^{\text{beq}}$ & Bequest tax rate & External & 0--0.40 \\
+\midrule
+\multicolumn{5}{l}{\textit{3. Human capital accumulation}} \\
+& $A_0$ & Initial productivity level & Internal (SMM) & --- \\
+& $\gamma^h$ & Returns to education investment & External & 0.3--0.7 \\
+& $g_j$ & Deterministic HC growth by age & External & Age profile \\
+& $\sigma_\epsilon$ & HC shock std.\ dev. & Internal (SMM) & 0.05--0.20 \\
+\midrule
+\multicolumn{5}{l}{\textit{4. Schooling and children}} \\
+& $c_y(j)$ & Child consumption cost by age & External & 0.1--0.4 \\
+& $e(j)$ & Education expenditure by age & External & Data \\
+& $\kappa^{\text{school}}_t$ & Govt.\ education subsidy rate & External & 0.5--1.0 \\
+& $\mathcal{S}$ & Number of schooling periods & External & 3--6 \\
+\midrule
+\multicolumn{5}{l}{\textit{5. Sovereign debt and SOE}} \\
+& $r^*$ & World interest rate & External & 0.01--0.04 \\
+& $B_0$ & Initial govt.\ debt stock & External & Data \\
+& $\delta^B$ & Bond decay rate (long-term) & External & 0.03--0.10 \\
+\midrule
+\multicolumn{5}{l}{\textit{6. Public capital}} \\
+& $\eta_g$ & Output elasticity of public capital & External & 0.05--0.15 \\
+& $K^g_0$ & Initial public capital stock & External & Data \\
+& $\delta_g$ & Public capital depreciation & External & 0.03--0.06 \\
+& $\theta$ & CES share parameter (if used) & External & $\eta_g/(\alpha+\eta_g)$ \\
+& $\sigma^{\text{CES}}$ & Elasticity of substitution $K$/$K^g$ & External & 0.5--$\infty$ \\
+\midrule
+\multicolumn{5}{l}{\textit{7. Pension formula}} \\
+& $b_{\min}$ & Minimum pension floor & External & Data \\
+& Indexation rule & Price vs.\ wage indexation & External & Policy choice \\
+\midrule
+\multicolumn{5}{l}{\textit{8. Means-tested transfers}} \\
+& $T^W_{\min}$ & Transfer floor (workers) & External & Data \\
+& $T^R_{\min}$ & Transfer floor (retirees) & External & Data \\
+& Phase-out rate & Transfer withdrawal rate & External & 0.3--0.8 \\
+\midrule
+\multicolumn{5}{l}{\textit{9. Progressive taxation}} \\
+& $\kappa^{\text{tax}}$ & Progressivity level & External & 0.8--1.0 \\
+& $\eta^{\text{tax}}$ & Progressivity curvature & Internal (SMM) & 0.05--0.20 \\
+\midrule
+\multicolumn{5}{l}{\textit{11. Age-dependent health costs}} \\
+& $m^{\text{need}}(j,s)$ & Medical cost by age $\times$ health & External & Age profile \\
+& $\kappa^{\text{health}}_t(j,s)$ & Coverage by age $\times$ health & External & Policy data \\
+\midrule
+\multicolumn{5}{l}{\textit{12. Government spending}} \\
+& $G_t$ & Non-transfer purchases & External & Data \\
+& $I^g_t$ & Public investment path & External & Data \\
+\midrule
+\multicolumn{5}{l}{\textit{13. State-dependent income transitions}} \\
+& $P_z(z'|z,j,s)$ & Transition probs.\ by age, health & Internal (SMM) & Panel data \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Additional Data Requirements}
+
+Table~\ref{tab:future-data} lists the data sources needed to calibrate or validate the parameters above.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Data required for missing model features.}
+\label{tab:future-data}
+\begin{tabular}{lll}
+\toprule
+Feature & Data needed & Source \\
+\midrule
+\multicolumn{3}{l}{\textit{1. Endogenous labor supply}} \\
+& Average hours worked by age and education & EU-LFS / CPS \\
+& Hours elasticity estimates & Chetty et al.\ (2011, 2012) \\
+\midrule
+\multicolumn{3}{l}{\textit{2. Survival risk}} \\
+& Life tables by age and health status & Eurostat / HMD \\
+& Bequest flows and estate tax revenue & National accounts / OECD \\
+\midrule
+\multicolumn{3}{l}{\textit{3. Human capital accumulation}} \\
+& Wage--age profiles by education & EU-SILC / PSID \\
+& Within-cohort earnings dispersion by age & EU-SILC / PSID \\
+& Returns to education (Mincer coefficients) & Literature \\
+\midrule
+\multicolumn{3}{l}{\textit{4. Schooling and children}} \\
+& Fertility rates and household size by age & Eurostat / Census \\
+& Public and private education spending & COFOG / OECD EAG \\
+& Childcare costs by age of child & OECD Family Database \\
+\midrule
+\multicolumn{3}{l}{\textit{5. Sovereign debt and SOE}} \\
+& Government debt stock and maturity profile & Eurostat / ECB \\
+& Sovereign bond yields (short and long term) & ECB / Bloomberg \\
+& Net international investment position & Eurostat / IMF \\
+\midrule
+\multicolumn{3}{l}{\textit{6. Public capital}} \\
+& Public capital stock (general govt.) & IMF Investment \& Capital Stock \\
+& Public GFCF by function (infra., defense, \ldots) & COFOG / Eurostat \\
+& Output elasticity of public capital estimates & Bom \& Ligthart (2014) \\
+\midrule
+\multicolumn{3}{l}{\textit{7. Pension formula}} \\
+& Statutory replacement rates by earnings level & OECD Pensions at a Glance \\
+& Minimum pension levels & National SS legislation \\
+& Pension indexation rules (price/wage/mixed) & OECD / national sources \\
+\midrule
+\multicolumn{3}{l}{\textit{8. Means-tested transfers}} \\
+& Social assistance benefit levels & OECD Benefits \& Wages \\
+& Transfer phase-out schedules & National legislation \\
+& Take-up rates for means-tested programs & OECD / Eurofound \\
+\midrule
+\multicolumn{3}{l}{\textit{9. Progressive taxation}} \\
+& Effective tax rates by income decile & OECD Taxing Wages \\
+& Statutory tax brackets and rates & National tax codes \\
+\midrule
+\multicolumn{3}{l}{\textit{11. Age-dependent health costs}} \\
+& Medical expenditure by age and health status & MEPS / SHA / Eurostat \\
+& Public vs.\ private health spending shares by age & OECD Health Statistics \\
+\midrule
+\multicolumn{3}{l}{\textit{12. Government spending}} \\
+& Government final consumption expenditure & National accounts / Eurostat \\
+& Government GFCF (total and by function) & COFOG / Eurostat \\
+& Defense spending path and projections & NATO / SIPRI \\
+\midrule
+\multicolumn{3}{l}{\textit{13. State-dependent income transitions}} \\
+& Panel earnings data with health information & PSID / SHARE / EU-SILC \\
+& Transition matrices estimated from panel data & Literature / own estimation \\
+\bottomrule
+\end{tabular}
+\end{table}

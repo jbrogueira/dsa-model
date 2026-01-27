@@ -1,0 +1,390 @@
+\subsection{Environment}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Country:} small open economy (SOE) that issues non-state-contingent sovereign bonds to foreign lenders.
+    \item \textbf{Households:} overlapping generations (OLG) with three life stages: \textbf{schooling}, \textbf{working}, \textbf{retirement}. Incomplete markets; idiosyncratic risks (labor productivity, employment, health). Survival is stochastic and age/health-dependent.
+    \item \textbf{Government:} sets tax rates, pension rules, public health and education expenses, as well as defence expenditures, together with their corresponding public investments, and other expenditures and transfers; issues sovereign bonds (one-period or long-term).
+    \item \textbf{Firms/technology:} tradable/nontradable production structure with exogenous TFP shocks.
+    \item \textbf{External lenders:} risk-neutral, discount at world rate $r^{*}$.
+\end{itemize}
+
+
+\subsection{Demographics \& Life Cycle}
+Ages $j \in \{1,\dots,J\}$. Partition:
+\begin{align*}
+%\textbf{Schooling: } & j \in \mathcal{S}=\{1,\dots,J_S\}, \\
+\textbf{Working: } & j \in \mathcal{W}=\{1,\dots,J_R\}, \\
+\textbf{Retired: } & j \in \mathcal{R}=\{J_R+1,\dots,J\}.
+\end{align*}
+Survival probability $\pi(j,s)$ depends on age and health $s$. Newborn mass fills in to keep population stationary (or allow growth). Optionally, retirement is endogenous within a window $[J_R^{\min},J_R^{\max}]$.
+
+\subsection{Preferences and Health}
+Household $i$ derives period utility
+\begin{equation}
+u(c,\ell) = \frac{c^{1-\sigma}}{1-\sigma} - \nu\,\frac{\ell^{1+\varphi}}{1+\varphi},
+\end{equation}
+where $c$ is consumption, $\ell$ labor hours.
+
+Health state $s \in \mathcal{S}$ follows $P_s(s'|s,j)$, affecting:
+\begin{itemize}[leftmargin=*]
+    \item labor efficiency,
+    \item medical expenditure needs $m^{\text{need}}(j,s)$, 
+    \item survival $\pi(j,s)$.
+\end{itemize}
+
+\subsection{Human Capital / Schooling}
+We build on \cite{HuVeYa_AER21} and \cite{CaucLoch_JPE2020}. Human capital has three components: (i) initial level determined by education expenditure, (ii) deterministic life-cycle growth, and (iii) stochastic shocks.
+
+The initial human capital level depends on education expenditure:
+\begin{equation}
+    h_0 = H(e_s) = A_0 e_s^{\gamma},
+\end{equation}
+where $e_s$ is education expenditure, $A_0$ is initial productivity, and $\gamma \in (0,1)$ captures returns to education investment.
+
+After entering the labor market, human capital evolves according to:
+\begin{equation}
+    \log h_{j+1} = \log h_j + g_j + \epsilon_j,
+\end{equation}
+where $g_j$ is a deterministic age-dependent growth rate capturing experience effects, and $\epsilon_j \sim iid \; N(0,\sigma_\epsilon^2)$ represents stochastic shocks to human capital.
+%{\RM we may want to consider (in the future?) $g_j$ also dependent on $e$.}
+
+Human capital and health status map directly into wage units in working years through $w_t \cdot h_j \cdot f(s)$, where health status $s \in \{ s_{\text{very bad}}, s_{\text{good}}, s_{\text{bad}} \}$ affects labor productivity directly.
+
+
+\subsection{Idiosyncratic Income \& Employment Risk}
+Productivity $z_i \in \{0,z_1,...,z_N\}$ follows a Markov process $P_z(z'|z,j,s)$, where $z_i=0$ represents unemployment. Wage income in working years:
+\begin{equation}
+y^L = w_t\, h_j\, f(s) \, z.
+\end{equation}
+When $z=0$, the household receives unemployment benefits through the transfer system.
+
+\subsection{Household Budget Constraints}\label{sec:household-bc}
+Let $a_i$ denote individual \emph{liquid assets} (domestic private claims; prohibit households from borrowing externally). Let $\underline{a}$ be a borrowing limit (possibly $0$).
+
+\subsection*{Schooling}
+Children are part of the household, parents have to provide for consumption and for the fraction of education costs that is not covered by the government. Each cohort of working age household has an exogenous number of children during the first $\mathcal{S}$ of working life.
+
+\subsection*{Working ($j \in \mathcal{W}$)}
+\begin{equation}
+(1+\tau^{c})(1 + c_y(j))c + a' + m^{\text{oop}} + e_s = (1-\tau^{l}-\tau^{p})\, y^L\,\ell + T^{W}(\cdot) + (1+r^d_t)a,
+\end{equation}
+with consumption tax $\tau^c$, labor income tax $\tau^l$, and \textbf{social security contributions} $\tau^p$ that finances social security; $T^{W}$ are means-tested transfers; $m^{\text{oop}} = \big(1-\kappa^{\text{health}}_t(j,s)\big)\, m^{\text{need}}(j,s)$ with public health coverage rate $\kappa^{\text{health}}_t$. $c_y(j)$ is the fraction of household consumption that is spent by children during schooling years, and $e_s = \big(1-\kappa^{\text{school}}_t(j)\big)\, e(j)$ are education expenditures. Note that $\kappa^{\text{health}}_t(j$) and $\kappa^{\text{school}}_t(j)$ parameterize two important pillars of the European Welfare States. 
+
+%[Better change the notation $c_y(j)$, keeping $c$ for consumption].
+
+ 
+%\subsection*{{\RM{Unemployed ($j \in \mathcal{U}$)}}}
+%{\RM {we may want to consider them, even if the transition to in-and-out of $\mathcal{U})$ are -- for the time being -- exogenous, but this should be part of the individual state and keep account of the unemployment benefits expenditures.}}
+
+\subsection*{Retired ($j \in \mathcal{R}$)}
+\begin{equation}
+c + a' + \tau^{c} c + m^{\text{oop}} = \text{PENS}_t\big(\bar{y}_t,j\big) + T^{R}(\cdot) + (1+r^d_t)a,
+\end{equation}
+where $\text{PENS}_t(\bar{y}_t,a)$ is a benefit function (e.g., replacement rate $\rho$ applied to lifetime average earnings $\bar{y}_t$, with floors/caps; indexation rules can be to prices or wages).
+{\RA {Be more explicit about the distinction PAYG vs Fully Funded (or partially Funded. However, the latter will require to keep track of the individual contributions (not $a$).}}
+\subsection*{Terminal Condition}
+Assets of the deceased are taxed at rate $\tau^{\text{beq}}$ and redistributed lump-sum.
+%{\RM {To whom?}}
+
+\subsection{Production}
+
+We build on \cite{BaxterKing_AER93}, \cite{Barro_JPE90}, \cite{LeeWalYan_JME2010}, \cite{Ramey_NBER2020}, and \cite{Chatt_Turn_EER1012}.
+% A representative firm with Cobb-Douglas technology:
+% \begin{equation}
+%     Y_t = Z_t \left(K^g_t\right)^{\eta_g} K_t^{\alpha} L_t^{1-\alpha},
+% \end{equation}
+% where $Z_t$ is aggregate productivity, $K^g_t$ is public capital, $K_t$ is private capital, $L_t$ is aggregate labor, $\eta_g$ measures the output elasticity of public capital, and $\alpha$ is the private capital share.
+    
+% The firm hires labor at wage $w_t$; private capital $K_t$ can be fixed or pinned down by $r^{*}$. 
+
+\subsection{Baseline}
+
+The Cobb--Douglas production function is
+\begin{equation}
+Y = Z_t \left(K^g_t\right)^{\eta_g} K_t^{\alpha} L_t^{1-\alpha},
+\end{equation}
+where
+\begin{itemize}
+    \item $K^g$ : public capital,
+    \item $K$ : private capital,
+    \item $L$ : labor,
+    \item $\alpha$ : elasticity of output with respect to private capital,
+    \item $\eta_g$ : elasticity of output with respect to public capital.
+\end{itemize}
+
+\subsection{Generalized formulation with substitution}
+
+To allow for imperfect substitution between $K$ and $K^g$ while keeping the
+capital--labor split fixed, define an \emph{effective capital stock} $\tilde K(\sigma)$ as a CES aggregator:
+\begin{equation}
+\tilde K(\sigma) =
+\left[ (1-\theta) K^{\rho} + \theta (K^g)^{\rho} \right]^{1/\rho},
+\qquad
+\rho = \frac{\sigma - 1}{\sigma},
+\qquad
+\sigma \in (0, \infty],
+\end{equation}
+where $\sigma$ is the elasticity of substitution between $K$ and $K_g$,
+and $\theta \in (0,1)$ is the share parameter
+\[
+\theta = \frac{\eta}{\alpha + \eta}.
+\]
+
+The production function becomes
+\begin{equation}
+Y = Z\, \tilde K(\sigma)^{\alpha+\eta}\, L^{\,1-\alpha}.
+\end{equation}
+
+\subsection{Limiting cases}
+
+\paragraph{Cobb--Douglas case ($\sigma \to 1$):}
+When $\sigma \to 1$ (i.e.\ $\rho \to 0$),
+\[
+\tilde K \to K^{1-\theta} (K^g)^{\theta},
+\]
+so that
+\[
+Y \to Z\, K^{(\alpha+\eta)(1-\theta)} (K^g)^{(\alpha+\eta)\theta} L^{1-\alpha}
+    = Z\, (K^g)^{\eta} K^{\alpha}  L^{1-\alpha}.
+\]
+Hence the original Cobb--Douglas form is recovered.
+
+\paragraph{Perfect substitutes ($\sigma \to \infty$):}
+As $\sigma \to \infty$ ($\rho \to 1$),
+\[
+\tilde K \to (1-\theta) K + \theta K^g,
+\]
+so that
+\[
+Y = Z\, \big[(1-\theta) K + \theta K^g\big]^{\alpha} L^{1-\alpha}.
+\]
+
+\paragraph{Perfect complements ($\sigma \to 0^+$):}
+As $\sigma \to 0^+$, the aggregator becomes Leontief:
+\[
+\tilde K \to \min\{K, K^g\},
+\]
+so that
+\[
+Y = Z\, [\min\{K, K^g\}]^{\alpha} L^{1-\alpha}.
+\]
+
+\subsection{Remarks}
+
+\begin{itemize}
+    \item The elasticity of output with respect to labor remains fixed at $1-\alpha$.
+    \item The elasticity with respect to the capital composite $\tilde K$ is $\alpha+\eta$.
+    \item Substitutability between public and private capital is governed by $\sigma$:
+    higher $\sigma$ implies greater substitutability, and $\sigma \to \infty$ yields perfect substitutes.
+    \item The Cobb--Douglas specification is a special case of this CES formulation when $\sigma=1$.
+\end{itemize}
+
+\vspace{15pt}
+
+
+\subsection{Individual Problem}\label{sec:state}
+\textbf{Individual state:} $(j, h, s, z, \bar{y}, a)$ and pension status.
+
+
+\noindent \textbf{Aggregate state:} $\mathbf{S}_t = \big(r^*,B_t, Z_t, \mu_t\big)$, where $\mu_t$ is the \emph{distribution of households} over individual states.
+
+
+\paragraph{Household Bellman (working age).}
+\begin{align*}
+V_j(h, s, z, \bar{y}, a;\,\mathbf{S}) = \max_{c,\ell,a' \ge \underline{a}} \;& u(c,\ell) + \beta\,\pi_j(s)\, \mathbb{E}\!\left[V_{j+1}(h', s', z', \bar{y}', a';\,\mathbf{S}')\right] \\
+\text{s.t. } & (1+\tau^{c})(1 + c_y(j))\,c + a' + m^{\text{oop}} + e_s = \\
+& \qquad (1-\tau^{l}-\tau^{p})\, w_t\, h_j\, f(s)\, z\, \ell + T^{W}(\cdot) + (1+r^d_t)\, a, \\
+& \log h' = \log h + g_j + \sigma_{\epsilon}\epsilon', \\
+& s' \sim P_s(s'|s,j), \quad z' \sim P_z(z'|z,j,s), \quad \epsilon' \sim N(0,1)\\
+& \text{and government policies }. 
+\end{align*}
+
+\paragraph{Household Bellman (retired).}
+\begin{align*}
+V_j^{R}(s, \bar{y}, a;\,\mathbf{S}) = \max_{c,\,a' \ge \underline{a}} \;& u(c,0) + \beta\,\pi_j(s)\, \mathbb{E}\!\left[V_{j+1}^{R}(s', \bar{y}', a';\,\mathbf{S}')\right] \\
+\text{s.t. } & (1+\tau^{c})\,c + a' + m^{\text{oop}} = \text{PENS}_t(\bar{y},j) + T^{R}(\cdot) + (1+r^d_t)\,a, \\
+& m^{\text{oop}} = \big(1-\kappa^{\text{health}}_t(j,s)\big)\, m^{\text{need}}(j,s), \\
+& s' \sim P_s(s'|s,j), \\
+& \text{and government policies }, \\
+& \bar{y}' = \bar{y} \quad \text{(no new earnings after retirement)}.
+\end{align*}
+
+%{\RM {Recall the accounting of the unemployed}}
+
+\subsection{Pensions, Taxes, and Transfers (Parameterizations)}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Pensions:} $\text{PENS}_t = \max\{\rho \cdot \bar{y}, \; b_{\min}\}$, $\rho$ is a replacement rate and $b_{i\min}$ a minimum pension, set by the government.
+
+    \item \textbf{Taxes:} proportional rates $(\tau^c,\tau^l,\tau^p)$ or a piecewise-linear/progressive schedule $\tau^l(y) = 1 - \kappa y^{-\eta}$. Payroll taxes fund pensions (pay-as-you-go), optionally with a trust-fund asset $S^{\text{pens}}_t$.
+    \item \textbf{Transfers:} age- and means-tested floors for students/workers/retirees; unemployment subsidies; health subsidies $\kappa^{\text{health}}_t(a,h)$.
+\end{itemize}
+
+\subsection{Aggregate Resource Constraint}
+
+Define aggregate uses of resources:
+\begin{align*}
+C_t &\equiv \int (1 + c_y(j))\, c(j,\cdot)\, d\mu_t, \\
+M_t &\equiv \int m^{\text{need}}(j,s)\, d\mu_t, \\
+E_t &\equiv \int_{\mathcal{W}} e(j)\, d\mu_t, \\
+I^k_t &\text{ s.t. } K_{t+1} = (1-\delta_k)K_t + I^k_t, \\
+I^g_t &\text{ s.t. } K^g_{t+1} = (1-\delta_g)K^g_t + I^g_t.
+\end{align*}
+
+Aggregate output is given by:
+\begin{equation}
+Y_t = Z_t \left(K^g_t\right)^{\eta_g} K_t^{\alpha} L_t^{1-\alpha}.
+\end{equation}
+
+\subsection*{One-Period External Bonds}
+The economy-wide resource constraint (goods-market clearing condition) is:
+\begin{equation}
+C_t + M_t + E_t + G_t + I^k_t + I^g_t = Y_t + q_t B_{t+1} - (1+r^{*})B_t.
+\end{equation}
+
+\subsection{Government}
+\paragraph{Instruments.} Debt $B_{t+1}$ (external sovereign bonds, one-period or long-term); tax schedule $(\tau^c_t,\tau^l_t,\tau^p_t)$; public investment $I^g_t$; spending $G_t$; transfers $T^{W},T^{R}$; health coverage $\kappa^{\text{health}}_t(j,s)$; education subsidies $\kappa^{\text{school}}_t(j)$; pension rules with replacement rate $\rho$, retirement age $J_R$, and indexation.
+
+\paragraph{Flow budget.} The government budget constraint incorporates all spending components:
+
+For \emph{one-period bonds}:
+\begin{align}
+& G_t + I^g_t + (1+r^{*})B_t + \int_{\mathcal{R}} \text{PENS}_t(\bar{y}_t,j)\,d\mu_t + \nonumber \\
+& \quad + \int \kappa^{\text{health}}_t(j,s)\,m^{\text{need}}(j,s)\,d\mu_t + \int_{\mathcal{W}} \kappa^{\text{school}}_t(j)\,e(j)\,d\mu_t + \int T^W(\cdot)\,d\mu_t + \int T^R(\cdot)\,d\mu_t \nonumber \\
+& = \tau^c_t \int (1+c_y(j))c\,d\mu_t + (\tau^l_t + \tau^p_t) \int_{\mathcal{W}} w_t h_j s z \ell\,d\mu_t +  B_{t+1} + \tau^{\text{beq}} \int (1-\pi(j,s))a\,d\mu_t,
+\end{align}
+
+\noindent where public capital evolves according to:
+\begin{equation}
+K^g_{t+1} = (1-\delta_g)K^g_t + I^g_t.
+\end{equation}
+
+For \emph{long-term bonds}, replace $(1+r^*)B_t$ with $\delta B_t$ in the above expression, where $\delta$ represents the maturing fraction plus coupons.
+
+\subsection{GBC: Aggregation}
+Define tax bases and spending aggregates using the cross-sectional distribution $\mu_t$ from Section~\ref{sec:state} and Section 13:
+\begin{align*}
+C_t^{\text{base}} &\equiv \int (1+c_y(j))\, c(x,j)\, d\mu_t, \\
+\mathcal{B}_t^{\text{lab}} &\equiv \int_{j\in \mathcal{W}} w_t\, h_j\, f(s)\, z\, \ell(x,j)\, d\mu_t, \\
+\text{PENS}_t^{\text{out}} &\equiv \int_{j\in \mathcal{R}} \text{PENS}_t(\bar{y},j)\, d\mu_t, \\
+\text{HSub}_t &\equiv \int \kappa^{\text{health}}_t(j,s)\, m^{\text{need}}(j,s)\, d\mu_t, \\
+\text{ESub}_t &\equiv \int_{j\in \mathcal{W}} \kappa^{\text{school}}_t(j)\, e(j)\, d\mu_t, \\
+\text{Tr}_t^W &\equiv \int T^W(\cdot)\, d\mu_t, \qquad
+\text{Tr}_t^R \equiv \int T^R(\cdot)\, d\mu_t, \\
+\text{BeqTax}_t &\equiv \tau^{\text{beq}} \int (1-\pi(j,s))\, a(x,j)\, d\mu_t.
+\end{align*}
+Government revenues:
+\begin{align*}
+\text{Rev}_t^c &= \tau_t^c \, C_t^{\text{base}}, \\
+\text{Rev}_t^l &= \tau_t^l \, \mathcal{B}_t^{\text{lab}}, \qquad
+\text{Rev}_t^p = \tau_t^p \, \mathcal{B}_t^{\text{lab}}.
+\end{align*}
+Spending includes $G_t$ (non-transfer purchases) and $I_t^g$ (public investment), with
+$K^g_{t+1} = (1-\delta_g)K^g_t + I_t^g$.
+
+Flow budget with one-period external bonds:
+\begin{equation}
+G_t + I_t^g + (1+r^{*})B_t + \text{PENS}_t^{\text{out}} + \text{HSub}_t + \text{ESub}_t + \text{Tr}_t^W + \text{Tr}_t^R
+= \text{Rev}_t^c + \text{Rev}_t^l + \text{Rev}_t^p + \text{BeqTax}_t +  B_{t+1}.
+\label{eq:gov-budget-1p}
+\end{equation}
+With long-term bonds (decay $\delta$), replace the debt service/issuance terms by
+\begin{equation}
+\underbrace{\delta B_t}_{\text{coupons+principal paid}} \quad\text{and}\quad \underbrace{ B_{t+1} - (1-\delta)  B_t}_{\text{net issuance at market value}},
+\end{equation}
+so \eqref{eq:gov-budget-1p} becomes
+\begin{align}
+G_t + I_t^g + \delta B_t + \text{PENS}_t^{\text{out}} + \text{HSub}_t + \text{ESub}_t + \text{Tr}_t^W + \text{Tr}_t^R
+= \text{Rev}_t^c + \text{Rev}_t^l + \text{Rev}_t^p + \text{BeqTax}_t +  B_{t+1} - (1-\delta)  B_t.
+\end{align}
+
+Optional pension trust fund $S_t^{\text{pens}}$ (if used) accumulates as
+\begin{equation}
+S_{t+1}^{\text{pens}} = (1+r^{*}) S_t^{\text{pens}} + \text{Rev}_t^p - \text{PENS}_t^{\text{out}},
+\end{equation}
+and pension flows can be excluded from \eqref{eq:gov-budget-1p} accordingly.
+
+%{\RM{ I think that in any case we need to be more explicit about what $\text{Rev}_t^p$ covers with possibly differentiating the part that goes to $\text{PENS}_t^{\text{out}}$ and, as said, the individual contributions to the pension trust should be part of the individual state, no?}}
+
+In this setup, the government budget is driven by how the cross‑sectional age–education–health composition shapes the tax base and benefit rolls in each period. Changes in the age distribution (generated by cohort weights and the population growth assumptions) directly alter the dependency ratio: a larger share of retirees mechanically raises pension outlays and lowers labor‑tax and payroll‑tax revenues by shrinking the fraction of working agents; conversely, a younger structure expands the tax base and reduces pension pressure. The population growth rate path affects these cohort weights over time, so declining growth tilts the population toward older ages, gradually pushing spending up (pensions and health) while weakening revenue. The health structure matters because worse health increases medical utilization, raising government health spending, and can also reduce effective labor income, lowering the labor tax base. Finally, the education mix shifts both sides of the budget: higher‑education groups tend to have higher effective earnings and employment, increasing labor/payroll (and indirectly consumption) tax revenues, while also potentially raising pension obligations if pensions are earnings‑linked; low‑education shares do the opposite and can raise transfers such as UI if unemployment incidence is higher.
+
+Note that the model can encompass {\bf{different forms of welfare states}}, corresponding to differences on: pension systems, public education, public health and transfers. We will consider changes in the external margin -- between public provision and private contracting -- as well as in the internal margin; e,g. quality of the public service, as in \cite{Sanchez-Gil2025}.
+
+\subsection{Aggregate Resource Constraint and Market Clearing}
+Aggregate uses:
+\begin{align*}
+C_t &\equiv \int (1+c_y(j))\, c(x,j)\, d\mu_t, \\
+M_t &\equiv \int m^{\text{need}}(j,s)\, d\mu_t, \\
+E_t &\equiv \int_{j\in \mathcal{W}} e(j)\, d\mu_t, \\
+I_t^k &\text{ with } K_{t+1} = (1-\delta_k)K_t + I_t^k, \qquad
+I_t^g \text{ with } K^g_{t+1} = (1-\delta_g)K^g_t + I_t^g.
+\end{align*}
+Aggregate effective labor and output:
+\begin{align*}
+L_t &\equiv \int_{j\in \mathcal{W}} h_j\, f(s)\, z\, \ell(x,j)\, d\mu_t, \\
+Y_t &= Z_t \left(K_t^g\right)^{\eta_g} K_t^{\alpha} L_t^{1-\alpha}
+\quad \text{(or the CES version if used).}
+\end{align*}
+
+Goods-market clearing with one-period bonds:
+\begin{equation}
+C_t + M_t + E_t + G_t + I_t^k + I_t^g = Y_t +  B_{t+1} - (1+r^{*}) B_t.
+\end{equation}
+With long-term bonds (decay $\delta$):
+\begin{equation}
+C_t + M_t + E_t + G_t + I_t^k + I_t^g
+= Y_t + \big[ B_{t+1} - (1-\delta)  B_t\big] - \delta B_t.
+\end{equation}
+
+Market clearing:
+\begin{align*}
+&\text{Labor: } L_t = \int_{j\in \mathcal{W}} h_j f(s) z\, \ell\, d\mu_t, \\
+&\text{Capital: } K_{t+1} = (1-\delta_k)K_t + I_t^k, \quad K^g_{t+1} = (1-\delta_g)K_t^g + I_t^g, \\
+&\text{External bond: } \text{foreign lenders hold } B_t \text{ supplied by the government.}
+\end{align*}
+
+\subsection{Overlapping Generations}
+Let $j\in\{1,\dots,J\}$ denote age. For each age $j$, let $\mathcal{X}_j$ be the individual state space \emph{excluding age} (e.g., $x=(h,s,z,\bar y,a,\text{pension})$), and let $\mu_{t,j}$ be a Borel measure over $\mathcal{X}_j$ at date $t$. Define the disjoint-union state space
+\[
+\mathcal{X} \equiv  \bigcup_{j=1}^J \big(\mathcal{X}_j \times \{j\}\big),
+\]
+so the \emph{full} individual state is $(x,j)$ with $x\in\mathcal{X}_j$. For any measurable $A \subseteq \mathcal{X}$, define the cross-sectional distribution as
+\[
+\mu_t(A) \equiv \sum_{j=1}^J \mu_{t,j}\big(\{x\in\mathcal{X}_j : (x,j)\in A\}\big),
+\]
+so that $N_t \equiv \mu_t(\mathcal{X}) = \sum_{j=1}^J \mu_{t,j}(\mathcal{X}_j)$.
+
+\paragraph{Age progression with survival.}
+Let $x\in\mathcal{X}_j$ denote the age-excluding individual state and let $P_j(\cdot\mid x)$ be the one-period transition kernel for $x'$ at next age $j+1$ (induced by model primitives and optimal choices). Survival depends on $(j,s)$ via $\pi(j,s)$. For any measurable $A\subseteq\mathcal{X}_{j+1}$ and ages $j=1,\dots,J-1$,
+\begin{equation}
+\mu_{t+1,j+1}(A) \;=\; \int_{\mathcal{X}_j} \pi(j,s)\, P_j(A\mid x)\; \mu_{t,j}(dx).
+\label{eq:mu-age-progression}
+\end{equation}
+Agents at terminal age $J$ exit the economy after $t$; there is no $j=J+1$ cohort.
+
+\paragraph{Births and population growth.}
+Let $\Lambda \equiv 1+g_N$ be the exogenous gross population growth factor (set $g_N=0$ for stationary population). Let $\psi$ be the initial-state distribution of newborns over $\mathcal{X}_1$ (e.g., initial health $s$ with probabilities $\psi_s$, initial assets $a=0$, initial human capital $h_0=H(e_s)$, etc.). Define births mass $B_{t+1}$ to satisfy the total population law of motion:
+\begin{align}
+\mu_{t+1,1}(A) &= B_{t+1}\, \psi(A), \qquad \forall A\subseteq\mathcal{X}_1, \label{eq:newborn-dist}\\
+N_{t+1} &= \Lambda\, N_t \;=\; \underbrace{\sum_{j=1}^{J-1} \int_{\mathcal{X}_j} \pi(j,s)\,\mu_{t,j}(dx)}_{\text{survivors to }t+1} \;+\; B_{t+1}. \label{eq:population-total}
+\end{align}
+Equivalently,
+\begin{equation}
+B_{t+1} \;=\; \Lambda\, N_t \;-\; \sum_{j=1}^{J-1} \int_{\mathcal{X}_j} \pi(j,s)\,\mu_{t,j}(dx).
+\end{equation}
+With $g_N=0$, births replace deaths to keep $N_{t+1}=N_t$.
+
+\paragraph{Cohort-year margins and health decomposition.}
+Let $N_{t,j}\equiv \mu_{t,j}(\mathcal{X}_j)$ be the mass of age-$j$ agents in year $t$.
+If we track only age and health, define $N_{t,j,s}\equiv \mu_{t,j}(\{x\in\mathcal{X}_j:\text{health}=s\})$, then for $j=1,\dots,J-1$:
+\begin{align}
+N_{t+1,j+1,s'} &= \sum_{s} \pi(j,s)\, P_s(s'|s,j)\, N_{t,j,s}, \\
+N_{t,j} &= \sum_{s} N_{t,j,s}, \qquad N_t = \sum_{j=1}^J N_{t,j}.
+\end{align}
+
+\paragraph{Aggregation by cohort-year.}
+For any measurable individual quantity $x_t(x,j)$ (e.g., consumption, labor, medical needs),
+define its cohort-year aggregate and economy-wide aggregate by
+\begin{align}
+X_{t,j} &\equiv \int_{\mathcal{X}_j} x_t(x,j)\; \mu_{t,j}(dx), \\
+X_t &\equiv \sum_{j=1}^J X_{t,j} \;=\; \sum_{j=1}^J \int_{\mathcal{X}_j} x_t(x,j)\; \mu_{t,j}(dx) \;=\; \int_{\mathcal{X}} x_t(x,j)\; d\mu_t.
+\end{align}
+The integrals appearing in the government budget constraint and resource constraint are special cases of $X_t$ with appropriate choices of $x_t(\cdot)$ and domain restrictions (e.g., $j\in\mathcal{W}$ for working-age terms).
