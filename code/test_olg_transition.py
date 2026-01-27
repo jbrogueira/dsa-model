@@ -270,7 +270,7 @@ class TestConstantInterestRate:
             tau_p_path=tau_p_path,
             tau_k_path=tau_k_path,
             pension_replacement_path=pension_path,
-            n_sim=100,  # More simulations for accuracy
+            n_sim=500,
             verbose=False
         )
         
@@ -285,7 +285,7 @@ class TestConstantInterestRate:
         print("STEADY STATE TEST WITH CONSTANT ENVIRONMENT")
         print("="*70)
         print(f"Simulation periods: {T_transition}")
-        print(f"Number of agents: 100")
+        print(f"Number of agents: 500")
         print(f"\nConstant parameters:")
         print(f"  r = {r_constant:.4f}")
         print(f"  τ_c = {tau_c_constant:.4f}")
@@ -341,23 +341,23 @@ class TestConstantInterestRate:
         print(f"   Output:   CV={Y_cv:.2%} (mean={Y_mean:.6f}, std={np.std(Y_path_stable):.6f}) {'✓' if Y_cv < tolerance else '✗'}")
         print(f"   Wage:     CV={w_cv:.2%} (mean={w_mean:.6f}, std={np.std(w_path_stable):.6f}) {'✓' if w_cv < tolerance else '✗'}")
         
-        # Test 3: No trend in aggregates
-        periods = np.arange(T_transition)
-        
+        # Test 3: No trend in aggregates (after burn-in)
+        periods_stable = np.arange(len(K_path_stable))
+
         def get_trend_slope(y):
-            t_mean = np.mean(periods)
+            t_mean = np.mean(periods_stable)
             y_mean = np.mean(y)
-            cov = np.mean((periods - t_mean) * (y - y_mean))
-            var_t = np.mean((periods - t_mean)**2)
+            cov = np.mean((periods_stable - t_mean) * (y - y_mean))
+            var_t = np.mean((periods_stable - t_mean)**2)
             return cov / var_t
+
+        K_slope = get_trend_slope(K_path_stable)
+        L_slope = get_trend_slope(L_path_stable)
+        Y_slope = get_trend_slope(Y_path_stable)
         
-        K_slope = get_trend_slope(K_path)
-        L_slope = get_trend_slope(L_path)
-        Y_slope = get_trend_slope(Y_path)
-        
-        K_slope_pct = (K_slope / np.mean(K_path)) * 100 if np.mean(K_path) > 0 else np.nan
-        L_slope_pct = (L_slope / np.mean(L_path)) * 100 if np.mean(L_path) > 0 else np.nan
-        Y_slope_pct = (Y_slope / np.mean(Y_path)) * 100 if np.mean(Y_path) > 0 else np.nan
+        K_slope_pct = (K_slope / K_mean) * 100 if K_mean > 0 else np.nan
+        L_slope_pct = (L_slope / L_mean) * 100 if L_mean > 0 else np.nan
+        Y_slope_pct = (Y_slope / Y_mean) * 100 if Y_mean > 0 else np.nan
         
         slope_tolerance = 0.5  # 0.5% per period
         
@@ -655,15 +655,16 @@ class TestRootCauseDiagnostic:
         print(f"    Next assets: {a_next_policy_val_high:.4f}")
         
         # Check budget constraint
-        eff_labor = model.config.age_efficiency_profile[age]
-        y_grid = model.config.income_process['y_grid']
-        income = w_ss * eff_labor * y_grid[y_idx]
-        
+        y_val = model.y_grid[y_idx]
+        h_val = model.h_grid[h_idx]
+        income = w_ss * y_val * h_val
+
         print(f"\n  Budget check:")
-        print(f"    Income (w*eff*y): {income:.4f}")
+        print(f"    Income (w*y*h): {income:.4f}")
         print(f"    Consumption: {c_policy_val_high:.4f}")
-        print(f"    Savings: {a_next_policy_val_high:.4f}")
-        print(f"    Total: {c_policy_val_high + a_next_policy_val_high:.4f}")
+        print(f"    Savings (a' index): {a_next_policy_val_high}")
+        a_next_val = model.a_grid[int(a_next_policy_val_high)]
+        print(f"    Savings (a' value): {a_next_val:.4f}")
         
         assert a_next_policy_val_high > 0, \
             "Agent should save something with high income at young age!"
