@@ -7,9 +7,10 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Output images
+# Output files
 output/*.png
 output/test/
+*.png
 
 # IDE
 .idea/
