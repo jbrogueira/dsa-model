@@ -449,7 +449,7 @@ class TestBorrowingConstraint:
         for a_idx in range(model.a_policy.shape[1]):
             a_next = model.a_policy[age, a_idx, y_idx, h_idx, e_idx]
             # Get actual asset value from grid
-            a_current = model.config.a_grid[a_idx] if hasattr(model.config, 'a_grid') else a_idx
+            a_current = model.a_grid[a_idx]
             saves = "✓" if a_next > 0.01 else "✗"
             print(f"{a_idx:<6} {a_current:<10.4f} {a_next:<10.4f} {saves:<10}")
         
@@ -556,7 +556,7 @@ class TestRootCauseDiagnostic:
             tau_l_path=np.ones(config.T) * 0.15,
             tau_p_path=np.ones(config.T) * 0.124,
             tau_k_path=np.ones(config.T) * 0.20,
-            pension_replacement_path=np.ones(config.T) * 0.40  # Changed from pension_replacement
+            pension_replacement_path=np.ones(config.T) * 0.40
         )
         
         model = LifecycleModelPerfectForesight(ss_config, verbose=False)
@@ -616,7 +616,7 @@ class TestRootCauseDiagnostic:
             tau_l_path=np.ones(config.T) * 0.15,
             tau_p_path=np.ones(config.T) * 0.124,
             tau_k_path=np.ones(config.T) * 0.20,
-            pension_replacement_path=np.ones(config.T) * 0.40  # Changed from pension_replacement
+            pension_replacement_path=np.ones(config.T) * 0.40
         )
         
         model = LifecycleModelPerfectForesight(ss_config, verbose=False)
@@ -717,18 +717,17 @@ class TestPolicyIndexing:
         print(f"  c_policy: {model.c_policy.shape}")
         print(f"  V: {model.V.shape}")
         
-        # Expected: (T, n_a, n_y, n_h, n_e)
-        # where n_e is number of avg earnings states (for pensions)
-        
+        # Expected: (T, n_a, n_y, n_h, n_y_last)
+        # where n_y_last tracks previous income state (used for pension calculation)
+
         print(f"\nExpected dimensions:")
         print(f"  T = {config.T}")
         print(f"  n_a = {config.n_a}")
         print(f"  n_y = {config.n_y}")
         print(f"  n_h = {config.n_h}")
-        
-        # Check if last dimension is for earnings history
-        n_e = model.a_policy.shape[-1]
-        print(f"  n_e (earnings history states) = {n_e}")
+
+        n_y_last = model.a_policy.shape[-1]
+        print(f"  n_y_last (previous income states) = {n_y_last}")
         
         # Sample policies at different ages
         print(f"\nSample asset policies (a=0, y=high, h=good, e=0):")
@@ -798,39 +797,39 @@ class TestEarningsIndexing:
         model = LifecycleModelPerfectForesight(ss_config, verbose=False)
         model.solve(verbose=False)
         
-        n_e = model.a_policy.shape[-1]
-        print(f"\nNumber of earnings states: n_e = {n_e}")
-        
-        # Check policy at age 1, for each earnings state
-        print(f"\nAge 1 policies (a=0, y=high, h=good) by earnings state:")
-        for e_idx in range(n_e):
-            a_next = model.a_policy[1, 0, 1, 0, e_idx]
-            print(f"  e={e_idx}: a' = {a_next:.4f}")
-        
+        n_y_last = model.a_policy.shape[-1]
+        print(f"\nNumber of previous income states (n_y_last): {n_y_last}")
+
+        # Check policy at age 1, for each y_last state
+        print(f"\nAge 1 policies (a=0, y=high, h=good) by y_last state:")
+        for yl_idx in range(n_y_last):
+            a_next = model.a_policy[1, 0, 1, 0, yl_idx]
+            print(f"  y_last={yl_idx}: a' = {a_next:.4f}")
+
         # Check age 2
-        print(f"\nAge 2 policies (a=0, y=high, h=good) by earnings state:")
-        for e_idx in range(n_e):
-            a_next = model.a_policy[2, 0, 1, 0, e_idx]
-            print(f"  e={e_idx}: a' = {a_next:.4f}")
-        
-        # Check which earnings states have most non-zero policies
-        print(f"\nNon-zero policies by earnings state:")
-        for e_idx in range(n_e):
-            e_policies = model.a_policy[:, :, :, :, e_idx]
-            e_nonzero = np.sum(e_policies > 0.01)
-            e_total = np.prod(e_policies.shape)
-            print(f"  e={e_idx}: {e_nonzero}/{e_total} ({100*e_nonzero/e_total:.1f}%)")
-        
-        # Check average policy value by earnings state
-        print(f"\nAverage savings by earnings state (excluding zeros):")
-        for e_idx in range(n_e):
-            e_policies = model.a_policy[:, :, :, :, e_idx]
-            nonzero_policies = e_policies[e_policies > 0.01]
+        print(f"\nAge 2 policies (a=0, y=high, h=good) by y_last state:")
+        for yl_idx in range(n_y_last):
+            a_next = model.a_policy[2, 0, 1, 0, yl_idx]
+            print(f"  y_last={yl_idx}: a' = {a_next:.4f}")
+
+        # Check which y_last states have most non-zero policies
+        print(f"\nNon-zero policies by y_last state:")
+        for yl_idx in range(n_y_last):
+            yl_policies = model.a_policy[:, :, :, :, yl_idx]
+            yl_nonzero = np.sum(yl_policies > 0.01)
+            yl_total = np.prod(yl_policies.shape)
+            print(f"  y_last={yl_idx}: {yl_nonzero}/{yl_total} ({100*yl_nonzero/yl_total:.1f}%)")
+
+        # Check average policy value by y_last state
+        print(f"\nAverage savings by y_last state (excluding zeros):")
+        for yl_idx in range(n_y_last):
+            yl_policies = model.a_policy[:, :, :, :, yl_idx]
+            nonzero_policies = yl_policies[yl_policies > 0.01]
             if len(nonzero_policies) > 0:
                 avg_savings = np.mean(nonzero_policies)
-                print(f"  e={e_idx}: {avg_savings:.4f}")
+                print(f"  y_last={yl_idx}: {avg_savings:.4f}")
             else:
-                print(f"  e={e_idx}: No non-zero policies")
+                print(f"  y_last={yl_idx}: No non-zero policies")
 
 
 class TestSimulationVsPolicy:
