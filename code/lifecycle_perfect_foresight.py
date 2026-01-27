@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from typing import Optional
 from multiprocessing import Pool, cpu_count
 from functools import partial
+from scipy.linalg import eig
 
 
 @dataclass
@@ -130,21 +131,7 @@ class LifecycleConfig:
     
     def __post_init__(self):
         """Post-initialization setup and validation."""
-        
-        # Setup income process parameters based on education type
-        if self.education_type == 'low':
-            self.mu_y = 0.05
-            self.sigma_y = 0.03
-            self.rho_y = 0.97
-        elif self.education_type == 'medium':
-            self.mu_y = 0.1
-            self.sigma_y = 0.03
-            self.rho_y = 0.97
-        elif self.education_type == 'high':
-            self.mu_y = 0.12
-            self.sigma_y = 0.03
-            self.rho_y = 0.97
-        
+
         # Create health transition matrix if not provided
         if self.P_h is None:
             # Age-dependent health transitions (T x n_h x n_h)
@@ -203,7 +190,7 @@ class LifecycleModelPerfectForesight:
         """Initialize model with configuration."""
         self.config = config
         self.verbose = verbose
-        
+
         # Extract frequently used parameters
         self.T = config.T
         self.beta = config.beta
@@ -218,93 +205,83 @@ class LifecycleModelPerfectForesight:
         self.kappa = config.kappa
         self.N_earnings_history = config.N_earnings_history
         self.retirement_age = config.retirement_age
-        
-        # Set up price paths
-        self.r_path = self._setup_path(config.r_path, config.r_default, "r_path")
-        self.w_path = self._setup_path(config.w_path, config.w_default, "w_path")
-        
-        # Set up tax paths
-        self.tau_c_path = self._setup_path(config.tau_c_path, config.tau_c_default, "tau_c_path")
-        self.tau_l_path = self._setup_path(config.tau_l_path, config.tau_l_default, "tau_l_path")
-        self.tau_p_path = self._setup_path(config.tau_p_path, config.tau_p_default, "tau_p_path")
-        self.tau_k_path = self._setup_path(config.tau_k_path, config.tau_k_default, "tau_k_path")
-        
-        # Set up pension replacement rate path
-        self.pension_replacement_path = self._setup_path(
-            config.pension_replacement_path, 
-            config.pension_replacement_default, 
-            "pension_replacement_path"
-        )
-        
+
+        # Set up price and tax paths
+        _path_specs = [
+            ('r_path', config.r_path, config.r_default),
+            ('w_path', config.w_path, config.w_default),
+            ('tau_c_path', config.tau_c_path, config.tau_c_default),
+            ('tau_l_path', config.tau_l_path, config.tau_l_default),
+            ('tau_p_path', config.tau_p_path, config.tau_p_default),
+            ('tau_k_path', config.tau_k_path, config.tau_k_default),
+            ('pension_replacement_path', config.pension_replacement_path, config.pension_replacement_default),
+        ]
+        for attr, path, default in _path_specs:
+            setattr(self, attr, self._setup_path(path, default, attr))
+
+        # Cache wage at retirement (used repeatedly in budget computations)
+        self.w_at_retirement = self.w_path[self.retirement_age - 1] if self.retirement_age > 0 else self.w_path[0]
+
         # Create grids and processes
         self.a_grid = self._create_asset_grid()
         self.y_grid, self.P_y = self._income_process()
-        
-        # COMPREHENSIVE DIAGNOSTIC
+
         if self.verbose:
-            print(f"\n{'='*70}")
-            print(f"INCOME PROCESS DIAGNOSTIC - {self.config.education_type.upper()} EDUCATION")
-            print('='*70)
-            edu_params = self.config.edu_params[self.config.education_type]
-            print(f"Input parameters:")
-            print(f"  mu_y:    {edu_params['mu_y']}")
-            print(f"  sigma_y: {edu_params['sigma_y']}")
-            print(f"  rho_y:   {edu_params['rho_y']}")
-            print(f"\nIncome grid (y_grid):")
-            print(f"  {self.y_grid}")
-            print(f"\nIncome grid details:")
-            for i, y in enumerate(self.y_grid):
-                state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
-                print(f"  State {i} ({state_name}): y = {y:.6f}")
-            
-            # Check stationary distribution
-            from scipy.linalg import eig
-            eigenvalues, eigenvectors = eig(self.P_y.T)
-            stationary_idx = np.argmax(eigenvalues.real)
-            stationary = eigenvectors[:, stationary_idx].real
-            stationary = stationary / stationary.sum()
-            
-            print(f"\nTransition matrix P_y (first 3 rows):")
-            print(self.P_y[:3])
-            
-            print(f"\nStationary distribution:")
-            for i in range(self.n_y):
-                state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
-                print(f"  State {i} ({state_name}, y={self.y_grid[i]:.4f}): {stationary[i]:.4%}")
-            
-            expected_income = np.dot(stationary, self.y_grid)
-            print(f"\nExpected steady-state income: {expected_income:.6f}")
-            
-            if expected_income < 0.01:
-                print(f"\n⚠️  WARNING: Expected income is nearly zero!")
-                print(f"    This will cause zero average income in simulations!")
-            
-            print('='*70)
-        
+            self._print_income_diagnostics()
+
         self.h_grid, self.P_h = self._health_process()
-        
+
         # Health expenditure grid (by health state)
-        if self.n_h == 3:
-            self.m_grid = np.array([
-                config.m_good,
-                config.m_moderate,  
-                config.m_poor
-            ])
-        elif self.n_h == 2:
-            self.m_grid = np.array([
-                config.m_good,
-                config.m_poor
-            ])
-        else:
-            # Fallback: linearly spaced from m_good to m_poor
-            self.m_grid = np.linspace(config.m_good, config.m_poor, self.n_h)
-        
-        # Value and policy functions (earnings history stored as continuous value, not gridded)
+        _m_by_nh = {
+            2: np.array([config.m_good, config.m_poor]),
+            3: np.array([config.m_good, config.m_moderate, config.m_poor]),
+        }
+        self.m_grid = _m_by_nh.get(self.n_h, np.linspace(config.m_good, config.m_poor, self.n_h))
+
+        # Value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
-        # avg_earnings is tracked separately in simulation
         self.V = None
         self.a_policy = None
         self.c_policy = None
+
+    def _print_income_diagnostics(self):
+        """Print comprehensive income process diagnostics."""
+        print(f"\n{'='*70}")
+        print(f"INCOME PROCESS DIAGNOSTIC - {self.config.education_type.upper()} EDUCATION")
+        print('='*70)
+        edu_params = self.config.edu_params[self.config.education_type]
+        print(f"Input parameters:")
+        print(f"  mu_y:    {edu_params['mu_y']}")
+        print(f"  sigma_y: {edu_params['sigma_y']}")
+        print(f"  rho_y:   {edu_params['rho_y']}")
+        print(f"\nIncome grid (y_grid):")
+        print(f"  {self.y_grid}")
+        print(f"\nIncome grid details:")
+        for i, y in enumerate(self.y_grid):
+            state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
+            print(f"  State {i} ({state_name}): y = {y:.6f}")
+
+        eigenvalues, eigenvectors = eig(self.P_y.T)
+        stationary_idx = np.argmax(eigenvalues.real)
+        stationary = eigenvectors[:, stationary_idx].real
+        stationary = stationary / stationary.sum()
+
+        print(f"\nTransition matrix P_y (first 3 rows):")
+        print(self.P_y[:3])
+
+        print(f"\nStationary distribution:")
+        for i in range(self.n_y):
+            state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
+            print(f"  State {i} ({state_name}, y={self.y_grid[i]:.4f}): {stationary[i]:.4%}")
+
+        expected_income = np.dot(stationary, self.y_grid)
+        print(f"\nExpected steady-state income: {expected_income:.6f}")
+
+        if expected_income < 0.01:
+            print(f"\n⚠️  WARNING: Expected income is nearly zero!")
+            print(f"    This will cause zero average income in simulations!")
+
+        print('='*70)
     
     def _create_asset_grid(self):
         """Create non-linear asset grid with more points near borrowing constraint."""
@@ -409,27 +386,16 @@ class LifecycleModelPerfectForesight:
     
     def _health_process(self):
         """Age-dependent health transition matrix."""
-        # Create health grid based on n_h
         if self.n_h == 1:
-            # If only one health state, use good health productivity
             h_grid = np.array([self.config.h_good])
-            # The transition matrix is trivial: always stay in the single state
             P_h = np.ones((self.T, 1, 1))
             return h_grid, P_h
-        if self.n_h == 3:
-            h_grid = np.array([
-                self.config.h_good,
-                self.config.h_moderate,
-                self.config.h_poor
-            ])
-        elif self.n_h == 2:
-            h_grid = np.array([
-                self.config.h_good,
-                self.config.h_poor
-            ])
-        else:
-            # Fallback: equally spaced from 1.0 to 0.3
-            h_grid = np.linspace(1.0, 0.3, self.n_h)
+
+        _h_by_nh = {
+            2: np.array([self.config.h_good, self.config.h_poor]),
+            3: np.array([self.config.h_good, self.config.h_moderate, self.config.h_poor]),
+        }
+        h_grid = _h_by_nh.get(self.n_h, np.linspace(1.0, 0.3, self.n_h))
         
         # Age-dependent transition probabilities
         P_h = np.zeros((self.T, self.n_h, self.n_h))
@@ -515,13 +481,17 @@ class LifecycleModelPerfectForesight:
         
         # Initialize value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
-        self.V = np.zeros((self.T, self.n_a, self.n_y, self.n_h, self.n_y))
-        self.a_policy = np.zeros((self.T, self.n_a, self.n_y, self.n_h, self.n_y), dtype=np.int32)
-        self.c_policy = np.zeros((self.T, self.n_a, self.n_y, self.n_h, self.n_y))
+        shape = (self.T, self.n_a, self.n_y, self.n_h, self.n_y)
+        self.V = np.zeros(shape)
+        self.a_policy = np.zeros(shape, dtype=np.int32)
+        self.c_policy = np.zeros(shape)
         
         # Terminal period (T-1)
-        self._solve_terminal_period(verbose)
-        
+        t = self.T - 1
+        self._solve_period(t, self.r_path[t], self.w_path[t],
+                           self.tau_c_path[t], self.tau_l_path[t],
+                           self.tau_p_path[t], self.tau_k_path[t])
+
         # Backward induction
         if parallel:
             self._solve_backward_parallel(verbose, n_jobs)
@@ -531,158 +501,106 @@ class LifecycleModelPerfectForesight:
         if verbose:
             print("Done!")
     
-    def _solve_terminal_period(self, verbose=False):
-        """Solve the terminal period."""
-        is_retired = (self.T - 1 >= self.retirement_age)
+    def _compute_budget(self, is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                         a, y, h, i_y, i_y_last, i_h):
+        """Compute after-tax income components and total budget for a given state.
 
-        # Wage at last working period (for pension calculation)
-        w_at_retirement = self.w_path[self.retirement_age - 1] if self.retirement_age > 0 else self.w_path[0]
+        Returns (after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget).
+        """
+        if is_retired:
+            pension = (self.pension_replacement_path[t]
+                       * self.w_at_retirement * self.y_grid[i_y_last])
+            income_tax = tau_l_t * pension
+            after_tax_labor_income = pension - income_tax
+        else:
+            if i_y == 0:
+                ui_benefit = self.ui_replacement_rate * w_t * self.y_grid[i_y_last]
+            else:
+                ui_benefit = 0.0
+            gross_wage_income = w_t * y * h
+            gross_labor_income = gross_wage_income + ui_benefit
+            payroll_tax = tau_p_t * gross_wage_income
+            income_tax = tau_l_t * (gross_labor_income - payroll_tax)
+            after_tax_labor_income = gross_labor_income - payroll_tax - income_tax
 
-        for i_a, a in enumerate(self.a_grid):
-            for i_y, y in enumerate(self.y_grid):
-                for i_h, h in enumerate(self.h_grid):
-                    for i_y_last in range(self.n_y):
+        gross_capital_income = r_t * a
+        capital_income_tax = tau_k_t * gross_capital_income
+        after_tax_capital_income = gross_capital_income - capital_income_tax
 
-                        if is_retired:
-                            # RETIREMENT: Pension based on last working period income (y_last)
-                            pension = (self.pension_replacement_path[self.T - 1]
-                                      * w_at_retirement * self.y_grid[i_y_last])
+        oop_health_exp = (1 - self.kappa) * self.m_grid[i_h]
 
-                            # Tax pension as labor income, no payroll tax
-                            income_tax = self.tau_l_path[self.T - 1] * pension
-                            after_tax_labor_income = pension - income_tax
-                        else:
-                            # WORKING: UI benefits if unemployed
-                            if i_y == 0:
-                                ui_benefit = self.ui_replacement_rate * self.w_path[self.T - 1] * self.y_grid[i_y_last]
-                            else:
-                                ui_benefit = 0.0
+        budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
+        return after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget
 
-                            gross_labor_income = self.w_path[self.T - 1] * y * h + ui_benefit
-                            payroll_tax = self.tau_p_path[self.T - 1] * (self.w_path[self.T - 1] * y * h)
-                            income_tax = self.tau_l_path[self.T - 1] * (gross_labor_income - payroll_tax)
-                            after_tax_labor_income = gross_labor_income - payroll_tax - income_tax
-
-                        # After-tax capital income
-                        gross_capital_income = self.r_path[self.T - 1] * a
-                        capital_income_tax = self.tau_k_path[self.T - 1] * gross_capital_income
-                        after_tax_capital_income = gross_capital_income - capital_income_tax
-
-                        # Out-of-pocket health expenditure
-                        oop_health_exp = (1 - self.kappa) * self.m_grid[i_h]
-
-                        # Budget constraint
-                        budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
-                        c = budget / (1 + self.tau_c_path[self.T - 1])
-                        c = max(c, 1e-10)
-
-                        self.V[self.T - 1, i_a, i_y, i_h, i_y_last] = self.utility(c, self.gamma)
-                        self.a_policy[self.T - 1, i_a, i_y, i_h, i_y_last] = 0
-                        self.c_policy[self.T - 1, i_a, i_y, i_h, i_y_last] = c
-    
     def _solve_period(self, t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t):
         """Solve single period with time-varying prices, taxes, UI, health expenditures, and retirement."""
 
-        # Check if this is a retirement period
         is_retired = (t >= self.retirement_age)
-
-        # Wage at last working period (for pension calculation)
-        w_at_retirement = self.w_path[self.retirement_age - 1] if self.retirement_age > 0 else self.w_path[0]
+        is_terminal = (t == self.T - 1)
 
         for i_a, a in enumerate(self.a_grid):
             for i_y, y in enumerate(self.y_grid):
                 for i_h, h in enumerate(self.h_grid):
                     for i_y_last in range(self.n_y):
 
-                        if is_retired:
-                            # RETIREMENT PERIOD: Pension based on last working income (y_last)
-                            pension = (self.pension_replacement_path[t]
-                                      * w_at_retirement * self.y_grid[i_y_last])
+                        after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget = \
+                            self._compute_budget(
+                                is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                                a, y, h, i_y, i_y_last, i_h)
 
-                            # Tax pension as labor income, no payroll tax
-                            income_tax = tau_l_t * pension
-                            after_tax_labor_income = pension - income_tax
+                        if is_terminal:
+                            # Terminal period: consume everything, a' = 0
+                            c = max(budget / (1 + tau_c_t), 1e-10)
+                            self.V[t, i_a, i_y, i_h, i_y_last] = self.utility(c, self.gamma)
+                            self.a_policy[t, i_a, i_y, i_h, i_y_last] = 0
+                            self.c_policy[t, i_a, i_y, i_h, i_y_last] = c
+                            continue
 
-                        else:
-                            # WORKING PERIOD: Labor income with potential UI
-
-                            # Compute UI benefits if unemployed
-                            if i_y == 0:  # Unemployed
-                                ui_benefit = self.ui_replacement_rate * w_t * self.y_grid[i_y_last]
-                            else:
-                                ui_benefit = 0.0
-
-                            # Compute after-tax labor income
-                            gross_wage_income = w_t * y * h
-                            gross_labor_income = gross_wage_income + ui_benefit
-                            payroll_tax = tau_p_t * gross_wage_income
-                            income_tax = tau_l_t * (gross_labor_income - payroll_tax)
-                            after_tax_labor_income = gross_labor_income - payroll_tax - income_tax
-                        
-                        # Compute after-tax capital income (same for working and retired)
-                        gross_capital_income = r_t * a
-                        capital_income_tax = tau_k_t * gross_capital_income
-                        after_tax_capital_income = gross_capital_income - capital_income_tax
-                        
-                        # Out-of-pocket health expenditure
-                        oop_health_exp = (1 - self.kappa) * self.m_grid[i_h]
-                        
-                        # Budget available for consumption and savings
-                        budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
-                        
                         # Find optimal next period assets
                         max_val = -np.inf
                         best_a_idx = 0
                         best_c = 1e-10
-                        
+
                         for i_a_next, a_next in enumerate(self.a_grid):
-                            # Consumption from budget constraint
                             c = (budget - a_next) / (1 + tau_c_t)
-                            
+
                             if c <= 0:
                                 continue
-                            
+
                             # Expected continuation value
                             EV = 0.0
-                            
+
                             if is_retired:
-                                # In retirement: only health transitions (no income transitions)
                                 for i_h_next in range(self.n_h):
                                     prob = self.P_h[t, i_h, i_h_next]
-                                    # In retirement, income state is irrelevant (set to 0 = unemployed)
                                     next_val = self.V[t + 1, i_a_next, 0, i_h_next, 0]
-                                    
+
                                     if np.isfinite(prob) and np.isfinite(next_val):
                                         EV += prob * next_val
                             else:
-                                # While working: both income and health transitions
                                 for i_y_next in range(self.n_y):
                                     for i_h_next in range(self.n_h):
                                         prob = self.P_y[i_y, i_y_next] * self.P_h[t, i_h, i_h_next]
                                         next_val = self.V[t + 1, i_a_next, i_y_next, i_h_next, i_y]
-                                        
+
                                         if np.isfinite(prob) and np.isfinite(next_val):
                                             EV += prob * next_val
-                            
-                            # Check if EV is valid
+
                             if not np.isfinite(EV):
                                 continue
-                            
-                            # Total value
+
                             val = self.utility(c, self.gamma) + self.beta * EV
-                            
+
                             if val > max_val:
                                 max_val = val
                                 best_a_idx = i_a_next
                                 best_c = c
-                        
-                        # Store results (use fallback if no valid choice found)
+
                         if np.isfinite(max_val):
                             self.V[t, i_a, i_y, i_h, i_y_last] = max_val
                             self.a_policy[t, i_a, i_y, i_h, i_y_last] = best_a_idx
                             self.c_policy[t, i_a, i_y, i_h, i_y_last] = best_c
                         else:
-                            # Fallback: consume everything if no valid choice
                             c_fallback = max(budget / (1 + tau_c_t), 1e-10)
                             self.V[t, i_a, i_y, i_h, i_y_last] = self.utility(c_fallback, self.gamma)
                             self.a_policy[t, i_a, i_y, i_h, i_y_last] = 0
@@ -774,9 +692,6 @@ class LifecycleModelPerfectForesight:
         tax_p_sim = np.zeros((T_sim, n_sim))
         tax_k_sim = np.zeros((T_sim, n_sim))
 
-        # Wage at last working period (for pension calculation)
-        w_at_retirement = self.w_path[self.retirement_age - 1] if self.retirement_age > 0 else self.w_path[0]
-
         # avg_earnings tracking kept for diagnostics (not used for pension)
         avg_earnings_at_retirement = np.zeros(n_sim)
 
@@ -788,7 +703,6 @@ class LifecycleModelPerfectForesight:
             i_y = np.random.choice(range(1, self.n_y), size=n_sim, 
                                   p=np.ones(n_employed) / n_employed)
         else:
-            from scipy.linalg import eig
             eigenvalues, eigenvectors = eig(self.P_y.T)
             stationary_idx = np.argmax(eigenvalues.real)
             stationary = eigenvectors[:, stationary_idx].real
@@ -829,7 +743,7 @@ class LifecycleModelPerfectForesight:
                     # PENSION based on last working income state (y_last)
                     # y_last is frozen at its value from the last working period
                     pension_replacement = self.pension_replacement_path[lifecycle_age]
-                    pension_sim[t_sim, i] = pension_replacement * w_at_retirement * self.y_grid[i_y_last[i]]
+                    pension_sim[t_sim, i] = pension_replacement * self.w_at_retirement * self.y_grid[i_y_last[i]]
 
                     y_sim[t_sim, i] = 0.0
                     employed_sim[t_sim, i] = False
@@ -976,9 +890,6 @@ def _solve_period_wrapper(args, model):
     a = model.a_grid[i_a]
     is_retired = (t >= model.retirement_age)
 
-    # Wage at last working period (for pension calculation)
-    w_at_retirement = model.w_path[model.retirement_age - 1] if model.retirement_age > 0 else model.w_path[0]
-
     V_slice = np.zeros((model.n_y, model.n_h, model.n_y))
     a_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y), dtype=np.int32)
     c_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y))
@@ -987,32 +898,9 @@ def _solve_period_wrapper(args, model):
         for i_h, h in enumerate(model.h_grid):
             for i_y_last in range(model.n_y):
 
-                if is_retired:
-                    # RETIREMENT: Pension based on last working income (y_last)
-                    pension = (model.pension_replacement_path[t]
-                              * w_at_retirement * model.y_grid[i_y_last])
-
-                    # Tax pension as labor income, no payroll tax
-                    income_tax = tau_l_t * pension
-                    after_tax_labor_income = pension - income_tax
-                else:
-                    if i_y == 0:
-                        ui_benefit = model.ui_replacement_rate * w_t * model.y_grid[i_y_last]
-                    else:
-                        ui_benefit = 0.0
-
-                    gross_wage_income = w_t * y * h
-                    gross_labor_income = gross_wage_income + ui_benefit
-                    payroll_tax = tau_p_t * gross_wage_income
-                    income_tax = tau_l_t * (gross_labor_income - payroll_tax)
-                    after_tax_labor_income = gross_labor_income - payroll_tax - income_tax
-                
-                gross_capital_income = r_t * a
-                capital_income_tax = tau_k_t * gross_capital_income
-                after_tax_capital_income = gross_capital_income - capital_income_tax
-                
-                oop_health_exp = (1 - model.kappa) * model.m_grid[i_h]
-                budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
+                _, _, _, budget = model._compute_budget(
+                    is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                    a, y, h, i_y, i_y_last, i_h)
                 
                 max_val = -np.inf
                 best_a_idx = 0
