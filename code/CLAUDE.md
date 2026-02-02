@@ -8,7 +8,7 @@ Overlapping Generations (OLG) model simulating demographic and policy transition
 olg_transition.py              # Entry point - OLG transition simulation
 lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices (NumPy)
 lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simulate)
-test_olg_transition.py         # Pytest tests (39 tests, incl. 10 JAX cross-validation)
+test_olg_transition.py         # Pytest tests (55 tests, incl. 10 JAX cross-validation)
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 ```
 
@@ -77,6 +77,12 @@ pytest test_olg_transition.py -v
 - Endogenous retirement window (`retirement_window`)
 - Schooling phase with child costs (`schooling_years`, `child_cost_profile`)
 - Government spending on goods (`govt_spending_path` in OLGTransition)
+- Public capital in production (`eta_g`, `K_g_initial`, `delta_g` in OLGTransition)
+- Public investment path (`I_g_path` in OLGTransition)
+- Small open economy with sovereign debt (`economy_type`, `r_star`, `B_path` in OLGTransition)
+- Net foreign assets accounting (NFA) in SOE mode
+- Pension trust fund (`S_pens_initial` in OLGTransition)
+- Defense spending (`defense_spending_path` in OLGTransition)
 - Bequest taxation config (`tau_beq`)
 - Education-based heterogeneity
 - All new features default OFF for backward compatibility

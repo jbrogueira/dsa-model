@@ -160,9 +160,9 @@ class LifecycleConfig:
     initial_assets: Optional[float] = None  # Initial asset level (default: a_min if None)
     initial_avg_earnings: Optional[float] = 0.0
     
-    def _replace(self, **changes): # <-- 2. Add this method
+    def _replace(self, **changes):
         """Return a new instance with specified fields replaced."""
-        return replace(self, **changes) 
+        return replace(self, **changes)
     
     def __post_init__(self):
         """Post-initialization setup and validation."""
@@ -939,14 +939,14 @@ class LifecycleModelPerfectForesight:
         
         i_y_last = i_y.copy()
         i_h = np.zeros(n_sim, dtype=int)
-        if hasattr(self.config, 'initial_assets') and self.config.initial_assets is not None:
+        if self.config.initial_assets is not None:
             # Find closest grid point to specified initial_assets
             i_a_initial = np.argmin(np.abs(self.a_grid - self.config.initial_assets))
             i_a = np.full(n_sim, i_a_initial, dtype=int)
         else:
             # Default: start at a_min (borrowing constraint, first grid point)
             i_a = np.zeros(n_sim, dtype=int)
-        if hasattr(self.config, 'initial_avg_earnings') and self.config.initial_avg_earnings is not None:
+        if self.config.initial_avg_earnings is not None:
             avg_earnings = np.ones(n_sim) * self.config.initial_avg_earnings
             # Agent has worked for current_age years prior to simulation
             n_earnings_years = np.full(n_sim, self.current_age, dtype=int)

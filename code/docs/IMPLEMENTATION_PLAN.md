@@ -19,8 +19,8 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 3 | #14, #15 | **Done** |
 | 4 | #1, #6, #7 | **Done** |
 | 5 | #4 | **Done** |
-| 6 | #8, #10, #9 | Not started |
-| 7 | #18, #19 | Not started |
+| 6 | #8, #10, #9 | **Done** |
+| 7 | #18, #19 | **Done** |
 
 **Skipped:** #12 (tax application — keep code version), #13 (capital income tax — keep code version)
 **Merged:** #3 (human capital) absorbed into #5 (age/health-dependent productivity) — no new state variable
@@ -295,8 +295,8 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ### Feature #8 — Public capital in production
 
-- [ ] Implement
-- [ ] Test
+- [x] Implement
+- [x] Test
 
 **Paper:** `Y = Z · (K^g)^{η_g} · K^α · L^{1-α}`.
 
@@ -308,8 +308,8 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ### Feature #10 — Public investment
 
-- [ ] Implement
-- [ ] Test
+- [x] Implement
+- [x] Test
 
 **Depends on:** Feature #8.
 
@@ -323,8 +323,8 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ### Feature #9 — Small open economy and sovereign debt
 
-- [ ] Implement
-- [ ] Test
+- [x] Implement
+- [x] Test
 
 **Paper:** SOE with `B_t` sovereign bonds, external rate `r*`.
 
@@ -342,8 +342,8 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ### Feature #18 — Pension trust fund
 
-- [ ] Implement
-- [ ] Test
+- [x] Implement
+- [x] Test
 
 **Paper:** `S^pens_{t+1} = (1+r*)·S^pens_t + Rev^p_t - PENS^out_t`.
 
@@ -354,14 +354,16 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ### Feature #19 — Defense and welfare-state production
 
-- [ ] Implement
-- [ ] Test
+- [x] Implement (simplified: defense spending as budget category)
+- [x] Test
 
 **Paper:** Defense spending, government labor, welfare capital `K^h`, production `H = F^W(K^h, N^h)`.
 
+**Implementation:** Simplified version — `defense_spending_path` as exogenous spending in the government budget. The full government production function (K^h, N^h) can be extended later if needed.
+
 **Changes:**
-- This is a complex extension with its own production function for government services.
-- Low priority — can be added if needed for specific policy experiments.
+- `OLGTransition`: Add `defense_spending_path` (array, default None).
+- Add defense spending to total government spending in budget constraint.
 - Files: `olg_transition.py`
 
 ---

@@ -23,6 +23,29 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
+def _extend_path(path, n_extra):
+    """Extend a path by padding with copies of the last value, or return None."""
+    if path is None:
+        return None
+    path = np.array(path)
+    return np.concatenate([path, np.ones(n_extra) * path[-1]])
+
+
+def _extract_cohort_path(path, birth_period, T, default=0.0):
+    """Extract a cohort-length slice from a path, handling pre-transition cohorts."""
+    if birth_period < 0:
+        pre = -birth_period
+        if path is not None:
+            return np.concatenate([np.ones(pre) * path[0], path[0:T - pre]])
+        else:
+            return np.full(T, default)
+    else:
+        if path is not None:
+            return path[birth_period:birth_period + T]
+        else:
+            return np.full(T, default)
+
+
 class OLGTransition:
     """
     Overlapping Generations Economy for Transition Dynamics with Perfect Foresight.
@@ -39,6 +62,16 @@ class OLGTransition:
                  alpha=0.33,
                  delta=0.05,
                  A=1.0,
+                 # Public capital in production (Feature #8)
+                 eta_g=0.0,
+                 K_g_initial=0.0,
+                 delta_g=0.05,
+                 # Public investment path (Feature #10)
+                 I_g_path=None,
+                 # SOE / sovereign debt (Feature #9)
+                 economy_type='soe',
+                 r_star=None,
+                 B_path=None,
                  # Demographic parameters
                  pop_growth=0.01,
                  birth_year=1960,
@@ -49,6 +82,10 @@ class OLGTransition:
                  output_dir='output',
                  # Government spending on goods (Feature #17)
                  govt_spending_path=None,
+                 # Pension trust fund (Feature #18)
+                 S_pens_initial=0.0,
+                 # Defense spending (Feature #19, simplified)
+                 defense_spending_path=None,
                  # Backend selection
                  backend='numpy'):
         
@@ -71,7 +108,26 @@ class OLGTransition:
         self.alpha = alpha
         self.delta = delta
         self.A = A
-        
+
+        # Public capital (Feature #8)
+        self.eta_g = eta_g
+        self.K_g_initial = K_g_initial
+        self.delta_g = delta_g
+
+        # Public investment (Feature #10)
+        if I_g_path is not None:
+            self.I_g_path = np.asarray(I_g_path, dtype=float)
+        else:
+            self.I_g_path = None
+
+        # SOE / sovereign debt (Feature #9)
+        self.economy_type = economy_type
+        self.r_star = r_star
+        if B_path is not None:
+            self.B_path = np.asarray(B_path, dtype=float)
+        else:
+            self.B_path = None
+
         # Demographics
         self.pop_growth = pop_growth
         self.birth_year = birth_year
@@ -88,7 +144,16 @@ class OLGTransition:
         if govt_spending_path is not None:
             self.govt_spending_path = np.asarray(govt_spending_path, dtype=float)
         else:
-            self.govt_spending_path = None  # No exogenous G_t
+            self.govt_spending_path = None
+
+        # Pension trust fund (Feature #18)
+        self.S_pens_initial = S_pens_initial
+
+        # Defense spending (Feature #19, simplified)
+        if defense_spending_path is not None:
+            self.defense_spending_path = np.asarray(defense_spending_path, dtype=float)
+        else:
+            self.defense_spending_path = None
 
         # Output directory
         self.output_dir = output_dir
@@ -105,6 +170,9 @@ class OLGTransition:
         self.K_path = None
         self.L_path = None
         self.Y_path = None
+        self.K_g_path = None  # Public capital path (Feature #8)
+        self.NFA_path = None  # Net foreign assets (Feature #9)
+        self.S_pens_path = None  # Pension trust fund balance (Feature #18)
         self.birth_cohort_solutions = None
 
         # Backend selection ('numpy' or 'jax')
@@ -449,16 +517,18 @@ class OLGTransition:
     
     @staticmethod
     @njit
-    def _production_function_njit(K, L, alpha, A):
-        """JIT-compiled production function."""
-        return A * (K ** alpha) * (L ** (1 - alpha))
-    
+    def _production_function_njit(K, L, alpha, A, K_g=1.0, eta_g=0.0):
+        """JIT-compiled production function: Y = A * K_g^eta_g * K^alpha * L^(1-alpha)."""
+        K_g_factor = K_g ** eta_g if eta_g != 0.0 else 1.0
+        return A * K_g_factor * (K ** alpha) * (L ** (1 - alpha))
+
     @staticmethod
     @njit
-    def _marginal_products_njit(K, L, alpha, delta, A):
-        """JIT-compiled marginal products and factor prices."""
-        MPK = alpha * A * (K ** (alpha - 1)) * (L ** (1 - alpha))
-        MPL = (1 - alpha) * A * (K ** alpha) * (L ** (-alpha))
+    def _marginal_products_njit(K, L, alpha, delta, A, K_g=1.0, eta_g=0.0):
+        """JIT-compiled marginal products and factor prices with public capital."""
+        K_g_factor = K_g ** eta_g if eta_g != 0.0 else 1.0
+        MPK = alpha * A * K_g_factor * (K ** (alpha - 1)) * (L ** (1 - alpha))
+        MPL = (1 - alpha) * A * K_g_factor * (K ** alpha) * (L ** (-alpha))
         r = MPK - delta
         w = MPL
         return r, w
@@ -482,32 +552,40 @@ class OLGTransition:
     
     @staticmethod
     @njit
-    def _compute_output_path_njit(K_path, L_path, alpha, A):
-        """JIT-compiled computation of output path."""
+    def _compute_output_path_njit(K_path, L_path, alpha, A, K_g_path=None, eta_g=0.0):
+        """JIT-compiled computation of output path with optional public capital."""
         T = len(K_path)
         Y_path = np.zeros(T)
         for t in range(T):
-            Y_path[t] = A * (K_path[t] ** alpha) * (L_path[t] ** (1 - alpha))
+            K_g_factor = 1.0
+            if eta_g != 0.0 and K_g_path is not None:
+                K_g_factor = K_g_path[t] ** eta_g
+            Y_path[t] = A * K_g_factor * (K_path[t] ** alpha) * (L_path[t] ** (1 - alpha))
         return Y_path
-    
+
     @staticmethod
     @njit
-    def _compute_wage_path_njit(K_path, L_path, alpha, delta, A):
-        """JIT-compiled computation of wage path from aggregates."""
+    def _compute_wage_path_njit(K_path, L_path, alpha, delta, A, K_g_path=None, eta_g=0.0):
+        """JIT-compiled computation of wage path from aggregates with optional public capital."""
         T = len(K_path)
         w_path = np.zeros(T)
         for t in range(T):
-            MPL = (1 - alpha) * A * (K_path[t] ** alpha) * (L_path[t] ** (-alpha))
+            K_g_factor = 1.0
+            if eta_g != 0.0 and K_g_path is not None:
+                K_g_factor = K_g_path[t] ** eta_g
+            MPL = (1 - alpha) * A * K_g_factor * (K_path[t] ** alpha) * (L_path[t] ** (-alpha))
             w_path[t] = MPL
         return w_path
     
-    def production_function(self, K, L):
-        """Cobb-Douglas production function."""
-        return self._production_function_njit(K, L, self.alpha, self.A)
-    
-    def factor_prices(self, K, L):
-        """Compute factor prices from production function."""
-        return self._marginal_products_njit(K, L, self.alpha, self.delta, self.A)
+    def production_function(self, K, L, K_g=None):
+        """Cobb-Douglas production function with optional public capital."""
+        K_g_val = K_g if K_g is not None else 1.0
+        return self._production_function_njit(K, L, self.alpha, self.A, K_g_val, self.eta_g)
+
+    def factor_prices(self, K, L, K_g=None):
+        """Compute factor prices from production function with optional public capital."""
+        K_g_val = K_g if K_g is not None else 1.0
+        return self._marginal_products_njit(K, L, self.alpha, self.delta, self.A, K_g_val, self.eta_g)
 
     # --- Demographics: time-varying cohort weights (ageing experiments) -----------------
 
@@ -619,54 +697,14 @@ class OLGTransition:
                 if verbose and birth_period % 10 == 0:
                     print(f"    Solving for cohort born at t={birth_period}...")
 
-                # --- KEY FIX: Extract the correct calendar time slice ---
-                # This cohort is born at calendar time 'birth_period'
-                # They will live from birth_period to birth_period + T - 1
-                
-                if birth_period < 0:
-                    # Cohort born before transition starts
-                    # They experience steady-state until t=0, then transition prices
-                    pre_periods = -birth_period
-                    cohort_r = np.concatenate([
-                        np.ones(pre_periods) * r_path[0],  # Steady state before t=0
-                        r_path[0:self.T - pre_periods]      # Transition prices
-                    ])
-                    cohort_w = np.concatenate([
-                        np.ones(pre_periods) * w_path[0],
-                        w_path[0:self.T - pre_periods]
-                    ])
-                    cohort_tau_c = np.concatenate([
-                        np.ones(pre_periods) * (tau_c_path[0] if tau_c_path is not None else 0),
-                        (tau_c_path[0:self.T - pre_periods] if tau_c_path is not None else np.zeros(self.T - pre_periods))
-                    ])
-                    cohort_tau_l = np.concatenate([
-                        np.ones(pre_periods) * (tau_l_path[0] if tau_l_path is not None else 0),
-                        (tau_l_path[0:self.T - pre_periods] if tau_l_path is not None else np.zeros(self.T - pre_periods))
-                    ])
-                    cohort_tau_p = np.concatenate([
-                        np.ones(pre_periods) * (tau_p_path[0] if tau_p_path is not None else 0),
-                        (tau_p_path[0:self.T - pre_periods] if tau_p_path is not None else np.zeros(self.T - pre_periods))
-                    ])
-                    cohort_tau_k = np.concatenate([
-                        np.ones(pre_periods) * (tau_k_path[0] if tau_k_path is not None else 0),
-                        (tau_k_path[0:self.T - pre_periods] if tau_k_path is not None else np.zeros(self.T - pre_periods))
-                    ])
-                    cohort_pension = np.concatenate([
-                        np.ones(pre_periods) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4),
-                        (pension_replacement_path[0:self.T - pre_periods] if pension_replacement_path is not None else np.ones(self.T - pre_periods) * 0.4)
-                    ])
-                else:
-                    # Cohort born during or after transition starts
-                    # Extract prices from birth_period to birth_period + T - 1
-                    end_period = birth_period + self.T
-                    
-                    cohort_r = r_path[birth_period:end_period]
-                    cohort_w = w_path[birth_period:end_period]
-                    cohort_tau_c = tau_c_path[birth_period:end_period] if tau_c_path is not None else np.zeros(self.T)
-                    cohort_tau_l = tau_l_path[birth_period:end_period] if tau_l_path is not None else np.zeros(self.T)
-                    cohort_tau_p = tau_p_path[birth_period:end_period] if tau_p_path is not None else np.zeros(self.T)
-                    cohort_tau_k = tau_k_path[birth_period:end_period] if tau_k_path is not None else np.zeros(self.T)
-                    cohort_pension = pension_replacement_path[birth_period:end_period] if pension_replacement_path is not None else np.ones(self.T) * 0.4
+                # Extract cohort-specific price/policy paths
+                cohort_r = _extract_cohort_path(r_path, birth_period, self.T)
+                cohort_w = _extract_cohort_path(w_path, birth_period, self.T)
+                cohort_tau_c = _extract_cohort_path(tau_c_path, birth_period, self.T, default=0.0)
+                cohort_tau_l = _extract_cohort_path(tau_l_path, birth_period, self.T, default=0.0)
+                cohort_tau_p = _extract_cohort_path(tau_p_path, birth_period, self.T, default=0.0)
+                cohort_tau_k = _extract_cohort_path(tau_k_path, birth_period, self.T, default=0.0)
+                cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4)
 
                 # Create and solve the model for this birth cohort
                 config = LifecycleConfig(
@@ -962,8 +1000,36 @@ class OLGTransition:
             if t_idx < len(self.govt_spending_path):
                 G_t = float(self.govt_spending_path[t_idx])
 
-        total_spending = total_ui + total_pension + total_gov_health + G_t
+        # Feature #10: Public investment spending
+        I_g_t = 0.0
+        if self.I_g_path is not None:
+            t_idx = int(t)
+            if t_idx < len(self.I_g_path):
+                I_g_t = float(self.I_g_path[t_idx])
+
+        # Feature #9: Sovereign debt service
+        debt_service = 0.0
+        new_borrowing = 0.0
+        if self.B_path is not None:
+            t_idx = int(t)
+            r_t = float(self.r_path[t_idx]) if self.r_path is not None else 0.0
+            B_t = float(self.B_path[t_idx]) if t_idx < len(self.B_path) else float(self.B_path[-1])
+            B_next = float(self.B_path[t_idx + 1]) if t_idx + 1 < len(self.B_path) else float(self.B_path[-1])
+            debt_service = r_t * B_t
+            new_borrowing = B_next - B_t
+
+        # Feature #19: Defense spending
+        defense_t = 0.0
+        if self.defense_spending_path is not None:
+            t_idx = int(t)
+            if t_idx < len(self.defense_spending_path):
+                defense_t = float(self.defense_spending_path[t_idx])
+
+        total_spending = (total_ui + total_pension + total_gov_health
+                          + G_t + I_g_t + debt_service + defense_t)
+        total_revenue_with_borrowing = total_revenue + new_borrowing
         primary_deficit = total_spending - total_revenue
+        fiscal_deficit = total_spending - total_revenue_with_borrowing
 
         return {
             "tax_c": total_tax_c,
@@ -975,8 +1041,13 @@ class OLGTransition:
             "pension": total_pension,
             "gov_health": total_gov_health,
             "govt_spending": G_t,
+            "public_investment": I_g_t,
+            "defense_spending": defense_t,
+            "debt_service": debt_service,
+            "new_borrowing": new_borrowing,
             "total_spending": total_spending,
             "primary_deficit": primary_deficit,
+            "fiscal_deficit": fiscal_deficit,
         }
 
     def simulate_transition(self, r_path, w_path=None,
@@ -1010,24 +1081,35 @@ class OLGTransition:
         # NEW: build time-varying cohort sizes if requested
         if pop_growth_path is not None:
             self.set_cohort_sizes_path_from_pop_growth(pop_growth_path)
-        
+
+        # Feature #8/#10: Compute public capital path before wages (wages depend on K_g)
+        K_g_path = None
+        if self.eta_g != 0.0 and self.I_g_path is not None:
+            K_g_path = np.zeros(self.T_transition)
+            K_g_path[0] = self.K_g_initial
+            for t in range(1, self.T_transition):
+                I_g_t = self.I_g_path[t - 1] if t - 1 < len(self.I_g_path) else self.I_g_path[-1]
+                K_g_path[t] = (1 - self.delta_g) * K_g_path[t - 1] + I_g_t
+            if verbose:
+                print(f"\nPublic capital path: K_g[0]={K_g_path[0]:.4f} → K_g[-1]={K_g_path[-1]:.4f}")
+
         # Extend r_path for cohorts born before transition
         r_path_full = np.concatenate([r_path, np.ones(self.T) * r_path[-1]])
-        
+
         # Compute wage path from production function
         if w_path is None:
             if verbose:
                 print("\nComputing wage path from production function...")
-                print(f"  Using r + δ = MPK = α * A * (K/L)^(α-1)")
-            
-            # From MPK: r + δ = α * A * (K/L)^(α-1)
-            # Solve for K/L: K/L = [(r + δ) / (α * A)]^(1/(α-1))
-            # Then: w = MPL = (1-α) * A * (K/L)^α
-            
-            K_over_L = np.power((r_path + self.delta) / (self.alpha * self.A), 
+
+            # With public capital: r + δ = α·A·K_g^{η_g}·(K/L)^{α-1}
+            K_g_factor = np.ones(self.T_transition)
+            if K_g_path is not None and self.eta_g != 0.0:
+                K_g_factor = K_g_path ** self.eta_g
+
+            K_over_L = np.power((r_path + self.delta) / (self.alpha * self.A * K_g_factor),
                                 1.0 / (self.alpha - 1.0))
-            w_path = (1 - self.alpha) * self.A * np.power(K_over_L, self.alpha)
-            
+            w_path = (1 - self.alpha) * self.A * K_g_factor * np.power(K_over_L, self.alpha)
+
             if verbose:
                 print(f"  Initial: r={r_path[0]:.4f} → K/L={K_over_L[0]:.4f} → w={w_path[0]:.4f}")
                 print(f"  Final:   r={r_path[-1]:.4f} → K/L={K_over_L[-1]:.4f} → w={w_path[-1]:.4f}")
@@ -1036,40 +1118,13 @@ class OLGTransition:
             if verbose:
                 print("\nUsing provided wage path")
         
-        # Extend w_path for cohorts born before transition
-        w_path_full = np.concatenate([w_path, np.ones(self.T) * w_path[-1]])
-        
-        # Extend tax paths
-        if tau_c_path is not None:
-            tau_c_path = np.array(tau_c_path)
-            tau_c_path_full = np.concatenate([tau_c_path, np.ones(self.T) * tau_c_path[-1]])
-        else:
-            tau_c_path_full = None
-        
-        if tau_l_path is not None:
-            tau_l_path = np.array(tau_l_path)
-            tau_l_path_full = np.concatenate([tau_l_path, np.ones(self.T) * tau_l_path[-1]])
-        else:
-            tau_l_path_full = None
-        
-        if tau_p_path is not None:
-            tau_p_path = np.array(tau_p_path)
-            tau_p_path_full = np.concatenate([tau_p_path, np.ones(self.T) * tau_p_path[-1]])
-        else:
-            tau_p_path_full = None
-        
-        if tau_k_path is not None:
-            tau_k_path = np.array(tau_k_path)
-            tau_k_path_full = np.concatenate([tau_k_path, np.ones(self.T) * tau_k_path[-1]])
-        else:
-            tau_k_path_full = None
-        
-        if pension_replacement_path is not None:
-            pension_replacement_path = np.array(pension_replacement_path)
-            pension_path_full = np.concatenate([pension_replacement_path, 
-                                               np.ones(self.T) * pension_replacement_path[-1]])
-        else:
-            pension_path_full = None
+        # Extend paths for cohorts born before transition (pad with last value)
+        w_path_full = _extend_path(w_path, self.T)
+        tau_c_path_full = _extend_path(tau_c_path, self.T)
+        tau_l_path_full = _extend_path(tau_l_path, self.T)
+        tau_p_path_full = _extend_path(tau_p_path, self.T)
+        tau_k_path_full = _extend_path(tau_k_path, self.T)
+        pension_path_full = _extend_path(pension_replacement_path, self.T)
         
         if verbose:
             print("\n" + "=" * 60)
@@ -1115,34 +1170,58 @@ class OLGTransition:
                 print(f"  Period {t + 1}/{self.T_transition}")
             K_path[t], L_path[t] = self.compute_aggregates(t, n_sim=None)  # reuse stored n_sim
         
-        # Compute output
-        Y_path = self._compute_output_path_njit(K_path, L_path, self.alpha, self.A)
-        
+        # Compute output (with public capital if present)
+        Y_path = self._compute_output_path_njit(K_path, L_path, self.alpha, self.A,
+                                                 K_g_path, self.eta_g)
+
         # Verify consistency: check if implied r from aggregates matches exogenous r
         if verbose:
             print("\nVerifying consistency with production function...")
+            K_g_0 = K_g_path[0] if K_g_path is not None else 1.0
+            K_g_end = K_g_path[-1] if K_g_path is not None else 1.0
             r_implied, w_implied = self._marginal_products_njit(
-                K_path[0], L_path[0], self.alpha, self.delta, self.A
+                K_path[0], L_path[0], self.alpha, self.delta, self.A, K_g_0, self.eta_g
             )
             print(f"  Period 0:")
             print(f"    Exogenous r: {r_path[0]:.4f}, Implied r: {r_implied:.4f}")
             print(f"    Computed w:  {w_path[0]:.4f}, Implied w: {w_implied:.4f}")
-            
+
             if self.T_transition > 1:
                 r_implied_end, w_implied_end = self._marginal_products_njit(
-                    K_path[-1], L_path[-1], self.alpha, self.delta, self.A
+                    K_path[-1], L_path[-1], self.alpha, self.delta, self.A, K_g_end, self.eta_g
                 )
                 print(f"  Period {self.T_transition-1}:")
                 print(f"    Exogenous r: {r_path[-1]:.4f}, Implied r: {r_implied_end:.4f}")
                 print(f"    Computed w:  {w_path[-1]:.4f}, Implied w: {w_implied_end:.4f}")
-        
+
+        # Feature #9: Compute net foreign assets in SOE mode
+        NFA_path = None
+        if self.economy_type == 'soe':
+            # In SOE: domestic capital demand K is determined by production function
+            # Household savings supply K_hh = K_path (from aggregation)
+            # NFA = K_hh - K_domestic (positive = net creditor)
+            # With public capital: K_domestic = K_over_L * L
+            K_g_factor_arr = np.ones(self.T_transition)
+            if K_g_path is not None and self.eta_g != 0.0:
+                K_g_factor_arr = K_g_path ** self.eta_g
+            K_over_L_implied = np.power(
+                (r_path + self.delta) / (self.alpha * self.A * K_g_factor_arr),
+                1.0 / (self.alpha - 1.0)
+            )
+            K_domestic = K_over_L_implied * L_path
+            NFA_path = K_path - K_domestic
+            if verbose:
+                print(f"\n  SOE: NFA[0]={NFA_path[0]:.4f}, NFA[-1]={NFA_path[-1]:.4f}")
+
         # Store results
         self.r_path = r_path
         self.w_path = w_path
         self.K_path = K_path
         self.L_path = L_path
         self.Y_path = Y_path
-        
+        self.K_g_path = K_g_path
+        self.NFA_path = NFA_path
+
         if verbose:
             print("\n" + "=" * 60)
             print("Transition Simulation Complete")
@@ -1155,9 +1234,18 @@ class OLGTransition:
             print(f"  Average K/Y: {np.mean(K_path/Y_path):.4f}")
             print(f"  K range: [{np.min(K_path):.4f}, {np.max(K_path):.4f}]")
             print(f"  L range: [{np.min(L_path):.4f}, {np.max(L_path):.4f}]")
-        
-        return {'r': self.r_path, 'w': self.w_path, 'K': self.K_path, 
-                'L': self.L_path, 'Y': self.Y_path}
+            if K_g_path is not None:
+                print(f"  K_g range: [{np.min(K_g_path):.4f}, {np.max(K_g_path):.4f}]")
+            if NFA_path is not None:
+                print(f"  NFA range: [{np.min(NFA_path):.4f}, {np.max(NFA_path):.4f}]")
+
+        result = {'r': self.r_path, 'w': self.w_path, 'K': self.K_path,
+                  'L': self.L_path, 'Y': self.Y_path}
+        if K_g_path is not None:
+            result['K_g'] = K_g_path
+        if NFA_path is not None:
+            result['NFA'] = NFA_path
+        return result
     
     def compute_government_budget_path(self, n_sim: Optional[int] = None, verbose=True):
         """Compute government budget for all transition periods."""
@@ -1172,32 +1260,37 @@ class OLGTransition:
         if verbose:
             print("\nComputing government budget path...")
         
-        # Initialize storage
-        budget_path = {
-            'tax_c': np.zeros(self.T_transition),
-            'tax_l': np.zeros(self.T_transition),
-            'tax_p': np.zeros(self.T_transition),
-            'tax_k': np.zeros(self.T_transition),
-            'total_revenue': np.zeros(self.T_transition),
-            'ui': np.zeros(self.T_transition),
-            'pension': np.zeros(self.T_transition),
-            'gov_health': np.zeros(self.T_transition),
-            'govt_spending': np.zeros(self.T_transition),
-            'total_spending': np.zeros(self.T_transition),
-            'primary_deficit': np.zeros(self.T_transition)
-        }
-        
+        # Initialize storage — keys match compute_government_budget() output
+        budget_keys = [
+            'tax_c', 'tax_l', 'tax_p', 'tax_k', 'total_revenue',
+            'ui', 'pension', 'gov_health', 'govt_spending',
+            'public_investment', 'defense_spending',
+            'debt_service', 'new_borrowing',
+            'total_spending', 'primary_deficit', 'fiscal_deficit',
+        ]
+        budget_path = {k: np.zeros(self.T_transition) for k in budget_keys}
+
         for t in range(self.T_transition):
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
-            
+
             budget_t = self.compute_government_budget(t, n_sim=int(n_sim))
-            
+
             for key in budget_path.keys():
                 budget_path[key][t] = budget_t[key]
-        
+
         self.budget_path = budget_path
-        
+
+        # Feature #18: Compute pension trust fund path
+        # S[t+1] = (1+r[t]) * S[t] + payroll_tax[t] - pension_spending[t]
+        S_pens = np.zeros(self.T_transition + 1)
+        S_pens[0] = self.S_pens_initial
+        for t in range(self.T_transition):
+            r_t = float(self.r_path[t]) if self.r_path is not None else 0.0
+            S_pens[t + 1] = (1 + r_t) * S_pens[t] + budget_path['tax_p'][t] - budget_path['pension'][t]
+        self.S_pens_path = S_pens
+        budget_path['S_pens'] = S_pens[:-1]  # Store balance at start of each period
+
         if verbose:
             print("\nGovernment Budget Summary:")
             print(f"  Average revenue:     {np.mean(budget_path['total_revenue']):.2f}")
@@ -1210,9 +1303,18 @@ class OLGTransition:
             print(f"    Pensions:          {np.mean(budget_path['pension']):.2f}")
             print(f"    Health spending:   {np.mean(budget_path['gov_health']):.2f}")
             print(f"    Govt spending (G): {np.mean(budget_path['govt_spending']):.2f}")
+            if np.any(budget_path['public_investment'] != 0):
+                print(f"    Public invest (Ig):{np.mean(budget_path['public_investment']):.2f}")
+            if np.any(budget_path['defense_spending'] != 0):
+                print(f"    Defense spending:   {np.mean(budget_path['defense_spending']):.2f}")
+            if np.any(budget_path['debt_service'] != 0):
+                print(f"    Debt service:      {np.mean(budget_path['debt_service']):.2f}")
+                print(f"    New borrowing:     {np.mean(budget_path['new_borrowing']):.2f}")
             print(f"  Average deficit:     {np.mean(budget_path['primary_deficit']):.2f}")
             print(f"  Deficit/GDP:         {np.mean(budget_path['primary_deficit'] / self.Y_path):.5%}")
-        
+            if self.S_pens_initial != 0.0 or np.any(S_pens != 0):
+                print(f"  Pension trust fund:  S[0]={S_pens[0]:.2f} → S[-1]={S_pens[-1]:.2f}")
+
         return budget_path
     
     def _default_plot_filename(self, prefix: str, ext: str = "png") -> str:
@@ -1570,9 +1672,6 @@ def get_test_config():
 
 def run_fast_test(backend='numpy'):
     """Run OLG transition with minimal parameters for fast testing."""
-    import sys
-    import time
-
     # Single MC knob for this run
     N_SIM_TEST = 100
 
@@ -1669,9 +1768,6 @@ def run_fast_test(backend='numpy'):
 
 def run_full_simulation(backend='numpy'):
     """Run full OLG transition simulation."""
-    import sys
-    import time
-
     # Single MC knob for this run
     N_SIM_FULL = 15000
 

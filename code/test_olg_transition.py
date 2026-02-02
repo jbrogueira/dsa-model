@@ -1447,5 +1447,257 @@ class TestNewFeaturesJAX:
             "Asset policies differ with combined features"
 
 
+class TestPhase6Features:
+    """Tests for Phase 6: public capital, public investment, SOE/sovereign debt."""
+
+    def test_public_capital_increases_output(self):
+        """Public capital with eta_g > 0 should increase output vs baseline."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+        n_sim = 100
+
+        # Baseline: no public capital
+        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        res_base = olg_base.simulate_transition(r_path, n_sim=n_sim, verbose=False)
+
+        # With public capital
+        olg_kg = OLGTransition(lifecycle_config=get_test_config(),
+                               eta_g=0.05, K_g_initial=1.0,
+                               I_g_path=np.ones(T_tr) * 0.1)
+        res_kg = olg_kg.simulate_transition(r_path, n_sim=n_sim, verbose=False)
+
+        # Public capital should boost output
+        assert np.mean(res_kg['Y']) > np.mean(res_base['Y']), \
+            "Public capital should increase output"
+        assert 'K_g' in res_kg
+        assert res_kg['K_g'][0] == 1.0
+
+    def test_public_capital_zero_eta_g_is_noop(self):
+        """eta_g=0 with public capital should produce same results as baseline."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+        n_sim = 100
+
+        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        res_base = olg_base.simulate_transition(r_path, n_sim=n_sim, verbose=False)
+
+        olg_kg = OLGTransition(lifecycle_config=get_test_config(),
+                               eta_g=0.0, K_g_initial=5.0,
+                               I_g_path=np.ones(T_tr) * 0.5)
+        res_kg = olg_kg.simulate_transition(r_path, n_sim=n_sim, verbose=False)
+
+        np.testing.assert_allclose(res_base['Y'], res_kg['Y'], rtol=1e-10)
+        np.testing.assert_allclose(res_base['w'], res_kg['w'], rtol=1e-10)
+
+    def test_public_capital_accumulation(self):
+        """Public capital should follow K_g' = (1-delta_g)*K_g + I_g."""
+        T_tr = 10
+        r_path = np.ones(T_tr) * 0.04
+        I_g = np.ones(T_tr) * 0.2
+        K_g_0 = 2.0
+        delta_g = 0.1
+
+        olg = OLGTransition(lifecycle_config=get_test_config(),
+                            eta_g=0.05, K_g_initial=K_g_0,
+                            delta_g=delta_g, I_g_path=I_g)
+        res = olg.simulate_transition(r_path, n_sim=100, verbose=False)
+
+        K_g = res['K_g']
+        assert K_g[0] == K_g_0
+        for t in range(1, T_tr):
+            expected = (1 - delta_g) * K_g[t - 1] + I_g[t - 1]
+            np.testing.assert_allclose(K_g[t], expected, rtol=1e-12,
+                                       err_msg=f"K_g accumulation failed at t={t}")
+
+    def test_public_capital_changes_wages(self):
+        """With public capital, wages should differ from baseline."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        res_base = olg_base.simulate_transition(r_path, n_sim=100, verbose=False)
+
+        olg_kg = OLGTransition(lifecycle_config=get_test_config(),
+                               eta_g=0.05, K_g_initial=2.0,
+                               I_g_path=np.ones(T_tr) * 0.3)
+        res_kg = olg_kg.simulate_transition(r_path, n_sim=100, verbose=False)
+
+        assert np.all(res_kg['w'] > res_base['w']), \
+            "Public capital should increase wages for given r"
+
+    def test_public_investment_in_budget(self):
+        """Public investment should appear in government budget spending."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg = OLGTransition(lifecycle_config=get_test_config(),
+                            eta_g=0.05, K_g_initial=1.0,
+                            I_g_path=np.ones(T_tr) * 0.5)
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = olg.compute_government_budget(0)
+
+        assert budget['public_investment'] == 0.5
+        assert budget['total_spending'] >= budget['public_investment']
+
+    def test_sovereign_debt_in_budget(self):
+        """Sovereign debt should add debt service and borrowing to budget."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+        B_path = np.linspace(1.0, 1.5, T_tr + 1)
+
+        olg = OLGTransition(lifecycle_config=get_test_config(), B_path=B_path)
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = olg.compute_government_budget(0)
+
+        expected_debt_service = 0.04 * 1.0
+        np.testing.assert_allclose(budget['debt_service'], expected_debt_service, rtol=1e-10)
+        expected_borrowing = B_path[1] - B_path[0]
+        np.testing.assert_allclose(budget['new_borrowing'], expected_borrowing, rtol=1e-10)
+        assert budget['total_spending'] >= budget['debt_service']
+
+    def test_no_debt_is_noop(self):
+        """Without sovereign debt, budget should match baseline (no debt terms)."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg = OLGTransition(lifecycle_config=get_test_config())
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = olg.compute_government_budget(0)
+
+        assert budget['debt_service'] == 0.0
+        assert budget['new_borrowing'] == 0.0
+        assert budget['public_investment'] == 0.0
+
+    def test_soe_computes_nfa(self):
+        """SOE mode should compute NFA path."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg = OLGTransition(lifecycle_config=get_test_config(), economy_type='soe')
+        res = olg.simulate_transition(r_path, n_sim=100, verbose=False)
+
+        assert 'NFA' in res
+        assert len(res['NFA']) == T_tr
+
+    def test_production_function_with_public_capital(self):
+        """Production function should include K_g factor."""
+        olg = OLGTransition(lifecycle_config=get_test_config(), eta_g=0.1)
+
+        K, L = 10.0, 5.0
+        K_g = 2.0
+
+        Y_with = olg.production_function(K, L, K_g=K_g)
+        Y_without = olg.production_function(K, L, K_g=None)
+
+        assert Y_with > Y_without, "Public capital should increase production"
+
+        expected = olg.A * (K_g ** 0.1) * (K ** olg.alpha) * (L ** (1 - olg.alpha))
+        np.testing.assert_allclose(Y_with, expected, rtol=1e-12)
+
+    def test_factor_prices_with_public_capital(self):
+        """Factor prices should account for public capital."""
+        olg = OLGTransition(lifecycle_config=get_test_config(), eta_g=0.1)
+
+        K, L = 10.0, 5.0
+        K_g = 2.0
+
+        r_with, w_with = olg.factor_prices(K, L, K_g=K_g)
+        r_without, w_without = olg.factor_prices(K, L, K_g=None)
+
+        assert r_with > r_without
+        assert w_with > w_without
+
+
+class TestPhase7Features:
+    """Tests for Phase 7: pension trust fund, defense spending."""
+
+    def test_pension_trust_fund_accumulation(self):
+        """Trust fund follows S[t+1] = (1+r)*S[t] + payroll_tax - pensions."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+        S_0 = 10.0
+
+        olg = OLGTransition(lifecycle_config=get_test_config(), S_pens_initial=S_0)
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = olg.compute_government_budget_path(verbose=False)
+
+        S = olg.S_pens_path
+        assert S[0] == S_0
+        # Verify accumulation equation
+        for t in range(T_tr):
+            r_t = r_path[t]
+            expected = (1 + r_t) * S[t] + budget['tax_p'][t] - budget['pension'][t]
+            np.testing.assert_allclose(S[t + 1], expected, rtol=1e-10,
+                                       err_msg=f"Trust fund accumulation failed at t={t}")
+
+    def test_pension_trust_fund_zero_initial_matches_baseline(self):
+        """Trust fund with S_0=0 should compute but start at zero."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg = OLGTransition(lifecycle_config=get_test_config())
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = olg.compute_government_budget_path(verbose=False)
+
+        assert olg.S_pens_path[0] == 0.0
+        assert 'S_pens' in budget
+
+    def test_pension_trust_fund_in_budget_path(self):
+        """Trust fund balance should appear in budget_path output."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg = OLGTransition(lifecycle_config=get_test_config(), S_pens_initial=5.0)
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = olg.compute_government_budget_path(verbose=False)
+
+        assert 'S_pens' in budget
+        assert len(budget['S_pens']) == T_tr
+        assert budget['S_pens'][0] == 5.0
+
+    def test_defense_spending_in_budget(self):
+        """Defense spending should appear in government budget."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+        defense = np.ones(T_tr) * 0.3
+
+        olg = OLGTransition(lifecycle_config=get_test_config(),
+                            defense_spending_path=defense)
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget_t = olg.compute_government_budget(0)
+
+        assert budget_t['defense_spending'] == 0.3
+        assert budget_t['total_spending'] >= budget_t['defense_spending']
+
+    def test_defense_spending_increases_deficit(self):
+        """Defense spending should increase the deficit."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        # Baseline
+        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        olg_base.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget_base = olg_base.compute_government_budget(0)
+
+        # With defense spending
+        olg_def = OLGTransition(lifecycle_config=get_test_config(),
+                                defense_spending_path=np.ones(T_tr) * 1.0)
+        olg_def.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget_def = olg_def.compute_government_budget(0)
+
+        assert budget_def['primary_deficit'] > budget_base['primary_deficit']
+
+    def test_no_defense_is_noop(self):
+        """Without defense spending, the field should be zero."""
+        T_tr = 5
+        r_path = np.ones(T_tr) * 0.04
+
+        olg = OLGTransition(lifecycle_config=get_test_config())
+        olg.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget_t = olg.compute_government_budget(0)
+
+        assert budget_t['defense_spending'] == 0.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

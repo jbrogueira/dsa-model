@@ -208,12 +208,12 @@ def solve_period_jax(V_next, period_params, model_params):
     )
 
     EV_working = jnp.transpose(EV_working_3d, (1, 0, 2))  # (n_a, n_y, n_h)
-    EV_working = EV_working[..., None] * jnp.ones((1, 1, 1, n_y))
+    EV_working = jnp.broadcast_to(EV_working[..., None], (n_a, n_y, n_h, n_y))
 
     # Retired: V_next[a', 0, h', 0], contract over h' only
     V_next_ret = V_next[:, 0, :, 0]  # (n_a, n_h)
     EV_retired_2d = jnp.einsum('jk,ak->aj', P_h_t, V_next_ret)  # (n_a, n_h)
-    EV_retired = EV_retired_2d[:, None, :, None] * jnp.ones((1, n_y, 1, n_y))
+    EV_retired = jnp.broadcast_to(EV_retired_2d[:, None, :, None], (n_a, n_y, n_h, n_y))
 
     EV = jnp.where(is_retired, EV_retired, EV_working)
 
@@ -671,7 +671,7 @@ def simulate_lifecycle_jax(
 
     # all_outputs is a tuple of 18 arrays, each (n_sim, T_sim) from vmap
     # Transpose each to (T_sim, n_sim) to match NumPy convention
-    result = tuple(out.T if out.ndim == 2 else out.T for out in all_outputs)
+    result = tuple(out.T for out in all_outputs)
 
     return result
 
@@ -791,25 +791,10 @@ class LifecycleModelJAX:
         if verbose:
             print(f"Solving lifecycle model (JAX) for {self.config.education_type} education...")
 
-        # m_grid is (T, n_h) — pass the per-period m_grid slice via the scan
-        # For terminal period in solve, m_grid needs to be indexed.
-        # The solve_lifecycle_jax function handles per-period indexing internally
-        # BUT compute_budget_jax expects m_grid as a 1D (n_h,) slice.
-        # We need to pass the full (T, n_h) and index per-period in the scan.
-        # Actually, compute_budget_jax receives m_grid and broadcasts.
-        # For the terminal period, we pass m_grid[T-1].
-        # For the scan, we pass m_grid[ts] per period.
-        # The simplest approach: pass per-period m_grid slices in the period_params_stack.
-        # But the current API passes m_grid as a model param (shared across periods).
-        # We need to modify: pass m_grid_path (T, n_h) and index per period.
-
-        # For now, pass the full m_grid to solve_lifecycle_jax and let it handle per-period indexing.
-        # But compute_budget_jax expects a 1D slice... We need to restructure.
-        # Actually let's just pass the per-period slices through the scan params.
-
+        # m_grid is (T, n_h); solve_lifecycle_jax indexes per-period within the scan
         V, a_policy, c_policy = _solve_lifecycle_jax_jit(
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
-            self.P_y_2d if not self.P_y_age_health else self.P_y_2d,
+            self.P_y_2d,
             self.P_h,
             self.w_at_retirement,
             self.r_path, self.w_path,
@@ -870,7 +855,7 @@ class LifecycleModelJAX:
             initial_i_y = jax.random.choice(subkey, self.n_y, shape=(n_sim,),
                                             p=jnp.array(stationary)).astype(jnp.int32)
 
-        initial_i_y_last = initial_i_y.copy()
+        initial_i_y_last = initial_i_y  # JAX arrays are immutable; no copy needed
         initial_i_h = jnp.zeros(n_sim, dtype=jnp.int32)
 
         if self.config.initial_assets is not None:
