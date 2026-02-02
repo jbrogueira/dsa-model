@@ -350,6 +350,24 @@ _solve_lifecycle_jax_jit = jax.jit(
     static_argnames=('T', 'retirement_age'),
 )
 
+# Batched solve: vmap over cohorts with shared grids/transitions.
+# Per-cohort inputs (in_axes=0): w_at_retirement, r/w/tax/pension paths.
+# Shared inputs (in_axes=None): grids, P_y, P_h, scalars.
+_solve_lifecycle_jax_batched = jax.jit(
+    jax.vmap(solve_lifecycle_jax, in_axes=(
+        None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
+        None, None,              # P_y, P_h
+        0,                       # w_at_retirement
+        0, 0,                    # r_path, w_path
+        0, 0, 0, 0,             # tau_c/l/p/k_path
+        0,                       # pension_replacement_path
+        None, None,              # ui_replacement_rate, kappa
+        None, None,              # beta, gamma
+        None, None,              # T, retirement_age
+    )),
+    static_argnames=('T', 'retirement_age'),
+)
+
 
 # ---------------------------------------------------------------------------
 # Phase 2: JAX simulation
@@ -552,6 +570,26 @@ def simulate_lifecycle_jax(
 
 _simulate_lifecycle_jax_jit = jax.jit(
     simulate_lifecycle_jax,
+    static_argnames=('retirement_age', 'T', 'current_age', 'n_sim'),
+)
+
+# Batched simulation: vmap over cohorts with shared grids/transitions.
+# Per-cohort inputs (in_axes=0): policies, paths, key, initial states.
+# Shared inputs (in_axes=None): grids, P_y, P_h, scalars.
+_simulate_lifecycle_jax_batched = jax.jit(
+    jax.vmap(simulate_lifecycle_jax, in_axes=(
+        0, 0,                    # a_policy, c_policy
+        None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
+        None, None,              # P_y, P_h
+        0, 0,                    # w_path, w_at_retirement
+        0, 0, 0, 0,             # tau_c/l/p/k_path
+        0, 0,                    # r_path, pension_replacement_path
+        None, None,              # ui_replacement_rate, kappa
+        None, None, None,        # retirement_age, T, current_age
+        None, 0,                 # n_sim, key
+        0, 0, 0, 0,             # initial_i_a, initial_i_y, initial_i_h, initial_i_y_last
+        0, 0,                    # initial_avg_earnings, initial_n_earnings_years
+    )),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim'),
 )
 

@@ -230,6 +230,183 @@ class OLGTransition:
         self._birth_sim_cache[key] = res
         return res
 
+    def _solve_cohorts_jax_batched(self, birth_cohort_solutions, verbose=False):
+        """Batch-solve all cohort lifecycle problems in one vmapped XLA call per education type."""
+        import jax.numpy as jnp
+        from lifecycle_jax import _solve_lifecycle_jax_batched
+
+        for edu_type in self.education_shares.keys():
+            models_dict = birth_cohort_solutions[edu_type]
+            birth_periods = sorted(models_dict.keys())
+            model_list = [models_dict[b] for b in birth_periods]
+
+            if verbose:
+                print(f"  JAX batched solve: {edu_type} ({len(model_list)} cohorts)")
+
+            ref = model_list[0]
+
+            # Stack per-cohort paths (already JAX arrays from LifecycleModelJAX.__init__)
+            r_paths = jnp.stack([m.r_path for m in model_list])
+            w_paths = jnp.stack([m.w_path for m in model_list])
+            tau_c_paths = jnp.stack([m.tau_c_path for m in model_list])
+            tau_l_paths = jnp.stack([m.tau_l_path for m in model_list])
+            tau_p_paths = jnp.stack([m.tau_p_path for m in model_list])
+            tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
+            pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
+            w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
+
+            V_batch, a_pol_batch, c_pol_batch = _solve_lifecycle_jax_batched(
+                ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                ref.P_y, ref.P_h,
+                w_at_rets,
+                r_paths, w_paths,
+                tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
+                pension_paths,
+                ref.ui_replacement_rate, ref.kappa,
+                ref.beta, ref.gamma,
+                ref.T, ref.retirement_age,
+            )
+
+            # Inject results back into individual model objects
+            for ci, b in enumerate(birth_periods):
+                model = models_dict[b]
+                model.V = np.asarray(V_batch[ci])
+                model.a_policy = np.asarray(a_pol_batch[ci])
+                model.c_policy = np.asarray(c_pol_batch[ci])
+
+    def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False):
+        """Batched simulation of all cohorts in one vmapped XLA call per education type."""
+        import jax
+        import jax.numpy as jnp
+        from scipy.linalg import eig
+        from lifecycle_jax import _simulate_lifecycle_jax_batched
+
+        education_types = list(self.education_shares.keys())
+        min_birth_period = -(self.T - 1)
+        max_birth_period = self.T_transition - 1
+        birth_periods = list(range(min_birth_period, max_birth_period + 1))
+        n_cohorts = len(birth_periods)
+
+        if not hasattr(self, "_birth_sim_cache"):
+            self._birth_sim_cache = {}
+
+        panels = {edu_type: {} for edu_type in education_types}
+
+        for edu_idx, edu_type in enumerate(education_types):
+            model_list = [self.birth_cohort_solutions[edu_type][b] for b in birth_periods]
+            ref = model_list[0]
+            n_y = ref.n_y
+
+            # Stationary distribution for initial income draws
+            edu_unemployment_rate = ref.config.edu_params[ref.config.education_type]['unemployment_rate']
+            if edu_unemployment_rate < 1e-10:
+                stationary = None
+            else:
+                eigenvalues, eigenvectors = eig(np.asarray(ref.P_y).T)
+                stationary_idx = np.argmax(eigenvalues.real)
+                stationary_dist = eigenvectors[:, stationary_idx].real
+                stationary_dist = stationary_dist / stationary_dist.sum()
+                stationary = jnp.array(stationary_dist)
+
+            # Stack per-cohort policies and paths
+            a_policies = jnp.stack([jnp.array(m.a_policy) for m in model_list])
+            c_policies = jnp.stack([jnp.array(m.c_policy) for m in model_list])
+            w_paths = jnp.stack([m.w_path for m in model_list])
+            w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
+            r_paths = jnp.stack([m.r_path for m in model_list])
+            tau_c_paths = jnp.stack([m.tau_c_path for m in model_list])
+            tau_l_paths = jnp.stack([m.tau_l_path for m in model_list])
+            tau_p_paths = jnp.stack([m.tau_p_path for m in model_list])
+            tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
+            pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
+
+            # Pre-compute per-cohort initial conditions and PRNG keys
+            # (replicates LifecycleModelJAX.simulate() setup per cohort)
+            all_initial_i_a = []
+            all_initial_i_y = []
+            all_initial_avg_earnings = []
+            all_initial_n_years = []
+            all_sim_keys = []
+            all_seeds_u32 = []
+
+            for ci, (b, model) in enumerate(zip(birth_periods, model_list)):
+                seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
+                seed = self._seed_u32(seed)
+                all_seeds_u32.append(seed)
+
+                key = jax.random.PRNGKey(seed)
+
+                # 1st split: draw initial income state
+                key, subkey = jax.random.split(key)
+                if stationary is None:
+                    initial_i_y = jax.random.choice(
+                        subkey, jnp.arange(1, n_y), shape=(n_sim,)
+                    ).astype(jnp.int32)
+                else:
+                    initial_i_y = jax.random.choice(
+                        subkey, n_y, shape=(n_sim,), p=stationary
+                    ).astype(jnp.int32)
+
+                # 2nd split: key for simulation random draws
+                key, subkey = jax.random.split(key)
+
+                # Initial assets
+                if model.config.initial_assets is not None:
+                    i_a_init = int(jnp.argmin(jnp.abs(ref.a_grid - model.config.initial_assets)))
+                    initial_i_a = jnp.full(n_sim, i_a_init, dtype=jnp.int32)
+                else:
+                    initial_i_a = jnp.zeros(n_sim, dtype=jnp.int32)
+
+                # Initial earnings
+                if model.config.initial_avg_earnings is not None:
+                    initial_avg = jnp.ones(n_sim) * model.config.initial_avg_earnings
+                    initial_n = jnp.full(n_sim, model.current_age, dtype=jnp.float64)
+                else:
+                    initial_avg = jnp.zeros(n_sim)
+                    initial_n = jnp.zeros(n_sim, dtype=jnp.float64)
+
+                all_initial_i_a.append(initial_i_a)
+                all_initial_i_y.append(initial_i_y)
+                all_initial_avg_earnings.append(initial_avg)
+                all_initial_n_years.append(initial_n)
+                all_sim_keys.append(subkey)
+
+            # Stack into batched arrays
+            batch_i_a = jnp.stack(all_initial_i_a)
+            batch_i_y = jnp.stack(all_initial_i_y)
+            batch_i_h = jnp.zeros((n_cohorts, n_sim), dtype=jnp.int32)
+            batch_i_y_last = jnp.stack(all_initial_i_y)  # copy of initial_i_y
+            batch_avg_earn = jnp.stack(all_initial_avg_earnings)
+            batch_n_years = jnp.stack(all_initial_n_years)
+            batch_keys = jnp.stack(all_sim_keys)
+
+            if verbose:
+                print(f"  JAX batched simulate: {edu_type} ({n_cohorts} cohorts, n_sim={n_sim})")
+
+            results = _simulate_lifecycle_jax_batched(
+                a_policies, c_policies,
+                ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                ref.P_y, ref.P_h,
+                w_paths, w_at_rets,
+                tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
+                r_paths, pension_paths,
+                ref.ui_replacement_rate, ref.kappa,
+                ref.retirement_age, ref.T, ref.current_age,
+                n_sim, batch_keys,
+                batch_i_a, batch_i_y, batch_i_h, batch_i_y_last,
+                batch_avg_earn, batch_n_years,
+            )
+
+            # Unpack: results is tuple of 18 arrays, each (n_cohorts, T_sim, n_sim)
+            for ci, b in enumerate(birth_periods):
+                panel = tuple(np.asarray(arr[ci]) for arr in results)
+                panels[edu_type][int(b)] = panel
+                # Populate _birth_sim_cache for consistency with individual path
+                cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci])
+                self._birth_sim_cache[cache_key] = panel
+
+        return panels
+
     def _create_cohort_sizes(self):
         """Create demographic structure with different cohort sizes."""
         cohort_sizes = self._cohort_sizes_njit(
@@ -483,14 +660,16 @@ class OLGTransition:
                 )
                 
                 model = self._lifecycle_model_class(config, verbose=False)
-                model.solve(verbose=False)
+                if self.backend != 'jax':
+                    model.solve(verbose=False)
 
-                 # DEBUG: Print asset policy for cohorts born during transition
-                if verbose and birth_period >= 0 and birth_period < 5:
+                # DEBUG: Print asset policy for cohorts born during transition
+                # (skipped for JAX batched mode — policies not yet available)
+                if self.backend != 'jax' and verbose and birth_period >= 0 and birth_period < 5:
                     print(f"\n    → Cohort born at t={birth_period} ({edu_type}):")
                     print(f"       Price paths: r={cohort_r[:3]} ... {cohort_r[-2:]}")
                     print(f"                    w={cohort_w[:3]} ... {cohort_w[-2:]}")
-                    
+
                     # Show asset policy at age 0 (newborn)
                     age = 0
                     # a_policy shape: (T, n_a, n_y, n_h, n_e)
@@ -499,17 +678,21 @@ class OLGTransition:
                     a_next_idx = model.a_policy[age, mid_a, 0, 0, 0]
                     a_next_level = model.a_grid[a_next_idx]
                     print(f"       Asset policy at age {age}: a'={a_next_level:.6f} (idx={a_next_idx}, from a={model.a_grid[mid_a]:.6f})")
-                    
+
                     # Show mean asset policy across all states
                     mean_a_policy = np.mean(model.a_policy[age, :, :, :, :])
                     max_a_policy = np.max(model.a_policy[age, :, :, :, :])
                     print(f"       Mean a' at age {age}: {mean_a_policy:.6f}, Max a': {max_a_policy:.6f}")
-                    
+
                     # Check if saving is happening
                     if mean_a_policy < 0.01:
                         print(f"       ⚠️  WARNING: Near-zero savings for this cohort!")
 
                 birth_cohort_solutions[edu_type][birth_period] = model
+
+        # JAX batched solve: all cohorts in one vmapped XLA call per education type
+        if self.backend == 'jax':
+            self._solve_cohorts_jax_batched(birth_cohort_solutions, verbose)
 
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
@@ -577,17 +760,20 @@ class OLGTransition:
             print(f"Precomputing cohort panels for birth_period in [{min_birth_period}, {max_birth_period}] "
                   f"(n_sim={n_sim}, seed_base={seed_base}) ...")
 
-        panels = {edu_type: {} for edu_type in education_types}
+        if self.backend == 'jax':
+            panels = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose)
+        else:
+            panels = {edu_type: {} for edu_type in education_types}
 
-        for edu_idx, edu_type in enumerate(education_types):
-            for b in range(min_birth_period, max_birth_period + 1):
-                seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
-                panels[edu_type][int(b)] = self._simulate_birth_cohort_cached(
-                    edu_type=edu_type,
-                    birth_period=int(b),
-                    n_sim=int(n_sim),
-                    seed=int(seed),
-                )
+            for edu_idx, edu_type in enumerate(education_types):
+                for b in range(min_birth_period, max_birth_period + 1):
+                    seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
+                    panels[edu_type][int(b)] = self._simulate_birth_cohort_cached(
+                        edu_type=edu_type,
+                        birth_period=int(b),
+                        n_sim=int(n_sim),
+                        seed=int(seed),
+                    )
 
         self._cohort_panel_cache[cache_key] = panels
 
