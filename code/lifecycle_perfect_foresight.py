@@ -23,6 +23,7 @@ class LifecycleConfig:
     retirement_age: int = 45             # Mandatory retirement age (period index, e.g., 45 = age 65)
     pension_replacement_path: Optional[np.ndarray] = None  # Pension replacement rate path (fraction of avg earnings)
     pension_replacement_default: float = 0.80  # Default pension replacement rate (60% of avg earnings)
+    pension_min_floor: float = 0.0       # Minimum pension floor (Feature #11)
     
     # === Asset grid parameters ===
     a_min: float = 0.0                   # Borrowing constraint
@@ -75,7 +76,11 @@ class LifecycleConfig:
     m_good: float = 0.05
     m_moderate: float = 0.55
     m_poor: float = 0.99
-    
+
+    # Age-dependent medical expenditure profile (Feature #20)
+    # Multiplier array of length T applied to base medical costs: m(j,h) = m_age_profile[j] * m_grid[h]
+    m_age_profile: Optional[np.ndarray] = None  # Default: all ones (no age dependence)
+
     # Government health coverage rate
     kappa: float = 0.9
     
@@ -121,9 +126,39 @@ class LifecycleConfig:
     tau_p_default: float = 0.2
     tau_k_default: float = 0.2
     
+    # === Survival probabilities (Feature #2) ===
+    survival_probs: Optional[np.ndarray] = None  # Shape (T, n_h), π(j,s). Default: all 1.0 (deterministic)
+
+    # === Bequest taxation (Feature #16) ===
+    tau_beq: float = 0.0  # Tax rate on accidental bequests
+
+    # === Progressive taxation (Feature #14) ===
+    tax_progressive: bool = False        # Use HSV progressive schedule
+    tax_kappa: float = 0.8              # HSV κ parameter
+    tax_eta: float = 0.15               # HSV η parameter
+
+    # === Means-tested transfers (Feature #15) ===
+    transfer_floor: float = 0.0         # Consumption floor (Huggett-style)
+
+    # === Labor supply (Feature #1) ===
+    labor_supply: bool = False           # Enable endogenous labor supply
+    nu: float = 1.0                      # Labor disutility weight
+    phi: float = 2.0                     # Inverse Frisch elasticity (1/φ = Frisch elasticity)
+
+    # === Endogenous retirement (Feature #7) ===
+    retirement_window: Optional[tuple] = None  # (min_age, max_age) for retirement choice, None = fixed
+
+    # === Schooling and children (Feature #4) ===
+    schooling_years: int = 0             # Number of initial periods with child costs
+    child_cost_profile: Optional[np.ndarray] = None  # Array of length T, default zeros
+    education_subsidy_rate: float = 0.0  # Subsidy rate reducing child costs
+
+    # === Age/health-dependent productivity (Features #3+#5) ===
+    P_y_by_age_health: Optional[np.ndarray] = None  # Shape (T, n_h, n_y, n_y), overrides P_y if provided
+
     # === Initial conditions ===
     initial_assets: Optional[float] = None  # Initial asset level (default: a_min if None)
-    initial_avg_earnings: Optional[float] = 0.0  
+    initial_avg_earnings: Optional[float] = 0.0
     
     def _replace(self, **changes): # <-- 2. Add this method
         """Return a new instance with specified fields replaced."""
@@ -131,6 +166,33 @@ class LifecycleConfig:
     
     def __post_init__(self):
         """Post-initialization setup and validation."""
+
+        # Validate/default m_age_profile
+        if self.m_age_profile is None:
+            self.m_age_profile = np.ones(self.T)
+        else:
+            self.m_age_profile = np.asarray(self.m_age_profile, dtype=float)
+            assert self.m_age_profile.shape == (self.T,), \
+                f"m_age_profile must have shape ({self.T},), got {self.m_age_profile.shape}"
+
+        # Validate/default survival probabilities
+        if self.survival_probs is not None:
+            self.survival_probs = np.asarray(self.survival_probs, dtype=float)
+            if self.survival_probs.ndim == 1:
+                # Broadcast: same survival prob for all health states
+                assert self.survival_probs.shape == (self.T,), \
+                    f"1D survival_probs must have shape ({self.T},), got {self.survival_probs.shape}"
+                self.survival_probs = np.tile(self.survival_probs[:, None], (1, self.n_h))
+            assert self.survival_probs.shape == (self.T, self.n_h), \
+                f"survival_probs must have shape ({self.T}, {self.n_h}), got {self.survival_probs.shape}"
+
+        # Validate/default child_cost_profile
+        if self.child_cost_profile is None:
+            self.child_cost_profile = np.zeros(self.T)
+        else:
+            self.child_cost_profile = np.asarray(self.child_cost_profile, dtype=float)
+            assert self.child_cost_profile.shape == (self.T,), \
+                f"child_cost_profile must have shape ({self.T},), got {self.child_cost_profile.shape}"
 
         # Create health transition matrix if not provided
         if self.P_h is None:
@@ -205,6 +267,19 @@ class LifecycleModelPerfectForesight:
         self.kappa = config.kappa
         self.N_earnings_history = config.N_earnings_history
         self.retirement_age = config.retirement_age
+        self.pension_min_floor = config.pension_min_floor
+        self.tax_progressive = config.tax_progressive
+        self.tax_kappa = config.tax_kappa
+        self.tax_eta = config.tax_eta
+        self.transfer_floor = config.transfer_floor
+        self.labor_supply = config.labor_supply
+        self.nu = config.nu
+        self.phi = config.phi
+        self.retirement_window = config.retirement_window
+        self.schooling_years = config.schooling_years
+        self.child_cost_profile = config.child_cost_profile
+        self.education_subsidy_rate = config.education_subsidy_rate
+        self.survival_probs = config.survival_probs
 
         # Set up price and tax paths
         _path_specs = [
@@ -226,17 +301,30 @@ class LifecycleModelPerfectForesight:
         self.a_grid = self._create_asset_grid()
         self.y_grid, self.P_y = self._income_process()
 
+        # Feature #3+#5: age/health-dependent productivity transitions
+        if config.P_y_by_age_health is not None:
+            self.P_y = np.asarray(config.P_y_by_age_health)
+            assert self.P_y.shape == (self.T, self.n_h, self.n_y, self.n_y), \
+                f"P_y_by_age_health must have shape ({self.T}, {self.n_h}, {self.n_y}, {self.n_y}), got {self.P_y.shape}"
+            self.P_y_age_health = True
+        else:
+            self.P_y_age_health = False
+
         if self.verbose:
             self._print_income_diagnostics()
 
         self.h_grid, self.P_h = self._health_process()
 
-        # Health expenditure grid (by health state)
+        # Health expenditure grid (by health state) — base values
         _m_by_nh = {
             2: np.array([config.m_good, config.m_poor]),
             3: np.array([config.m_good, config.m_moderate, config.m_poor]),
         }
-        self.m_grid = _m_by_nh.get(self.n_h, np.linspace(config.m_good, config.m_poor, self.n_h))
+        self.m_grid_base = _m_by_nh.get(self.n_h, np.linspace(config.m_good, config.m_poor, self.n_h))
+
+        # Age-dependent medical costs: shape (T, n_h) = m_age_profile[t] * m_grid_base[h]
+        self.m_age_profile = config.m_age_profile
+        self.m_grid = self.m_age_profile[:, None] * self.m_grid_base[None, :]  # (T, n_h)
 
         # Value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
@@ -261,13 +349,15 @@ class LifecycleModelPerfectForesight:
             state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
             print(f"  State {i} ({state_name}): y = {y:.6f}")
 
-        eigenvalues, eigenvectors = eig(self.P_y.T)
+        # Use the 2D P_y for diagnostics (constant case or age=0, health=0 slice)
+        P_y_2d = self.P_y if self.P_y.ndim == 2 else self.P_y[0, 0]
+        eigenvalues, eigenvectors = eig(P_y_2d.T)
         stationary_idx = np.argmax(eigenvalues.real)
         stationary = eigenvectors[:, stationary_idx].real
         stationary = stationary / stationary.sum()
 
         print(f"\nTransition matrix P_y (first 3 rows):")
-        print(self.P_y[:3])
+        print(P_y_2d[:3])
 
         print(f"\nStationary distribution:")
         for i in range(self.n_y):
@@ -502,7 +592,7 @@ class LifecycleModelPerfectForesight:
             print("Done!")
     
     def _compute_budget(self, is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                         a, y, h, i_y, i_y_last, i_h):
+                         a, y, h, i_y, i_y_last, i_h, labor_hours=1.0):
         """Compute after-tax income components and total budget for a given state.
 
         Returns (after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget).
@@ -510,32 +600,118 @@ class LifecycleModelPerfectForesight:
         if is_retired:
             pension = (self.pension_replacement_path[t]
                        * self.w_at_retirement * self.y_grid[i_y_last])
-            income_tax = tau_l_t * pension
+            # Feature #11: minimum pension floor
+            pension = max(pension, self.pension_min_floor)
+            if self.tax_progressive:
+                # Feature #14: HSV progressive tax on pension
+                income_tax = pension - self.tax_kappa * max(pension, 1e-10) ** (1 - self.tax_eta)
+                income_tax = max(income_tax, 0.0)
+            else:
+                income_tax = tau_l_t * pension
             after_tax_labor_income = pension - income_tax
         else:
             if i_y == 0:
                 ui_benefit = self.ui_replacement_rate * w_t * self.y_grid[i_y_last]
             else:
                 ui_benefit = 0.0
-            gross_wage_income = w_t * y * h
+            gross_wage_income = w_t * y * h * labor_hours
             gross_labor_income = gross_wage_income + ui_benefit
             payroll_tax = tau_p_t * gross_wage_income
-            income_tax = tau_l_t * (gross_labor_income - payroll_tax)
+            taxable_income = gross_labor_income - payroll_tax
+            if self.tax_progressive:
+                # Feature #14: HSV progressive tax: T(y) = y - κ·y^(1-η)
+                income_tax = taxable_income - self.tax_kappa * max(taxable_income, 1e-10) ** (1 - self.tax_eta)
+                income_tax = max(income_tax, 0.0)
+            else:
+                income_tax = tau_l_t * taxable_income
             after_tax_labor_income = gross_labor_income - payroll_tax - income_tax
 
         gross_capital_income = r_t * a
         capital_income_tax = tau_k_t * gross_capital_income
         after_tax_capital_income = gross_capital_income - capital_income_tax
 
-        oop_health_exp = (1 - self.kappa) * self.m_grid[i_h]
+        # Feature #20: age-dependent medical expenditure
+        oop_health_exp = (1 - self.kappa) * self.m_grid[t, i_h]
 
         budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
+
+        # Feature #4: schooling child costs
+        if t < self.schooling_years:
+            child_cost = (1 - self.education_subsidy_rate) * self.child_cost_profile[t]
+            # Child costs reduce available resources (added to consumption cost)
+            budget -= child_cost
+
+        # Feature #15: means-tested transfers (consumption floor)
+        if self.transfer_floor > 0.0:
+            transfer = max(0.0, self.transfer_floor - budget)
+            budget += transfer
+
         return after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget
+
+    def _get_P_y(self, t, i_h, i_y, i_y_next):
+        """Get income transition probability, handling both 2D and 4D P_y."""
+        if self.P_y_age_health:
+            return self.P_y[t, i_h, i_y, i_y_next]
+        else:
+            return self.P_y[i_y, i_y_next]
+
+    def _get_P_y_row(self, t, i_h, i_y):
+        """Get full transition row for simulation sampling."""
+        if self.P_y_age_health:
+            return self.P_y[t, i_h, i_y, :]
+        else:
+            return self.P_y[i_y, :]
+
+    def _survival_prob(self, t, i_h):
+        """Get survival probability π(t, h). Returns 1.0 if no survival risk."""
+        if self.survival_probs is None:
+            return 1.0
+        return self.survival_probs[t, i_h]
+
+    def _is_retired_at(self, t):
+        """Check if agent is retired at age t, considering retirement window."""
+        if self.retirement_window is not None:
+            # In retirement window: retirement is a choice (handled in solve)
+            # Before window: working. After window: retired.
+            return t >= self.retirement_window[1]
+        return t >= self.retirement_age
+
+    def _in_retirement_window(self, t):
+        """Check if age t is in the optional retirement choice window."""
+        if self.retirement_window is None:
+            return False
+        return self.retirement_window[0] <= t < self.retirement_window[1]
+
+    def _solve_labor_hours(self, c, w_t, y, h, tau_l_t, tau_p_t):
+        """Solve for optimal labor hours from FOC when labor supply is endogenous.
+
+        FOC: ν·ℓ^φ = c^{-σ} · w·y·h · (1 - τ_effective)
+        => ℓ* = (c^{-σ} · w·y·h · (1 - τ_eff) / ν)^{1/φ}
+        """
+        if not self.labor_supply or y <= 0:
+            return 1.0  # Fixed labor supply
+        effective_wage = w_t * y * h
+        if self.tax_progressive:
+            tau_eff = tau_p_t  # progressive tax handled separately
+        else:
+            tau_eff = tau_l_t + tau_p_t
+        net_wage = effective_wage * (1 - tau_eff)
+        if net_wage <= 0 or c <= 0:
+            return 0.0
+        l_star = (c ** (-self.gamma) * net_wage / self.nu) ** (1.0 / self.phi)
+        return max(l_star, 0.0)
+
+    def _labor_disutility(self, l):
+        """Compute labor disutility: ν · ℓ^(1+φ) / (1+φ)."""
+        if not self.labor_supply or l <= 0:
+            return 0.0
+        return self.nu * (l ** (1 + self.phi)) / (1 + self.phi)
 
     def _solve_period(self, t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t):
         """Solve single period with time-varying prices, taxes, UI, health expenditures, and retirement."""
 
-        is_retired = (t >= self.retirement_age)
+        is_retired_fixed = self._is_retired_at(t)
+        in_ret_window = self._in_retirement_window(t)
         is_terminal = (t == self.T - 1)
 
         for i_a, a in enumerate(self.a_grid):
@@ -543,68 +719,117 @@ class LifecycleModelPerfectForesight:
                 for i_h, h in enumerate(self.h_grid):
                     for i_y_last in range(self.n_y):
 
-                        after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget = \
-                            self._compute_budget(
-                                is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                                a, y, h, i_y, i_y_last, i_h)
-
-                        if is_terminal:
-                            # Terminal period: consume everything, a' = 0
-                            c = max(budget / (1 + tau_c_t), 1e-10)
-                            self.V[t, i_a, i_y, i_h, i_y_last] = self.utility(c, self.gamma)
-                            self.a_policy[t, i_a, i_y, i_h, i_y_last] = 0
-                            self.c_policy[t, i_a, i_y, i_h, i_y_last] = c
-                            continue
-
-                        # Find optimal next period assets
-                        max_val = -np.inf
-                        best_a_idx = 0
-                        best_c = 1e-10
-
-                        for i_a_next, a_next in enumerate(self.a_grid):
-                            c = (budget - a_next) / (1 + tau_c_t)
-
-                            if c <= 0:
-                                continue
-
-                            # Expected continuation value
-                            EV = 0.0
-
-                            if is_retired:
-                                for i_h_next in range(self.n_h):
-                                    prob = self.P_h[t, i_h, i_h_next]
-                                    next_val = self.V[t + 1, i_a_next, 0, i_h_next, 0]
-
-                                    if np.isfinite(prob) and np.isfinite(next_val):
-                                        EV += prob * next_val
+                        # Determine retirement status for this state
+                        if in_ret_window:
+                            # Feature #7: solve both working and retired, take max
+                            val_work, aidx_work, c_work, l_work = self._solve_state_choice(
+                                t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                                a, y, h, i_a, i_y, i_y_last, i_h, is_retired=False, is_terminal=is_terminal)
+                            val_ret, aidx_ret, c_ret, l_ret = self._solve_state_choice(
+                                t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                                a, y, h, i_a, i_y, i_y_last, i_h, is_retired=True, is_terminal=is_terminal)
+                            if val_ret > val_work:
+                                self.V[t, i_a, i_y, i_h, i_y_last] = val_ret
+                                self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx_ret
+                                self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_ret
                             else:
-                                for i_y_next in range(self.n_y):
-                                    for i_h_next in range(self.n_h):
-                                        prob = self.P_y[i_y, i_y_next] * self.P_h[t, i_h, i_h_next]
-                                        next_val = self.V[t + 1, i_a_next, i_y_next, i_h_next, i_y]
-
-                                        if np.isfinite(prob) and np.isfinite(next_val):
-                                            EV += prob * next_val
-
-                            if not np.isfinite(EV):
-                                continue
-
-                            val = self.utility(c, self.gamma) + self.beta * EV
-
-                            if val > max_val:
-                                max_val = val
-                                best_a_idx = i_a_next
-                                best_c = c
-
-                        if np.isfinite(max_val):
-                            self.V[t, i_a, i_y, i_h, i_y_last] = max_val
-                            self.a_policy[t, i_a, i_y, i_h, i_y_last] = best_a_idx
-                            self.c_policy[t, i_a, i_y, i_h, i_y_last] = best_c
+                                self.V[t, i_a, i_y, i_h, i_y_last] = val_work
+                                self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx_work
+                                self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_work
                         else:
-                            c_fallback = max(budget / (1 + tau_c_t), 1e-10)
-                            self.V[t, i_a, i_y, i_h, i_y_last] = self.utility(c_fallback, self.gamma)
-                            self.a_policy[t, i_a, i_y, i_h, i_y_last] = 0
-                            self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_fallback
+                            val, aidx, c_val, l_val = self._solve_state_choice(
+                                t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                                a, y, h, i_a, i_y, i_y_last, i_h,
+                                is_retired=is_retired_fixed, is_terminal=is_terminal)
+                            self.V[t, i_a, i_y, i_h, i_y_last] = val
+                            self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx
+                            self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_val
+
+    def _solve_state_choice(self, t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                             a, y, h, i_a, i_y, i_y_last, i_h, is_retired, is_terminal):
+        """Solve for optimal (a', c, l) at a single state given retirement status.
+
+        Returns (value, best_a_idx, best_c, best_l).
+        """
+        survival = self._survival_prob(t, i_h)
+
+        _, _, _, budget = self._compute_budget(
+            is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+            a, y, h, i_y, i_y_last, i_h)
+
+        if is_terminal:
+            c = max(budget / (1 + tau_c_t), 1e-10)
+            if self.labor_supply and not is_retired:
+                l = self._solve_labor_hours(c, w_t, y, h, tau_l_t, tau_p_t)
+                # Recompute budget with labor hours
+                _, _, _, budget = self._compute_budget(
+                    is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                    a, y, h, i_y, i_y_last, i_h, labor_hours=l)
+                c = max(budget / (1 + tau_c_t), 1e-10)
+                val = self.utility(c, self.gamma) - self._labor_disutility(l)
+            else:
+                l = 1.0
+                val = self.utility(c, self.gamma)
+            return val, 0, c, l
+
+        max_val = -np.inf
+        best_a_idx = 0
+        best_c = 1e-10
+        best_l = 1.0
+
+        for i_a_next, a_next in enumerate(self.a_grid):
+            if self.labor_supply and not is_retired:
+                # Iterative: guess c from budget with l=1, solve l from FOC, recompute budget
+                c_guess = (budget - a_next) / (1 + tau_c_t)
+                if c_guess <= 0:
+                    continue
+                l = self._solve_labor_hours(c_guess, w_t, y, h, tau_l_t, tau_p_t)
+                _, _, _, budget_l = self._compute_budget(
+                    is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                    a, y, h, i_y, i_y_last, i_h, labor_hours=l)
+                c = (budget_l - a_next) / (1 + tau_c_t)
+                if c <= 0:
+                    continue
+            else:
+                l = 1.0
+                c = (budget - a_next) / (1 + tau_c_t)
+                if c <= 0:
+                    continue
+
+            # Expected continuation value
+            EV = 0.0
+
+            if is_retired:
+                for i_h_next in range(self.n_h):
+                    prob = self.P_h[t, i_h, i_h_next]
+                    next_val = self.V[t + 1, i_a_next, 0, i_h_next, 0]
+                    if np.isfinite(prob) and np.isfinite(next_val):
+                        EV += prob * next_val
+            else:
+                for i_y_next in range(self.n_y):
+                    for i_h_next in range(self.n_h):
+                        prob = self._get_P_y(t, i_h, i_y, i_y_next) * self.P_h[t, i_h, i_h_next]
+                        next_val = self.V[t + 1, i_a_next, i_y_next, i_h_next, i_y]
+                        if np.isfinite(prob) and np.isfinite(next_val):
+                            EV += prob * next_val
+
+            if not np.isfinite(EV):
+                continue
+
+            # Feature #2: survival risk multiplies continuation value
+            val = self.utility(c, self.gamma) - self._labor_disutility(l) + self.beta * survival * EV
+
+            if val > max_val:
+                max_val = val
+                best_a_idx = i_a_next
+                best_c = c
+                best_l = l
+
+        if np.isfinite(max_val):
+            return max_val, best_a_idx, best_c, best_l
+        else:
+            c_fallback = max(budget / (1 + tau_c_t), 1e-10)
+            return self.utility(c_fallback, self.gamma), 0, c_fallback, 1.0
 
     def _solve_backward_sequential(self, verbose=False):
         """Solve backward induction sequentially."""
@@ -700,14 +925,16 @@ class LifecycleModelPerfectForesight:
         
         if edu_unemployment_rate < 1e-10:
             n_employed = self.n_y - 1
-            i_y = np.random.choice(range(1, self.n_y), size=n_sim, 
+            i_y = np.random.choice(range(1, self.n_y), size=n_sim,
                                   p=np.ones(n_employed) / n_employed)
         else:
-            eigenvalues, eigenvectors = eig(self.P_y.T)
+            # Use 2D P_y for stationary distribution (constant case or initial slice)
+            P_y_2d = self.P_y if self.P_y.ndim == 2 else self.P_y[0, 0]
+            eigenvalues, eigenvectors = eig(P_y_2d.T)
             stationary_idx = np.argmax(eigenvalues.real)
             stationary = eigenvectors[:, stationary_idx].real
             stationary = stationary / stationary.sum()
-            
+
             i_y = np.random.choice(self.n_y, size=n_sim, p=stationary)
         
         i_y_last = i_y.copy()
@@ -741,43 +968,36 @@ class LifecycleModelPerfectForesight:
                 
                 if is_retired:
                     # PENSION based on last working income state (y_last)
-                    # y_last is frozen at its value from the last working period
                     pension_replacement = self.pension_replacement_path[lifecycle_age]
-                    pension_sim[t_sim, i] = pension_replacement * self.w_at_retirement * self.y_grid[i_y_last[i]]
+                    pension_val = pension_replacement * self.w_at_retirement * self.y_grid[i_y_last[i]]
+                    # Feature #11: minimum pension floor
+                    pension_val = max(pension_val, self.pension_min_floor)
+                    pension_sim[t_sim, i] = pension_val
 
                     y_sim[t_sim, i] = 0.0
                     employed_sim[t_sim, i] = False
                     ui_sim[t_sim, i] = 0.0
-
-                    # Set income state to 0 (retired), but do NOT update i_y_last
-                    # i_y_last remains frozen at the last working period's income state
                     i_y[i] = 0
-                    
+
                 else:
                     # WORKING PERIOD
                     y_sim[t_sim, i] = self.y_grid[i_y[i]]
                     employed_sim[t_sim, i] = (i_y[i] > 0)
                     pension_sim[t_sim, i] = 0.0
-                    
+
                     if i_y[i] == 0:
                         ui_sim[t_sim, i] = self.ui_replacement_rate * self.w_path[lifecycle_age] * self.y_grid[i_y_last[i]]
                     else:
                         ui_sim[t_sim, i] = 0.0
-                    
-                    # --- FIX: UPDATE AVERAGE EARNINGS DURING WORKING YEARS ---
-                    # Compute gross labor income (w * y * h, before taxes, excluding UI)
+
                     gross_labor_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i]
-
-                    # Update average earnings using expanding average
-                    # n_earnings_years tracks actual years of earnings history (handles mid-life agents correctly)
                     n_earnings_years[i] += 1
-
-                    # Expanding average formula: new_avg = (old_avg * (n-1) + new_value) / n
                     avg_earnings[i] = (avg_earnings[i] * (n_earnings_years[i] - 1) + gross_labor_income) / n_earnings_years[i]
-                
+
                 c_sim[t_sim, i] = self.c_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                
-                m_sim[t_sim, i] = self.m_grid[i_h[i]]
+
+                # Feature #20: age-dependent medical expenditure
+                m_sim[t_sim, i] = self.m_grid[lifecycle_age, i_h[i]]
                 oop_m_sim[t_sim, i] = (1 - self.kappa) * m_sim[t_sim, i]
                 gov_m_sim[t_sim, i] = self.kappa * m_sim[t_sim, i]
 
@@ -787,19 +1007,23 @@ class LifecycleModelPerfectForesight:
 
                 # Tax calculations
                 tax_c_sim[t_sim, i] = self.tau_c_path[lifecycle_age] * c_sim[t_sim, i]
-
-                # Payroll tax on WAGES only (not on UI, not on pensions)
                 tax_p_sim[t_sim, i] = self.tau_p_path[lifecycle_age] * wage_income
 
-                # Labor income tax: on wages + UI during working years, on pension during retirement
                 if is_retired:
-                    # Pension taxed as labor income (consistent with value function)
-                    tax_l_sim[t_sim, i] = self.tau_l_path[lifecycle_age] * pension_sim[t_sim, i]
+                    if self.tax_progressive:
+                        tax_l_sim[t_sim, i] = pension_sim[t_sim, i] - self.tax_kappa * max(pension_sim[t_sim, i], 1e-10) ** (1 - self.tax_eta)
+                        tax_l_sim[t_sim, i] = max(tax_l_sim[t_sim, i], 0.0)
+                    else:
+                        tax_l_sim[t_sim, i] = self.tau_l_path[lifecycle_age] * pension_sim[t_sim, i]
                 else:
-                    # Working: tax on gross labor income (wages + UI) minus payroll tax
-                    gross_labor_income = effective_y_sim[t_sim, i]
-                    tax_l_sim[t_sim, i] = self.tau_l_path[lifecycle_age] * (gross_labor_income - tax_p_sim[t_sim, i])
-                
+                    gross_labor_income_tax = effective_y_sim[t_sim, i]
+                    taxable = gross_labor_income_tax - tax_p_sim[t_sim, i]
+                    if self.tax_progressive:
+                        tax_l_sim[t_sim, i] = taxable - self.tax_kappa * max(taxable, 1e-10) ** (1 - self.tax_eta)
+                        tax_l_sim[t_sim, i] = max(tax_l_sim[t_sim, i], 0.0)
+                    else:
+                        tax_l_sim[t_sim, i] = self.tau_l_path[lifecycle_age] * taxable
+
                 gross_capital_income = self.r_path[lifecycle_age] * a_sim[t_sim, i]
                 tax_k_sim[t_sim, i] = self.tau_k_path[lifecycle_age] * gross_capital_income
                 
@@ -808,8 +1032,9 @@ class LifecycleModelPerfectForesight:
                     
                     if not is_retired:
                         i_y_last[i] = i_y[i]
-                        i_y[i] = np.searchsorted(np.cumsum(self.P_y[i_y[i], :]), np.random.random())
-                    
+                        P_y_row = self._get_P_y_row(lifecycle_age, i_h[i], i_y[i])
+                        i_y[i] = np.searchsorted(np.cumsum(P_y_row), np.random.random())
+
                     i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
         
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
@@ -883,12 +1108,14 @@ class LifecycleModelPerfectForesight:
 # Helper functions for parallel processing (must be at module level for pickling)
 
 def _solve_period_wrapper(args, model):
-    """Wrapper for parallel period solving."""
+    """Wrapper for parallel period solving — delegates to model._solve_state_choice."""
     period_data, i_a = args
     t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t = period_data
 
     a = model.a_grid[i_a]
-    is_retired = (t >= model.retirement_age)
+    is_retired_fixed = model._is_retired_at(t)
+    in_ret_window = model._in_retirement_window(t)
+    is_terminal = (t == model.T - 1)
 
     V_slice = np.zeros((model.n_y, model.n_h, model.n_y))
     a_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y), dtype=np.int32)
@@ -897,59 +1124,32 @@ def _solve_period_wrapper(args, model):
     for i_y, y in enumerate(model.y_grid):
         for i_h, h in enumerate(model.h_grid):
             for i_y_last in range(model.n_y):
-
-                _, _, _, budget = model._compute_budget(
-                    is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                    a, y, h, i_y, i_y_last, i_h)
-                
-                max_val = -np.inf
-                best_a_idx = 0
-                best_c = 1e-10
-                
-                for i_a_next, a_next in enumerate(model.a_grid):
-                    c = (budget - a_next) / (1 + tau_c_t)
-                    
-                    if c <= 0:
-                        continue
-                    
-                    EV = 0.0
-                    
-                    if is_retired:
-                        for i_h_next in range(model.n_h):
-                            prob = model.P_h[t, i_h, i_h_next]
-                            next_val = model.V[t + 1, i_a_next, 0, i_h_next, 0]
-                            
-                            if np.isfinite(prob) and np.isfinite(next_val):
-                                EV += prob * next_val
+                if in_ret_window:
+                    val_w, aidx_w, c_w, _ = model._solve_state_choice(
+                        t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                        a, y, h, i_a, i_y, i_y_last, i_h,
+                        is_retired=False, is_terminal=is_terminal)
+                    val_r, aidx_r, c_r, _ = model._solve_state_choice(
+                        t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                        a, y, h, i_a, i_y, i_y_last, i_h,
+                        is_retired=True, is_terminal=is_terminal)
+                    if val_r > val_w:
+                        V_slice[i_y, i_h, i_y_last] = val_r
+                        a_pol_slice[i_y, i_h, i_y_last] = aidx_r
+                        c_pol_slice[i_y, i_h, i_y_last] = c_r
                     else:
-                        for i_y_next in range(model.n_y):
-                            for i_h_next in range(model.n_h):
-                                prob = model.P_y[i_y, i_y_next] * model.P_h[t, i_h, i_h_next]
-                                next_val = model.V[t + 1, i_a_next, i_y_next, i_h_next, i_y]
-                                
-                                if np.isfinite(prob) and np.isfinite(next_val):
-                                    EV += prob * next_val
-                    
-                    if not np.isfinite(EV):
-                        continue
-                    
-                    val = model.utility(c, model.gamma) + model.beta * EV
-                    
-                    if val > max_val:
-                        max_val = val
-                        best_a_idx = i_a_next
-                        best_c = c
-                
-                if np.isfinite(max_val):
-                    V_slice[i_y, i_h, i_y_last] = max_val
-                    a_pol_slice[i_y, i_h, i_y_last] = best_a_idx
-                    c_pol_slice[i_y, i_h, i_y_last] = best_c
+                        V_slice[i_y, i_h, i_y_last] = val_w
+                        a_pol_slice[i_y, i_h, i_y_last] = aidx_w
+                        c_pol_slice[i_y, i_h, i_y_last] = c_w
                 else:
-                    c_fallback = max(budget / (1 + tau_c_t), 1e-10)
-                    V_slice[i_y, i_h, i_y_last] = model.utility(c_fallback, model.gamma)
-                    a_pol_slice[i_y, i_h, i_y_last] = 0
-                    c_pol_slice[i_y, i_h, i_y_last] = c_fallback
-    
+                    val, aidx, c_val, _ = model._solve_state_choice(
+                        t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                        a, y, h, i_a, i_y, i_y_last, i_h,
+                        is_retired=is_retired_fixed, is_terminal=is_terminal)
+                    V_slice[i_y, i_h, i_y_last] = val
+                    a_pol_slice[i_y, i_h, i_y_last] = aidx
+                    c_pol_slice[i_y, i_h, i_y_last] = c_val
+
     return V_slice, a_pol_slice, c_pol_slice
 
 

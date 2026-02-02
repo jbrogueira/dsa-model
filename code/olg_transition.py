@@ -47,6 +47,8 @@ class OLGTransition:
                  education_shares=None,
                  # Output settings
                  output_dir='output',
+                 # Government spending on goods (Feature #17)
+                 govt_spending_path=None,
                  # Backend selection
                  backend='numpy'):
         
@@ -82,6 +84,12 @@ class OLGTransition:
         else:
             self.education_shares = education_shares
         
+        # Government spending on goods (Feature #17)
+        if govt_spending_path is not None:
+            self.govt_spending_path = np.asarray(govt_spending_path, dtype=float)
+        else:
+            self.govt_spending_path = None  # No exogenous G_t
+
         # Output directory
         self.output_dir = output_dir
         if not os.path.exists(output_dir):
@@ -255,9 +263,11 @@ class OLGTransition:
             pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
 
+            # Pass all args positionally to match vmap in_axes
+            P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
             V_batch, a_pol_batch, c_pol_batch = _solve_lifecycle_jax_batched(
                 ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
-                ref.P_y, ref.P_h,
+                ref.P_y_2d, ref.P_h,
                 w_at_rets,
                 r_paths, w_paths,
                 tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
@@ -265,6 +275,11 @@ class OLGTransition:
                 ref.ui_replacement_rate, ref.kappa,
                 ref.beta, ref.gamma,
                 ref.T, ref.retirement_age,
+                ref.pension_min_floor, ref.tax_progressive,
+                ref.tax_kappa_hsv, ref.tax_eta,
+                ref.transfer_floor, ref.education_subsidy_rate,
+                ref.child_cost_profile, ref.schooling_years,
+                ref.survival_probs, P_y_4d_arg,
             )
 
             # Inject results back into individual model objects
@@ -297,12 +312,12 @@ class OLGTransition:
             ref = model_list[0]
             n_y = ref.n_y
 
-            # Stationary distribution for initial income draws
+            # Stationary distribution for initial income draws — use 2D P_y
             edu_unemployment_rate = ref.config.edu_params[ref.config.education_type]['unemployment_rate']
             if edu_unemployment_rate < 1e-10:
                 stationary = None
             else:
-                eigenvalues, eigenvectors = eig(np.asarray(ref.P_y).T)
+                eigenvalues, eigenvectors = eig(np.asarray(ref.P_y_2d).T)
                 stationary_idx = np.argmax(eigenvalues.real)
                 stationary_dist = eigenvectors[:, stationary_idx].real
                 stationary_dist = stationary_dist / stationary_dist.sum()
@@ -383,10 +398,12 @@ class OLGTransition:
             if verbose:
                 print(f"  JAX batched simulate: {edu_type} ({n_cohorts} cohorts, n_sim={n_sim})")
 
+            # Pass all args positionally to match vmap in_axes
+            P_y_4d_sim = ref.P_y_4d if ref.P_y_age_health else None
             results = _simulate_lifecycle_jax_batched(
                 a_policies, c_policies,
                 ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
-                ref.P_y, ref.P_h,
+                ref.P_y_2d, ref.P_h,
                 w_paths, w_at_rets,
                 tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                 r_paths, pension_paths,
@@ -395,6 +412,9 @@ class OLGTransition:
                 n_sim, batch_keys,
                 batch_i_a, batch_i_y, batch_i_h, batch_i_y_last,
                 batch_avg_earn, batch_n_years,
+                ref.pension_min_floor, ref.tax_progressive,
+                ref.tax_kappa_hsv, ref.tax_eta,
+                ref.P_y_age_health, P_y_4d_sim,
             )
 
             # Unpack: results is tuple of 18 arrays, each (n_cohorts, T_sim, n_sim)
@@ -934,7 +954,15 @@ class OLGTransition:
                 total_gov_health += weight * float(px["gov_health_by_age_edu"][edu_idx, age])
 
         total_revenue = total_tax_c + total_tax_l + total_tax_p + total_tax_k
-        total_spending = total_ui + total_pension + total_gov_health
+
+        # Feature #17: Government spending on goods
+        G_t = 0.0
+        if self.govt_spending_path is not None:
+            t_idx = int(t)
+            if t_idx < len(self.govt_spending_path):
+                G_t = float(self.govt_spending_path[t_idx])
+
+        total_spending = total_ui + total_pension + total_gov_health + G_t
         primary_deficit = total_spending - total_revenue
 
         return {
@@ -946,6 +974,7 @@ class OLGTransition:
             "ui": total_ui,
             "pension": total_pension,
             "gov_health": total_gov_health,
+            "govt_spending": G_t,
             "total_spending": total_spending,
             "primary_deficit": primary_deficit,
         }
@@ -1153,6 +1182,7 @@ class OLGTransition:
             'ui': np.zeros(self.T_transition),
             'pension': np.zeros(self.T_transition),
             'gov_health': np.zeros(self.T_transition),
+            'govt_spending': np.zeros(self.T_transition),
             'total_spending': np.zeros(self.T_transition),
             'primary_deficit': np.zeros(self.T_transition)
         }
@@ -1179,6 +1209,7 @@ class OLGTransition:
             print(f"    UI benefits:       {np.mean(budget_path['ui']):.2f}")
             print(f"    Pensions:          {np.mean(budget_path['pension']):.2f}")
             print(f"    Health spending:   {np.mean(budget_path['gov_health']):.2f}")
+            print(f"    Govt spending (G): {np.mean(budget_path['govt_spending']):.2f}")
             print(f"  Average deficit:     {np.mean(budget_path['primary_deficit']):.2f}")
             print(f"  Deficit/GDP:         {np.mean(budget_path['primary_deficit'] / self.Y_path):.5%}")
         

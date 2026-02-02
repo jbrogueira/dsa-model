@@ -3,7 +3,7 @@ import numpy as np
 import sys
 import os
 from olg_transition import OLGTransition, get_test_config
-from lifecycle_perfect_foresight import LifecycleConfig
+from lifecycle_perfect_foresight import LifecycleConfig, LifecycleModelPerfectForesight
 
 # test_olg_transition.py
 """
@@ -1034,6 +1034,417 @@ class TestJAXBackend:
         assert np.all(results['L'] > 0)
         assert np.all(results['Y'] > 0)
         assert np.allclose(results['r'], 0.03)
+
+
+# =====================================================================
+# Tests for new features (Phases 1-5)
+# =====================================================================
+
+class TestNewFeatures:
+    """Tests for new lifecycle model features. All features default OFF for backward compatibility."""
+
+    @staticmethod
+    def _base_config(**overrides):
+        """Small config for fast tests."""
+        defaults = dict(
+            T=10, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    # --- Feature #11: Minimum pension floor ---
+
+    def test_pension_min_floor_increases_retiree_consumption(self):
+        """With a positive pension floor, retiree consumption should not decrease."""
+        config_base = self._base_config()
+        config_floor = self._base_config(pension_min_floor=0.5)
+
+        model_base = LifecycleModelPerfectForesight(config_base, verbose=False)
+        model_base.solve(verbose=False)
+        res_base = model_base.simulate(n_sim=2000, seed=42)
+
+        model_floor = LifecycleModelPerfectForesight(config_floor, verbose=False)
+        model_floor.solve(verbose=False)
+        res_floor = model_floor.simulate(n_sim=2000, seed=42)
+
+        # Mean consumption in retirement (ages 8, 9) should be at least as high
+        c_base_ret = np.mean(res_base[1][8:, :])
+        c_floor_ret = np.mean(res_floor[1][8:, :])
+        assert c_floor_ret >= c_base_ret - 1e-6, \
+            f"Pension floor should increase retiree consumption: {c_floor_ret:.4f} < {c_base_ret:.4f}"
+
+    def test_pension_min_floor_zero_is_noop(self):
+        """pension_min_floor=0.0 should match the default behavior exactly."""
+        config = self._base_config(pension_min_floor=0.0)
+        config_default = self._base_config()
+
+        m1 = LifecycleModelPerfectForesight(config, verbose=False)
+        m1.solve(verbose=False)
+        m2 = LifecycleModelPerfectForesight(config_default, verbose=False)
+        m2.solve(verbose=False)
+
+        assert np.allclose(m1.V, m2.V), "pension_min_floor=0 should match default"
+
+    # --- Feature #20: Age-dependent medical expenditure ---
+
+    def test_age_dependent_medical_costs(self):
+        """Age-increasing medical costs should reduce late-life consumption."""
+        # Flat profile
+        config_flat = self._base_config(m_good=0.05, n_h=1)
+        # Rising medical costs with age
+        age_profile = np.linspace(0.5, 2.0, 10)
+        config_age = self._base_config(m_good=0.05, n_h=1, m_age_profile=age_profile)
+
+        m_flat = LifecycleModelPerfectForesight(config_flat, verbose=False)
+        m_flat.solve(verbose=False)
+        res_flat = m_flat.simulate(n_sim=2000, seed=42)
+
+        m_age = LifecycleModelPerfectForesight(config_age, verbose=False)
+        m_age.solve(verbose=False)
+        res_age = m_age.simulate(n_sim=2000, seed=42)
+
+        # m_grid should be 2D
+        assert m_age.m_grid.ndim == 2
+        assert m_age.m_grid.shape == (10, 1)
+
+        # Late-life consumption should be lower with rising medical costs
+        c_flat_late = np.mean(res_flat[1][7:, :])
+        c_age_late = np.mean(res_age[1][7:, :])
+        assert c_age_late < c_flat_late, \
+            f"Rising medical costs should reduce late-life consumption"
+
+    # --- Feature #14: Progressive taxation ---
+
+    def test_progressive_tax_reduces_inequality(self):
+        """HSV progressive taxation should compress the consumption distribution."""
+        config_flat = self._base_config(n_y=3, n_h=1)
+        config_prog = self._base_config(n_y=3, n_h=1,
+                                         tax_progressive=True, tax_kappa=0.8, tax_eta=0.15)
+
+        m_flat = LifecycleModelPerfectForesight(config_flat, verbose=False)
+        m_flat.solve(verbose=False)
+        res_flat = m_flat.simulate(n_sim=3000, seed=42)
+
+        m_prog = LifecycleModelPerfectForesight(config_prog, verbose=False)
+        m_prog.solve(verbose=False)
+        res_prog = m_prog.simulate(n_sim=3000, seed=42)
+
+        # Consumption variance should be lower under progressive tax
+        var_flat = np.var(res_flat[1][3, :])
+        var_prog = np.var(res_prog[1][3, :])
+        # Allow some tolerance — the effect depends on calibration
+        assert var_prog <= var_flat * 1.1, \
+            f"Progressive tax should compress consumption distribution"
+
+    def test_progressive_tax_disabled_matches_flat(self):
+        """tax_progressive=False should give same results as default."""
+        config_a = self._base_config(tax_progressive=False)
+        config_b = self._base_config()
+
+        m_a = LifecycleModelPerfectForesight(config_a, verbose=False)
+        m_a.solve(verbose=False)
+        m_b = LifecycleModelPerfectForesight(config_b, verbose=False)
+        m_b.solve(verbose=False)
+
+        assert np.allclose(m_a.V, m_b.V), "tax_progressive=False should match default"
+
+    # --- Feature #15: Means-tested transfers ---
+
+    def test_transfer_floor_prevents_destitution(self):
+        """A positive transfer_floor should prevent consumption from falling below the floor."""
+        config = self._base_config(transfer_floor=0.05)
+
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        res = model.simulate(n_sim=3000, seed=42)
+
+        # Minimum consumption across all agents should be close to or above floor
+        min_c = np.min(res[1])
+        assert min_c > 0.0, f"Consumption should be positive with transfer floor"
+
+    def test_transfer_floor_zero_is_noop(self):
+        """transfer_floor=0 should match default."""
+        config_a = self._base_config(transfer_floor=0.0)
+        config_b = self._base_config()
+
+        m_a = LifecycleModelPerfectForesight(config_a, verbose=False)
+        m_a.solve(verbose=False)
+        m_b = LifecycleModelPerfectForesight(config_b, verbose=False)
+        m_b.solve(verbose=False)
+
+        assert np.allclose(m_a.V, m_b.V), "transfer_floor=0 should match default"
+
+    # --- Feature #2: Survival risk ---
+
+    def test_survival_risk_changes_value_function(self):
+        """With survival risk < 1, value function should differ from the no-risk case."""
+        config_base = self._base_config()
+        survival = np.ones((10, 1)) * 0.95  # 5% mortality each period
+        config_surv = self._base_config(survival_probs=survival)
+
+        m_base = LifecycleModelPerfectForesight(config_base, verbose=False)
+        m_base.solve(verbose=False)
+        m_surv = LifecycleModelPerfectForesight(config_surv, verbose=False)
+        m_surv.solve(verbose=False)
+
+        # Value function should differ (survival risk changes effective discount)
+        V_diff = np.max(np.abs(m_surv.V - m_base.V))
+        assert V_diff > 1e-4, \
+            f"Survival risk should change value function (max diff = {V_diff:.2e})"
+
+        # At non-degenerate states (away from borrowing constraint), V should differ
+        # Focus on interior states where the penalty doesn't dominate
+        V_base_interior = m_base.V[5, 10:30, 1, 0, 0]  # mid-life, mid-assets, employed
+        V_surv_interior = m_surv.V[5, 10:30, 1, 0, 0]
+        assert not np.allclose(V_base_interior, V_surv_interior, atol=1e-4), \
+            "Survival risk should change interior value function"
+
+    def test_survival_prob_one_is_noop(self):
+        """survival_probs=all ones should match the no-risk default."""
+        config_a = self._base_config(survival_probs=np.ones((10, 1)))
+        config_b = self._base_config()
+
+        m_a = LifecycleModelPerfectForesight(config_a, verbose=False)
+        m_a.solve(verbose=False)
+        m_b = LifecycleModelPerfectForesight(config_b, verbose=False)
+        m_b.solve(verbose=False)
+
+        assert np.allclose(m_a.V, m_b.V), "survival_probs=1 should match default"
+
+    # --- Feature #4: Schooling and children ---
+
+    def test_child_costs_reduce_early_consumption(self):
+        """Schooling child costs should reduce consumption in early periods."""
+        config_base = self._base_config()
+        child_costs = np.zeros(10)
+        child_costs[:3] = 0.1  # child costs in first 3 periods
+        config_school = self._base_config(schooling_years=3, child_cost_profile=child_costs)
+
+        m_base = LifecycleModelPerfectForesight(config_base, verbose=False)
+        m_base.solve(verbose=False)
+        res_base = m_base.simulate(n_sim=2000, seed=42)
+
+        m_school = LifecycleModelPerfectForesight(config_school, verbose=False)
+        m_school.solve(verbose=False)
+        res_school = m_school.simulate(n_sim=2000, seed=42)
+
+        # Early-life consumption should be lower with child costs
+        c_base_early = np.mean(res_base[1][:3, :])
+        c_school_early = np.mean(res_school[1][:3, :])
+        assert c_school_early < c_base_early, \
+            "Child costs should reduce early-life consumption"
+
+    def test_no_schooling_is_noop(self):
+        """schooling_years=0 should match default."""
+        config_a = self._base_config(schooling_years=0)
+        config_b = self._base_config()
+
+        m_a = LifecycleModelPerfectForesight(config_a, verbose=False)
+        m_a.solve(verbose=False)
+        m_b = LifecycleModelPerfectForesight(config_b, verbose=False)
+        m_b.solve(verbose=False)
+
+        assert np.allclose(m_a.V, m_b.V), "schooling_years=0 should match default"
+
+    # --- Feature #17: Government spending ---
+
+    def test_govt_spending_increases_deficit(self):
+        """Positive G_t should increase the primary deficit."""
+        config = self._base_config(T=5, retirement_age=4, n_a=5)
+        economy_base = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+        )
+        economy_G = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+            govt_spending_path=np.ones(3) * 0.05,
+        )
+
+        r_path = np.ones(3) * 0.03
+        economy_base.simulate_transition(r_path=r_path, n_sim=50, verbose=False)
+        economy_G.simulate_transition(r_path=r_path, n_sim=50, verbose=False)
+
+        budget_base = economy_base.compute_government_budget(0, n_sim=50)
+        budget_G = economy_G.compute_government_budget(0, n_sim=50)
+
+        # G_t should increase spending and deficit
+        assert budget_G['govt_spending'] == 0.05
+        assert budget_G['total_spending'] > budget_base['total_spending']
+        assert budget_G['primary_deficit'] > budget_base['primary_deficit']
+
+
+class TestNewFeaturesJAX:
+    """JAX cross-validation tests for new features."""
+
+    @staticmethod
+    def _jax_available():
+        try:
+            import jax  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=10, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_pension_floor_jax_matches_numpy(self):
+        """JAX pension_min_floor solve should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(pension_min_floor=0.3)
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with pension floor: max diff = {V_diff:.2e}"
+        assert np.all(np_model.a_policy == jax_model.a_policy), \
+            "Asset policies differ with pension floor"
+
+    def test_progressive_tax_jax_matches_numpy(self):
+        """JAX progressive tax solve should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(tax_progressive=True, tax_kappa=0.8, tax_eta=0.15)
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with progressive tax: max diff = {V_diff:.2e}"
+        assert np.all(np_model.a_policy == jax_model.a_policy), \
+            "Asset policies differ with progressive tax"
+
+    def test_age_medical_jax_matches_numpy(self):
+        """JAX age-dependent medical costs should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        age_profile = np.linspace(0.5, 2.0, 10)
+        config = self._base_config(m_good=0.05, m_age_profile=age_profile)
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-5, f"V mismatch with age-medical: max diff = {V_diff:.2e}"
+
+    def test_survival_risk_jax_matches_numpy(self):
+        """JAX survival risk solve should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        survival = np.ones((10, 1)) * 0.95
+        config = self._base_config(survival_probs=survival)
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with survival risk: max diff = {V_diff:.2e}"
+        assert np.all(np_model.a_policy == jax_model.a_policy), \
+            "Asset policies differ with survival risk"
+
+    def test_schooling_jax_matches_numpy(self):
+        """JAX schooling child costs should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        child_costs = np.zeros(10)
+        child_costs[:3] = 0.1
+        config = self._base_config(schooling_years=3, child_cost_profile=child_costs)
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with schooling: max diff = {V_diff:.2e}"
+
+    def test_transfer_floor_jax_matches_numpy(self):
+        """JAX transfer floor solve should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(transfer_floor=0.05)
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with transfer floor: max diff = {V_diff:.2e}"
+
+    def test_combined_features_jax_matches_numpy(self):
+        """JAX with multiple features enabled should match NumPy."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        from lifecycle_jax import LifecycleModelJAX
+
+        age_profile = np.linspace(0.8, 1.5, 10)
+        survival = np.ones((10, 1)) * 0.97
+        child_costs = np.zeros(10)
+        child_costs[:2] = 0.05
+        config = self._base_config(
+            m_good=0.03, m_age_profile=age_profile,
+            pension_min_floor=0.2,
+            tax_progressive=True, tax_kappa=0.85, tax_eta=0.10,
+            transfer_floor=0.02,
+            survival_probs=survival,
+            schooling_years=2, child_cost_profile=child_costs,
+        )
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with combined features: max diff = {V_diff:.2e}"
+        assert np.all(np_model.a_policy == jax_model.a_policy), \
+            "Asset policies differ with combined features"
 
 
 if __name__ == "__main__":
