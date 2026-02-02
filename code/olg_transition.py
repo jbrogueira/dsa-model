@@ -993,37 +993,22 @@ class OLGTransition:
 
         total_revenue = total_tax_c + total_tax_l + total_tax_p + total_tax_k
 
-        # Feature #17: Government spending on goods
-        G_t = 0.0
-        if self.govt_spending_path is not None:
-            t_idx = int(t)
-            if t_idx < len(self.govt_spending_path):
-                G_t = float(self.govt_spending_path[t_idx])
+        t_idx = int(t)
+        _at = lambda path, default=0.0: float(path[t_idx]) if path is not None and t_idx < len(path) else default
 
-        # Feature #10: Public investment spending
-        I_g_t = 0.0
-        if self.I_g_path is not None:
-            t_idx = int(t)
-            if t_idx < len(self.I_g_path):
-                I_g_t = float(self.I_g_path[t_idx])
+        G_t = _at(self.govt_spending_path)
+        I_g_t = _at(self.I_g_path)
+        defense_t = _at(self.defense_spending_path)
 
         # Feature #9: Sovereign debt service
         debt_service = 0.0
         new_borrowing = 0.0
         if self.B_path is not None:
-            t_idx = int(t)
             r_t = float(self.r_path[t_idx]) if self.r_path is not None else 0.0
             B_t = float(self.B_path[t_idx]) if t_idx < len(self.B_path) else float(self.B_path[-1])
             B_next = float(self.B_path[t_idx + 1]) if t_idx + 1 < len(self.B_path) else float(self.B_path[-1])
             debt_service = r_t * B_t
             new_borrowing = B_next - B_t
-
-        # Feature #19: Defense spending
-        defense_t = 0.0
-        if self.defense_spending_path is not None:
-            t_idx = int(t)
-            if t_idx < len(self.defense_spending_path):
-                defense_t = float(self.defense_spending_path[t_idx])
 
         total_spending = (total_ui + total_pension + total_gov_health
                           + G_t + I_g_t + debt_service + defense_t)

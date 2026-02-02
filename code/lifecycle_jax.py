@@ -222,9 +222,8 @@ def solve_period_jax(V_next, period_params, model_params):
     survival_broadcast = survival_t[None, None, :, None]
     EV = EV * survival_broadcast
 
-    # 4. Grid search
+    # 4. Grid search — EV reshaped for broadcasting against u_all (n_a, n_y, n_h, n_y_last, n_a_next)
     EV_for_search = jnp.transpose(EV, (1, 2, 3, 0))  # (n_y, n_h, n_y, n_a_next)
-    EV_for_search = EV_for_search[None, ...]
 
     u_all = utility_jax(c_all, gamma)
     val_all = u_all + beta * EV_for_search
@@ -660,13 +659,14 @@ def simulate_lifecycle_jax(
         return outputs
 
     # vmap across n_sim agents
+    # init_states is a tuple of (n_sim,) arrays — vmap axis 0
+    # u_y_all, u_h_all are (T_sim, n_sim) — vmap axis 1 (agent dimension)
     init_states = (initial_i_a, initial_i_y, initial_i_h, initial_i_y_last,
                    initial_avg_earnings, initial_n_earnings_years)
 
-    # u_y_all, u_h_all are (T_sim, n_sim) — we vmap over axis 1 (agents)
     all_outputs = jax.vmap(
         simulate_one,
-        in_axes=(0, 1, 1),  # init_state per-agent, draws per-agent
+        in_axes=(0, 1, 1),
     )(init_states, u_y_all, u_h_all)
 
     # all_outputs is a tuple of 18 arrays, each (n_sim, T_sim) from vmap

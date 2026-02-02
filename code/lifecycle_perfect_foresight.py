@@ -196,8 +196,7 @@ class LifecycleConfig:
 
         # Create health transition matrix if not provided
         if self.P_h is None:
-            # Age-dependent health transitions (T x n_h x n_h)
-            # For now, use constant transitions across ages
+            # Health transitions (T x n_h x n_h), currently constant across ages
             
             if self.n_h == 3:
                 # Default 3-state health transition
