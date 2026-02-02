@@ -12,6 +12,14 @@ test_olg_transition.py         # Pytest tests (20 tests, incl. 3 JAX cross-valid
 ISSUES.md                      # Bug tracking
 ```
 
+## Environment
+
+JAX venv is stored at `~/venvs/jax-arm/` (Python 3.11, ARM/Homebrew, native Apple Silicon). Activate before running JAX backend:
+
+```bash
+source ~/venvs/jax-arm/bin/activate
+```
+
 ## Run
 
 ```bash
