@@ -17,7 +17,7 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 1 | #11, #17, #20 | **Done** |
 | 2 | #3+#5, #2, #16 | **Partial** — #2 solve done, simulation mortality + bequests + OLG weights remaining; #16 config only |
 | 3 | #14, #15 | **Done** |
-| 4 | #1, #6, #7 | **Partial** — #1 NumPy solve done, JAX solve + simulation + aggregation + tests remaining; #7 tests remaining |
+| 4 | #1, #6, #7 | **Partial** — #1 done, #6 done; #7 tests remaining |
 | 5 | #4 | **Done** |
 | 6 | #8, #10, #9 | **Done** |
 | 7 | #18, #19 | **Done** |
@@ -223,11 +223,11 @@ This is the largest single feature. It changes the utility function, the solve a
 
 - [x] Implement config parameters
 - [x] Implement FOC-based solve (NumPy)
-- [ ] Implement FOC-based solve (JAX)
-- [ ] Implement simulation (record labor hours)
-- [ ] Implement OLG aggregation (aggregate labor supply)
-- [ ] Test (NumPy)
-- [ ] Test (JAX cross-validation)
+- [x] Implement FOC-based solve (JAX)
+- [x] Implement simulation (record labor hours)
+- [x] Implement OLG aggregation (aggregate labor supply)
+- [x] Test (NumPy)
+- [x] Test (JAX cross-validation)
 
 **Paper:** `u(c, ℓ) = c^(1-σ)/(1-σ) - ν · ℓ^(1+φ)/(1+φ)`, labor hours `ℓ ≥ 0`.
 
