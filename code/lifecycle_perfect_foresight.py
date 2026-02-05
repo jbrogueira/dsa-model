@@ -574,7 +574,8 @@ class LifecycleModelPerfectForesight:
         self.V = np.zeros(shape)
         self.a_policy = np.zeros(shape, dtype=np.int32)
         self.c_policy = np.zeros(shape)
-        
+        self.l_policy = np.ones(shape)
+
         # Terminal period (T-1)
         t = self.T - 1
         self._solve_period(t, self.r_path[t], self.w_path[t],
@@ -731,10 +732,12 @@ class LifecycleModelPerfectForesight:
                                 self.V[t, i_a, i_y, i_h, i_y_last] = val_ret
                                 self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx_ret
                                 self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_ret
+                                self.l_policy[t, i_a, i_y, i_h, i_y_last] = l_ret
                             else:
                                 self.V[t, i_a, i_y, i_h, i_y_last] = val_work
                                 self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx_work
                                 self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_work
+                                self.l_policy[t, i_a, i_y, i_h, i_y_last] = l_work
                         else:
                             val, aidx, c_val, l_val = self._solve_state_choice(
                                 t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
@@ -743,6 +746,7 @@ class LifecycleModelPerfectForesight:
                             self.V[t, i_a, i_y, i_h, i_y_last] = val
                             self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx
                             self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_val
+                            self.l_policy[t, i_a, i_y, i_h, i_y_last] = l_val
 
     def _solve_state_choice(self, t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
                              a, y, h, i_a, i_y, i_y_last, i_h, is_retired, is_terminal):
@@ -887,10 +891,11 @@ class LifecycleModelPerfectForesight:
             
             # Update value and policy functions
             t = period_data[0]
-            for i_a, (V_slice, a_pol_slice, c_pol_slice) in enumerate(results):
+            for i_a, (V_slice, a_pol_slice, c_pol_slice, l_pol_slice) in enumerate(results):
                 self.V[t, i_a, :, :, :] = V_slice
                 self.a_policy[t, i_a, :, :, :] = a_pol_slice
                 self.c_policy[t, i_a, :, :, :] = c_pol_slice
+                self.l_policy[t, i_a, :, :, :] = l_pol_slice
 
     def _simulate_sequential(self, T_sim, n_sim):
         """Sequential simulation with correct indexing."""
@@ -908,6 +913,8 @@ class LifecycleModelPerfectForesight:
         avg_earnings_sim = np.zeros((T_sim, n_sim))
         pension_sim = np.zeros((T_sim, n_sim))
         retired_sim = np.zeros((T_sim, n_sim), dtype=bool)
+
+        l_sim = np.ones((T_sim, n_sim))
 
         employed_sim = np.zeros((T_sim, n_sim), dtype=bool)
 
@@ -965,6 +972,10 @@ class LifecycleModelPerfectForesight:
                 avg_earnings_sim[t_sim, i] = avg_earnings[i]
                 retired_sim[t_sim, i] = is_retired
                 
+                # Look up policy functions (before computing income quantities)
+                c_sim[t_sim, i] = self.c_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                l_sim[t_sim, i] = self.l_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+
                 if is_retired:
                     # PENSION based on last working income state (y_last)
                     pension_replacement = self.pension_replacement_path[lifecycle_age]
@@ -989,11 +1000,9 @@ class LifecycleModelPerfectForesight:
                     else:
                         ui_sim[t_sim, i] = 0.0
 
-                    gross_labor_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i]
+                    gross_labor_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
                     n_earnings_years[i] += 1
                     avg_earnings[i] = (avg_earnings[i] * (n_earnings_years[i] - 1) + gross_labor_income) / n_earnings_years[i]
-
-                c_sim[t_sim, i] = self.c_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
 
                 # Feature #20: age-dependent medical expenditure
                 m_sim[t_sim, i] = self.m_grid[lifecycle_age, i_h[i]]
@@ -1001,7 +1010,7 @@ class LifecycleModelPerfectForesight:
                 gov_m_sim[t_sim, i] = self.kappa * m_sim[t_sim, i]
 
                 # Effective labor income (wages + UI, used for aggregation)
-                wage_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i]
+                wage_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
                 effective_y_sim[t_sim, i] = wage_income + ui_sim[t_sim, i]
 
                 # Tax calculations
@@ -1036,10 +1045,10 @@ class LifecycleModelPerfectForesight:
 
                     i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
         
-        return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
+        return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                pension_sim, retired_sim)
+                pension_sim, retired_sim, l_sim)
     
     def simulate(self, T_sim=None, n_sim=10000, seed=42, parallel=False, n_jobs=None):
         """
@@ -1119,16 +1128,17 @@ def _solve_period_wrapper(args, model):
     V_slice = np.zeros((model.n_y, model.n_h, model.n_y))
     a_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y), dtype=np.int32)
     c_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y))
+    l_pol_slice = np.ones((model.n_y, model.n_h, model.n_y))
 
     for i_y, y in enumerate(model.y_grid):
         for i_h, h in enumerate(model.h_grid):
             for i_y_last in range(model.n_y):
                 if in_ret_window:
-                    val_w, aidx_w, c_w, _ = model._solve_state_choice(
+                    val_w, aidx_w, c_w, l_w = model._solve_state_choice(
                         t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
                         a, y, h, i_a, i_y, i_y_last, i_h,
                         is_retired=False, is_terminal=is_terminal)
-                    val_r, aidx_r, c_r, _ = model._solve_state_choice(
+                    val_r, aidx_r, c_r, l_r = model._solve_state_choice(
                         t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
                         a, y, h, i_a, i_y, i_y_last, i_h,
                         is_retired=True, is_terminal=is_terminal)
@@ -1136,20 +1146,23 @@ def _solve_period_wrapper(args, model):
                         V_slice[i_y, i_h, i_y_last] = val_r
                         a_pol_slice[i_y, i_h, i_y_last] = aidx_r
                         c_pol_slice[i_y, i_h, i_y_last] = c_r
+                        l_pol_slice[i_y, i_h, i_y_last] = l_r
                     else:
                         V_slice[i_y, i_h, i_y_last] = val_w
                         a_pol_slice[i_y, i_h, i_y_last] = aidx_w
                         c_pol_slice[i_y, i_h, i_y_last] = c_w
+                        l_pol_slice[i_y, i_h, i_y_last] = l_w
                 else:
-                    val, aidx, c_val, _ = model._solve_state_choice(
+                    val, aidx, c_val, l_val = model._solve_state_choice(
                         t, r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
                         a, y, h, i_a, i_y, i_y_last, i_h,
                         is_retired=is_retired_fixed, is_terminal=is_terminal)
                     V_slice[i_y, i_h, i_y_last] = val
                     a_pol_slice[i_y, i_h, i_y_last] = aidx
                     c_pol_slice[i_y, i_h, i_y_last] = c_val
+                    l_pol_slice[i_y, i_h, i_y_last] = l_val
 
-    return V_slice, a_pol_slice, c_pol_slice
+    return V_slice, a_pol_slice, c_pol_slice, l_pol_slice
 
 
 def _simulate_agent_batch(args, model, T_sim):
@@ -1222,10 +1235,10 @@ if __name__ == "__main__":
             # Simulate
             print(f"\nSimulating {n_sim} agents for {edu_type}...")
             results = model.simulate(n_sim=n_sim, seed=42, parallel=use_parallel or use_parallel_all)
-            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim, 
+            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
              ui_sim, m_sim, oop_m_sim, gov_m_sim,
              tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-             pension_sim, retired_sim) = results
+             pension_sim, retired_sim, l_sim) = results
             
             # Compute statistics
             unemployment_rate = np.mean(~employed_sim & ~retired_sim)

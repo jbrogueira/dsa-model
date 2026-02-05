@@ -1699,5 +1699,192 @@ class TestPhase7Features:
         assert budget_t['defense_spending'] == 0.0
 
 
+class TestLaborSupply:
+    """Tests for Feature #1: Endogenous labor supply."""
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=10, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_l_policy_default_ones(self):
+        """labor_supply=False -> l_policy all 1.0"""
+        config = self._base_config(labor_supply=False)
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        assert model.l_policy is not None
+        assert np.allclose(model.l_policy, 1.0), "l_policy should be all 1.0 when labor_supply=False"
+
+    def test_l_sim_in_output(self):
+        """Simulation returns 19-tuple, l_sim at index 18."""
+        config = self._base_config()
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        result = model.simulate(n_sim=100, seed=42)
+        assert len(result) == 19, f"Expected 19-tuple, got {len(result)}-tuple"
+        l_sim = result[18]
+        assert l_sim.shape == result[0].shape, "l_sim shape should match a_sim shape"
+        # With labor_supply=False, l_sim should be all 1.0
+        assert np.allclose(l_sim, 1.0), "l_sim should be all 1.0 when labor_supply=False"
+
+    def test_labor_supply_endogenous(self):
+        """labor_supply=True -> l_policy varies, non-negative, 1.0 in retirement."""
+        config = self._base_config(labor_supply=True, nu=1.0, phi=2.0)
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        assert model.l_policy is not None
+        # All labor hours should be non-negative
+        assert np.all(model.l_policy >= 0.0), "l_policy should be non-negative"
+        # In retirement periods, l_policy should be 1.0 (fixed)
+        for t in range(config.retirement_age, config.T):
+            assert np.allclose(model.l_policy[t], 1.0), \
+                f"l_policy at retirement age {t} should be 1.0"
+        # In working periods, some l_policy values should differ from 1.0
+        # (for employed states with positive income)
+        working_employed = model.l_policy[:config.retirement_age, :, 1:, :, :]
+        assert not np.allclose(working_employed, 1.0), \
+            "l_policy should vary for employed workers when labor_supply=True"
+
+    def test_effective_y_uses_labor_hours(self):
+        """effective_y_sim should reflect l * w * y * h."""
+        config = self._base_config(labor_supply=True, nu=1.0, phi=2.0)
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        result = model.simulate(n_sim=500, seed=42)
+        effective_y = result[5]
+        l_sim = result[18]
+        # For workers with labor_supply=True, effective_y should not assume l=1
+        # Check that in at least some periods, effective_y differs from what l=1 would give
+        config_nolabor = self._base_config(labor_supply=False)
+        model_nolabor = LifecycleModelPerfectForesight(config_nolabor, verbose=False)
+        model_nolabor.solve(verbose=False)
+        result_nolabor = model_nolabor.simulate(n_sim=500, seed=42)
+        effective_y_nolabor = result_nolabor[5]
+        # The two should differ (different policies produce different outcomes)
+        # This is a weak test — just checking they're not identical
+        assert not np.allclose(effective_y, effective_y_nolabor), \
+            "effective_y should differ when labor_supply is enabled"
+
+    def test_labor_supply_backward_compatible(self):
+        """labor_supply=False produces identical results to the default."""
+        config_default = self._base_config()
+        config_explicit = self._base_config(labor_supply=False)
+        m1 = LifecycleModelPerfectForesight(config_default, verbose=False)
+        m1.solve(verbose=False)
+        m2 = LifecycleModelPerfectForesight(config_explicit, verbose=False)
+        m2.solve(verbose=False)
+        assert np.allclose(m1.V, m2.V), "V should be identical with labor_supply=False"
+        assert np.all(m1.a_policy == m2.a_policy), "a_policy should be identical"
+        assert np.allclose(m1.c_policy, m2.c_policy), "c_policy should be identical"
+        assert np.allclose(m1.l_policy, m2.l_policy), "l_policy should be identical (all 1.0)"
+
+
+class TestLaborSupplyJAX:
+    """JAX cross-validation tests for labor supply feature."""
+
+    @staticmethod
+    def _jax_available():
+        try:
+            import jax  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=10, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_jax_labor_supply_solve_matches(self):
+        """JAX V and l_policy match NumPy within 1e-6 with labor_supply=False."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(labor_supply=False)
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch: max diff = {V_diff:.2e}"
+        assert np.all(np_model.a_policy == jax_model.a_policy), \
+            "Asset policies differ"
+        assert np.allclose(np_model.l_policy, jax_model.l_policy), \
+            "l_policy should match (both all 1.0)"
+
+    def test_jax_labor_supply_simulate_distributional(self):
+        """JAX mean labor hours match NumPy within 3 SE."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(labor_supply=False)
+        n_sim = 5000
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+        np_results = np_model.simulate(n_sim=n_sim, seed=42)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+        jax_results = jax_model.simulate(n_sim=n_sim, seed=42)
+
+        # l_sim is at index 18
+        assert len(np_results) == 19, f"NumPy: expected 19-tuple, got {len(np_results)}"
+        assert len(jax_results) == 19, f"JAX: expected 19-tuple, got {len(jax_results)}"
+
+        np_l = np_results[18]
+        jax_l = jax_results[18]
+
+        # With labor_supply=False, both should be all 1.0
+        assert np.allclose(np_l, 1.0), "NumPy l_sim should be 1.0"
+        assert np.allclose(jax_l, 1.0), "JAX l_sim should be 1.0"
+
+        # Also check distributional match for assets (regression)
+        np_means = np.mean(np_results[0], axis=1)
+        jax_means = np.mean(jax_results[0], axis=1)
+        np_se = np.std(np_results[0], axis=1) / np.sqrt(n_sim)
+        tolerance = 3 * np.maximum(np_se, 1e-6)
+        diff = np.abs(np_means - jax_means)
+        max_excess = np.max(diff / tolerance)
+        assert max_excess < 1.0, f"Asset distributional mismatch: max |diff|/tol = {max_excess:.2f}"
+
+    def test_olg_with_labor_supply(self):
+        """OLG transition completes with labor_supply=False, K > 0, L > 0."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+
+        config = LifecycleConfig(
+            T=5, beta=0.96, gamma=2.0, n_a=5, n_y=2, n_h=1,
+            retirement_age=4, education_type='medium',
+            labor_supply=False,
+        )
+        economy = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+            backend='jax',
+        )
+        T_transition = 3
+        r_path = np.ones(T_transition) * 0.03
+
+        results = economy.simulate_transition(r_path=r_path, n_sim=20, verbose=False)
+
+        assert np.all(results['K'] > 0), "K should be positive"
+        assert np.all(results['L'] > 0), "L should be positive"
+        assert np.all(results['Y'] > 0), "Y should be positive"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

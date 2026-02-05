@@ -38,6 +38,17 @@ def _hsv_tax(income, tax_kappa, tax_eta):
     return jnp.maximum(tax, 0.0)
 
 
+def solve_labor_hours_jax(c, net_wage, nu, phi, gamma):
+    """FOC: l* = (c^{-gamma} * net_wage / nu)^{1/phi}"""
+    l = (jnp.maximum(c, 1e-10) ** (-gamma) * jnp.maximum(net_wage, 0.0) / nu) ** (1.0 / phi)
+    return jnp.maximum(l, 0.0)
+
+
+def labor_disutility_jax(l, nu, phi):
+    """nu * l^(1+phi) / (1+phi)"""
+    return nu * l ** (1 + phi) / (1 + phi)
+
+
 def compute_budget_jax(
     a_grid, y_grid, h_grid, m_grid,
     P_y, P_h_t,
@@ -54,6 +65,7 @@ def compute_budget_jax(
     child_cost_t=0.0,
     education_subsidy_rate=0.0,
     in_schooling=False,
+    labor_hours=1.0,
 ):
     """
     Vectorised budget for ALL (n_a, n_y, n_h, n_y_last) states.
@@ -89,7 +101,7 @@ def compute_budget_jax(
     ui_benefit = ui_replacement_rate * w_t * y_last                   # (1,1,1,n_y)
     is_unemployed = (y == 0.0)                                        # (1,n_y,1,1)
 
-    gross_wage_income = w_t * y * h                                   # (1,n_y,n_h,1)
+    gross_wage_income = w_t * y * h * labor_hours                      # (1,n_y,n_h,1)
     ui_term = jnp.where(is_unemployed, ui_benefit, 0.0)              # broadcast → (1,n_y,n_h,n_y)
     gross_labor_income = gross_wage_income + ui_term                  # (1,n_y,n_h,n_y)
     payroll_tax = tau_p_t * gross_wage_income                         # on wages only
@@ -144,11 +156,12 @@ def solve_period_jax(V_next, period_params, model_params):
         (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
          ui_replacement_rate, kappa, beta, gamma,
          pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
-         transfer_floor, education_subsidy_rate, P_y_age_health)
+         transfer_floor, education_subsidy_rate, P_y_age_health,
+         labor_supply, nu, phi)
 
     Returns
     -------
-    (V_t, a_pol_t, c_pol_t) each shape (n_a, n_y, n_h, n_y)
+    (V_t, a_pol_t, c_pol_t, l_pol_t) each shape (n_a, n_y, n_h, n_y)
     """
     (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
      pension_replacement_t, P_h_t, P_y_t, is_retired,
@@ -157,13 +170,14 @@ def solve_period_jax(V_next, period_params, model_params):
     (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
      ui_replacement_rate, kappa, beta, gamma,
      pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
-     transfer_floor, education_subsidy_rate, P_y_age_health) = model_params
+     transfer_floor, education_subsidy_rate, P_y_age_health,
+     labor_supply, nu, phi) = model_params
 
     n_a = a_grid.shape[0]
     n_y = y_grid.shape[0]
     n_h = h_grid.shape[0]
 
-    # 1. Budget for all states: (n_a, n_y, n_h, n_y)
+    # 1. Budget for all states with l=1: (n_a, n_y, n_h, n_y)
     budget = compute_budget_jax(
         a_grid, y_grid, h_grid, m_grid,
         P_y, P_h_t,
@@ -186,46 +200,58 @@ def solve_period_jax(V_next, period_params, model_params):
     a_next = a_grid[None, None, None, None, :]
     c_all = (budget[..., None] - a_next) / (1.0 + tau_c_t)
 
+    # 2b. Labor supply FOC (when labor_supply=True)
+    # Compute net wage for FOC: effective_wage * (1 - tau_eff)
+    # y: (1, n_y, 1, 1), h: (1, 1, n_h, 1)
+    y_5d = y_grid[None, :, None, None, None]       # (1, n_y, 1, 1, 1)
+    h_5d = h_grid[None, None, :, None, None]       # (1, 1, n_h, 1, 1)
+    effective_wage = w_t * y_5d * h_5d              # (1, n_y, n_h, 1, 1)
+    tau_eff = jnp.where(tax_progressive, tau_p_t, tau_l_t + tau_p_t)
+    net_wage_5d = effective_wage * (1.0 - tau_eff)  # (1, n_y, n_h, 1, 1)
+
+    # l_star from FOC on c_all guess
+    l_star = solve_labor_hours_jax(jnp.maximum(c_all, 1e-10), net_wage_5d, nu, phi, gamma)
+    # Unemployed (y==0) and retired get l=1
+    is_unemployed_5d = (y_5d == 0.0)                # (1, n_y, 1, 1, 1)
+    l_star = jnp.where(is_unemployed_5d | is_retired, 1.0, l_star)
+
+    # Budget adjustment: delta = w*y*h*(l-1)*(1-tau_eff)
+    delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
+    # When not labor_supply, delta=0 and l=1
+    delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
+    l_all = jnp.where(labor_supply, l_star, 1.0)
+
+    c_all = (budget[..., None] + delta_budget - a_next) / (1.0 + tau_c_t)
+
+    # Labor disutility
+    v_labor = jnp.where(labor_supply, labor_disutility_jax(l_all, nu, phi), 0.0)
+
     # 3. Expected continuation value
-    # Contract over h': EV_h[a', y', i_h, y_last] = sum_{h'} P_h[i_h, h'] * V[a', y', h', y_last]
-    EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, V_next)  # (n_a, n_y, n_h, n_y)
+    EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, V_next)
+    EV_h_t = jnp.transpose(EV_h, (3, 0, 2, 1))
 
-    # EV_h[a, yn, h, yl] -> transpose to [yl, a, h, yn]
-    EV_h_t = jnp.transpose(EV_h, (3, 0, 2, 1))  # (n_y, n_a, n_h, n_y)
-
-    # Feature #3+#5: P_y can be (n_y, n_y) constant or (n_h, n_y, n_y) age/health-dependent
-    # P_y_t is the per-period slice: (n_h, n_y, n_y) when age-dependent, else same as P_y (n_y, n_y)
-    # Working EV: EV_working[yl, a, h] = sum_yn P_y_eff[yl, yn, h] * EV_h_t[yl, a, h, yn]
-    # When P_y is constant (2D): P_y[yl, yn], broadcast over h
-    # When P_y_t is (n_h, n_y, n_y): P_y_t[h, yl, yn]
     EV_working_3d = jnp.where(
         P_y_age_health,
-        # 4D case: P_y_t shape (n_h, n_y, n_y). For each (yl, a, h):
-        # EV = sum_yn P_y_t[h, yl, yn] * EV_h_t[yl, a, h, yn]
-        jnp.einsum('bij,iabj->iab', P_y_t, EV_h_t),  # (n_y, n_a, n_h)
-        # 2D case: P_y[yl, yn]
-        jnp.einsum('ij,iabj->iab', P_y, EV_h_t),     # (n_y, n_a, n_h)
+        jnp.einsum('bij,iabj->iab', P_y_t, EV_h_t),
+        jnp.einsum('ij,iabj->iab', P_y, EV_h_t),
     )
 
-    EV_working = jnp.transpose(EV_working_3d, (1, 0, 2))  # (n_a, n_y, n_h)
+    EV_working = jnp.transpose(EV_working_3d, (1, 0, 2))
     EV_working = jnp.broadcast_to(EV_working[..., None], (n_a, n_y, n_h, n_y))
 
-    # Retired: V_next[a', 0, h', 0], contract over h' only
-    V_next_ret = V_next[:, 0, :, 0]  # (n_a, n_h)
-    EV_retired_2d = jnp.einsum('jk,ak->aj', P_h_t, V_next_ret)  # (n_a, n_h)
+    V_next_ret = V_next[:, 0, :, 0]
+    EV_retired_2d = jnp.einsum('jk,ak->aj', P_h_t, V_next_ret)
     EV_retired = jnp.broadcast_to(EV_retired_2d[:, None, :, None], (n_a, n_y, n_h, n_y))
 
     EV = jnp.where(is_retired, EV_retired, EV_working)
 
-    # Feature #2: survival risk — multiply EV by survival probability
-    # survival_t shape: (n_h,) — broadcast to (1, 1, n_h, 1)
     survival_broadcast = survival_t[None, None, :, None]
     EV = EV * survival_broadcast
 
-    # 4. Grid search — EV reshaped for broadcasting against u_all (n_a, n_y, n_h, n_y_last, n_a_next)
-    EV_for_search = jnp.transpose(EV, (1, 2, 3, 0))  # (n_y, n_h, n_y, n_a_next)
+    # 4. Grid search
+    EV_for_search = jnp.transpose(EV, (1, 2, 3, 0))
 
-    u_all = utility_jax(c_all, gamma)
+    u_all = utility_jax(c_all, gamma) - v_labor
     val_all = u_all + beta * EV_for_search
 
     val_all = jnp.where(c_all > 0, val_all, -jnp.inf)
@@ -233,6 +259,7 @@ def solve_period_jax(V_next, period_params, model_params):
     best_a_idx = jnp.argmax(val_all, axis=-1)
     best_val = jnp.max(val_all, axis=-1)
     best_c = jnp.take_along_axis(c_all, best_a_idx[..., None], axis=-1)[..., 0]
+    best_l = jnp.take_along_axis(l_all, best_a_idx[..., None], axis=-1)[..., 0]
 
     # 5. Fallback
     c_fallback = jnp.maximum(budget / (1.0 + tau_c_t), 1e-10)
@@ -241,8 +268,9 @@ def solve_period_jax(V_next, period_params, model_params):
     V_t = jnp.where(jnp.isfinite(best_val), best_val, u_fallback)
     a_pol_t = jnp.where(jnp.isfinite(best_val), best_a_idx, 0).astype(jnp.int32)
     c_pol_t = jnp.where(jnp.isfinite(best_val), best_c, c_fallback)
+    l_pol_t = jnp.where(jnp.isfinite(best_val), best_l, 1.0)
 
-    return V_t, a_pol_t, c_pol_t
+    return V_t, a_pol_t, c_pol_t, l_pol_t
 
 
 def _solve_terminal_period_jax(
@@ -260,6 +288,9 @@ def _solve_terminal_period_jax(
     child_cost_T=0.0,
     education_subsidy_rate=0.0,
     in_schooling_T=False,
+    labor_supply=False,
+    nu=1.0,
+    phi=2.0,
 ):
     """Solve terminal period: consume everything, a'=0."""
     budget = compute_budget_jax(
@@ -280,9 +311,30 @@ def _solve_terminal_period_jax(
         in_schooling=in_schooling_T,
     )
     c = jnp.maximum(budget / (1.0 + tau_c_T), 1e-10)
-    V = utility_jax(c, gamma)
+
+    # Labor supply FOC at terminal period
+    n_y = y_grid.shape[0]
+    n_h = h_grid.shape[0]
+    y_4d = y_grid[None, :, None, None]       # (1, n_y, 1, 1)
+    h_4d = h_grid[None, None, :, None]       # (1, 1, n_h, 1)
+    effective_wage = w_T * y_4d * h_4d
+    tau_eff = jnp.where(tax_progressive, tau_p_T, tau_l_T + tau_p_T)
+    net_wage_4d = effective_wage * (1.0 - tau_eff)
+
+    l_star = solve_labor_hours_jax(c, net_wage_4d, nu, phi, gamma)
+    is_unemployed_4d = (y_4d == 0.0)
+    l_star = jnp.where(is_unemployed_4d | is_retired_T, 1.0, l_star)
+    l_pol = jnp.where(labor_supply, l_star, 1.0)
+
+    # Recompute budget and consumption with labor hours
+    delta_budget = effective_wage * (l_pol - 1.0) * (1.0 - tau_eff)
+    delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
+    c = jnp.maximum((budget + delta_budget) / (1.0 + tau_c_T), 1e-10)
+
+    v_labor = jnp.where(labor_supply, labor_disutility_jax(l_pol, nu, phi), 0.0)
+    V = utility_jax(c, gamma) - v_labor
     a_pol = jnp.zeros_like(V, dtype=jnp.int32)
-    return V, a_pol, c
+    return V, a_pol, c, l_pol
 
 
 def solve_lifecycle_jax(
@@ -305,6 +357,9 @@ def solve_lifecycle_jax(
     schooling_years=0,
     survival_probs=None,
     P_y_by_age_health=None,
+    labor_supply=False,
+    nu=1.0,
+    phi=2.0,
 ):
     """
     Full backward induction using jax.lax.scan.
@@ -314,6 +369,7 @@ def solve_lifecycle_jax(
     V : (T, n_a, n_y, n_h, n_y)
     a_policy : (T, n_a, n_y, n_h, n_y), int32
     c_policy : (T, n_a, n_y, n_h, n_y)
+    l_policy : (T, n_a, n_y, n_h, n_y)
     """
     n_a = a_grid.shape[0]
     n_y = y_grid.shape[0]
@@ -334,31 +390,29 @@ def solve_lifecycle_jax(
         child_costs = child_cost_profile
 
     # P_y for age-health case: (T, n_h, n_y, n_y). Else P_y is (n_y, n_y).
-    # For the scan, we need a per-period P_y_t. When constant, we replicate.
     if P_y_age_health:
-        P_y_scan = P_y_by_age_health  # (T, n_h, n_y, n_y)
+        P_y_scan = P_y_by_age_health
     else:
-        # Tile to (T, n_h, n_y, n_y) so scan indexing works uniformly
         P_y_scan = jnp.tile(P_y[None, None, :, :], (T, n_h, 1, 1))
 
     # m_grid can be (T, n_h) or (n_h,). Ensure (T, n_h) for per-period indexing.
     if m_grid.ndim == 1:
-        m_grid_path = jnp.tile(m_grid[None, :], (T, 1))  # (T, n_h)
+        m_grid_path = jnp.tile(m_grid[None, :], (T, 1))
     else:
-        m_grid_path = m_grid  # Already (T, n_h)
+        m_grid_path = m_grid
 
-    # Use a dummy m_grid_base (n_h,) for model_params (not used directly in budget)
-    m_grid_base = m_grid_path[0]  # (n_h,)
+    m_grid_base = m_grid_path[0]
 
     model_params = (a_grid, y_grid, h_grid, m_grid_base, P_y, w_at_retirement,
                     ui_replacement_rate, kappa, beta, gamma,
                     pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
-                    transfer_floor, education_subsidy_rate, P_y_age_health)
+                    transfer_floor, education_subsidy_rate, P_y_age_health,
+                    labor_supply, nu, phi)
 
     # Terminal period
     is_retired_T = (T - 1) >= retirement_age
 
-    V_T, a_pol_T, c_pol_T = _solve_terminal_period_jax(
+    V_T, a_pol_T, c_pol_T, l_pol_T = _solve_terminal_period_jax(
         a_grid, y_grid, h_grid, m_grid_path[T - 1],
         P_y, P_h[T - 1], w_at_retirement,
         r_path[T - 1], w_path[T - 1],
@@ -373,10 +427,13 @@ def solve_lifecycle_jax(
         child_cost_T=child_costs[T - 1],
         education_subsidy_rate=education_subsidy_rate,
         in_schooling_T=(T - 1) < schooling_years,
+        labor_supply=labor_supply,
+        nu=nu,
+        phi=phi,
     )
 
     # Stack period params for t = T-2 ... 0 (reversed)
-    ts = jnp.arange(T - 2, -1, -1)  # [T-2, T-3, ..., 0]
+    ts = jnp.arange(T - 2, -1, -1)
 
     period_params_stack = (
         r_path[ts],
@@ -386,13 +443,13 @@ def solve_lifecycle_jax(
         tau_p_path[ts],
         tau_k_path[ts],
         pension_replacement_path[ts],
-        P_h[ts],                        # (T-1, n_h, n_h)
-        P_y_scan[ts],                   # (T-1, n_h, n_y, n_y)
-        (ts >= retirement_age),         # is_retired for each t
-        survival_arr[ts],               # (T-1, n_h)
-        child_costs[ts],                # (T-1,)
-        (ts < schooling_years),         # in_schooling for each t
-        m_grid_path[ts],                # (T-1, n_h) — per-period medical costs
+        P_h[ts],
+        P_y_scan[ts],
+        (ts >= retirement_age),
+        survival_arr[ts],
+        child_costs[ts],
+        (ts < schooling_years),
+        m_grid_path[ts],
     )
 
     def scan_fn(V_next, period_params_slice):
@@ -400,19 +457,18 @@ def solve_lifecycle_jax(
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t) = period_params_slice
 
-        # Override m_grid in model_params with per-period slice
         model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:]
 
-        V_t, a_pol_t, c_pol_t = solve_period_jax(
+        V_t, a_pol_t, c_pol_t, l_pol_t = solve_period_jax(
             V_next,
             (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
              pension_replacement_t, P_h_t, P_y_t, is_retired,
              survival_t, child_cost_t, in_schooling_t),
             model_params_t,
         )
-        return V_t, (V_t, a_pol_t, c_pol_t)
+        return V_t, (V_t, a_pol_t, c_pol_t, l_pol_t)
 
-    V_final, (V_scan, a_pol_scan, c_pol_scan) = lax.scan(
+    V_final, (V_scan, a_pol_scan, c_pol_scan, l_pol_scan) = lax.scan(
         scan_fn, V_T, period_params_stack
     )
 
@@ -420,18 +476,21 @@ def solve_lifecycle_jax(
     V_scan = V_scan[::-1]
     a_pol_scan = a_pol_scan[::-1]
     c_pol_scan = c_pol_scan[::-1]
+    l_pol_scan = l_pol_scan[::-1]
 
     V = jnp.concatenate([V_scan, V_T[None]], axis=0)
     a_policy = jnp.concatenate([a_pol_scan, a_pol_T[None]], axis=0)
     c_policy = jnp.concatenate([c_pol_scan, c_pol_T[None]], axis=0)
+    l_policy = jnp.concatenate([l_pol_scan, l_pol_T[None]], axis=0)
 
-    return V, a_policy, c_policy
+    return V, a_policy, c_policy, l_policy
 
 
 # JIT-compile with static args for shapes and scalar params
 _solve_lifecycle_jax_jit = jax.jit(
     solve_lifecycle_jax,
-    static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years'),
+    static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
+                     'labor_supply'),
 )
 
 # Batched solve: vmap over cohorts with shared grids/transitions.
@@ -453,8 +512,10 @@ _solve_lifecycle_jax_batched = jax.jit(
         None, None,              # transfer_floor, education_subsidy_rate
         None, None,              # child_cost_profile, schooling_years
         None, None,              # survival_probs, P_y_by_age_health
+        None, None, None,        # labor_supply, nu, phi
     )),
-    static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years'),
+    static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
+                     'labor_supply'),
 )
 
 
@@ -462,7 +523,7 @@ _solve_lifecycle_jax_batched = jax.jit(
 # Phase 2: JAX simulation
 # ---------------------------------------------------------------------------
 
-def _agent_step_jax(carry, t_data, a_policy, c_policy,
+def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     a_grid, y_grid, h_grid, m_grid,
                     P_y, P_h,
                     w_path, w_at_retirement,
@@ -492,6 +553,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy,
     # Look up policy
     a_pol_val = a_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
     c_pol_val = c_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
+    l_pol_val = l_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
 
     # Current state values
     a_val = a_grid[i_a]
@@ -516,7 +578,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy,
     employed = (~is_retired) & (i_y > 0)
 
     # Effective income
-    wage_income = w_path[lifecycle_age] * y_val * h_val
+    wage_income = w_path[lifecycle_age] * y_val * h_val * l_pol_val
     effective_y = jnp.where(is_retired, 0.0, wage_income + ui)
 
     # Health expenditure — m_grid is (T, n_h) now
@@ -589,14 +651,14 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy,
         effective_y, employed, ui,
         m_val, oop_m, gov_m,
         tax_c, tax_l, tax_p, tax_k,
-        new_avg_earnings, pension, is_retired,
+        new_avg_earnings, pension, is_retired, l_pol_val,
     )
 
     return new_carry, step_out
 
 
 def simulate_lifecycle_jax(
-    a_policy, c_policy,
+    a_policy, c_policy, l_policy,
     a_grid, y_grid, h_grid, m_grid,
     P_y, P_h,
     w_path, w_at_retirement,
@@ -617,7 +679,7 @@ def simulate_lifecycle_jax(
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
 
-    Returns tuple of 18 arrays, each shape (T_sim, n_sim).
+    Returns tuple of 19 arrays, each shape (T_sim, n_sim).
     """
     T_sim = T - current_age
 
@@ -635,7 +697,7 @@ def simulate_lifecycle_jax(
 
     step_fn = partial(
         _agent_step_jax,
-        a_policy=a_policy, c_policy=c_policy,
+        a_policy=a_policy, c_policy=c_policy, l_policy=l_policy,
         a_grid=a_grid, y_grid=y_grid, h_grid=h_grid, m_grid=m_grid,
         P_y=P_y, P_h=P_h,
         w_path=w_path, w_at_retirement=w_at_retirement,
@@ -669,7 +731,7 @@ def simulate_lifecycle_jax(
         in_axes=(0, 1, 1),
     )(init_states, u_y_all, u_h_all)
 
-    # all_outputs is a tuple of 18 arrays, each (n_sim, T_sim) from vmap
+    # all_outputs is a tuple of 19 arrays, each (n_sim, T_sim) from vmap
     # Transpose each to (T_sim, n_sim) to match NumPy convention
     result = tuple(out.T for out in all_outputs)
 
@@ -685,7 +747,7 @@ _simulate_lifecycle_jax_jit = jax.jit(
 # Batched simulation: vmap over cohorts with shared grids/transitions.
 _simulate_lifecycle_jax_batched = jax.jit(
     jax.vmap(simulate_lifecycle_jax, in_axes=(
-        0, 0,                    # a_policy, c_policy
+        0, 0, 0,                 # a_policy, c_policy, l_policy
         None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
         None, None,              # P_y, P_h
         0, 0,                    # w_path, w_at_retirement
@@ -746,6 +808,11 @@ class LifecycleModelJAX:
         self.P_h = jnp.array(self._np_model.P_h)
         self.w_at_retirement = float(self._np_model.w_at_retirement)
 
+        # Labor supply parameters
+        self.labor_supply = bool(config.labor_supply)
+        self.nu = float(config.nu)
+        self.phi = float(config.phi)
+
         # New feature parameters
         self.pension_min_floor = float(config.pension_min_floor)
         self.tax_progressive = bool(config.tax_progressive)
@@ -785,6 +852,7 @@ class LifecycleModelJAX:
         self.V = None
         self.a_policy = None
         self.c_policy = None
+        self.l_policy = None
 
     def solve(self, verbose=False, **kwargs):
         """Solve lifecycle via JAX backward induction."""
@@ -792,7 +860,7 @@ class LifecycleModelJAX:
             print(f"Solving lifecycle model (JAX) for {self.config.education_type} education...")
 
         # m_grid is (T, n_h); solve_lifecycle_jax indexes per-period within the scan
-        V, a_policy, c_policy = _solve_lifecycle_jax_jit(
+        V, a_policy, c_policy, l_policy = _solve_lifecycle_jax_jit(
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
             self.P_y_2d,
             self.P_h,
@@ -813,12 +881,16 @@ class LifecycleModelJAX:
             schooling_years=self.schooling_years,
             survival_probs=self.survival_probs,
             P_y_by_age_health=self.P_y_4d if self.P_y_age_health else None,
+            labor_supply=self.labor_supply,
+            nu=self.nu,
+            phi=self.phi,
         )
 
         # Store as numpy for compatibility with downstream code
         self.V = np.asarray(V)
         self.a_policy = np.asarray(a_policy)
         self.c_policy = np.asarray(c_policy)
+        self.l_policy = np.asarray(l_policy)
 
         if verbose:
             print("Done!")
@@ -827,7 +899,7 @@ class LifecycleModelJAX:
         """
         Simulate lifecycle paths.
 
-        Returns same 18-tuple as LifecycleModelPerfectForesight.simulate().
+        Returns same 19-tuple as LifecycleModelPerfectForesight.simulate().
         """
         if self.V is None:
             raise RuntimeError("Must call solve() before simulate().")
@@ -874,6 +946,7 @@ class LifecycleModelJAX:
         # Convert policies to JAX for simulation
         a_policy_jax = jnp.array(self.a_policy)
         c_policy_jax = jnp.array(self.c_policy)
+        l_policy_jax = jnp.array(self.l_policy)
 
         key, subkey = jax.random.split(key)
 
@@ -881,7 +954,7 @@ class LifecycleModelJAX:
         P_y_4d_sim = self.P_y_4d if self.P_y_age_health else None
 
         result = _simulate_lifecycle_jax_jit(
-            a_policy_jax, c_policy_jax,
+            a_policy_jax, c_policy_jax, l_policy_jax,
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
             self.P_y_2d, self.P_h,
             self.w_path, self.w_at_retirement,

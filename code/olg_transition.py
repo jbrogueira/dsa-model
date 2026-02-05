@@ -333,7 +333,7 @@ class OLGTransition:
 
             # Pass all args positionally to match vmap in_axes
             P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
-            V_batch, a_pol_batch, c_pol_batch = _solve_lifecycle_jax_batched(
+            V_batch, a_pol_batch, c_pol_batch, l_pol_batch = _solve_lifecycle_jax_batched(
                 ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                 ref.P_y_2d, ref.P_h,
                 w_at_rets,
@@ -348,6 +348,7 @@ class OLGTransition:
                 ref.transfer_floor, ref.education_subsidy_rate,
                 ref.child_cost_profile, ref.schooling_years,
                 ref.survival_probs, P_y_4d_arg,
+                ref.labor_supply, ref.nu, ref.phi,
             )
 
             # Inject results back into individual model objects
@@ -356,6 +357,7 @@ class OLGTransition:
                 model.V = np.asarray(V_batch[ci])
                 model.a_policy = np.asarray(a_pol_batch[ci])
                 model.c_policy = np.asarray(c_pol_batch[ci])
+                model.l_policy = np.asarray(l_pol_batch[ci])
 
     def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False):
         """Batched simulation of all cohorts in one vmapped XLA call per education type."""
@@ -394,6 +396,7 @@ class OLGTransition:
             # Stack per-cohort policies and paths
             a_policies = jnp.stack([jnp.array(m.a_policy) for m in model_list])
             c_policies = jnp.stack([jnp.array(m.c_policy) for m in model_list])
+            l_policies = jnp.stack([jnp.array(m.l_policy) for m in model_list])
             w_paths = jnp.stack([m.w_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
             r_paths = jnp.stack([m.r_path for m in model_list])
@@ -469,7 +472,7 @@ class OLGTransition:
             # Pass all args positionally to match vmap in_axes
             P_y_4d_sim = ref.P_y_4d if ref.P_y_age_health else None
             results = _simulate_lifecycle_jax_batched(
-                a_policies, c_policies,
+                a_policies, c_policies, l_policies,
                 ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                 ref.P_y_2d, ref.P_h,
                 w_paths, w_at_rets,
@@ -485,7 +488,7 @@ class OLGTransition:
                 ref.P_y_age_health, P_y_4d_sim,
             )
 
-            # Unpack: results is tuple of 18 arrays, each (n_cohorts, T_sim, n_sim)
+            # Unpack: results is tuple of 19 arrays, each (n_cohorts, T_sim, n_sim)
             for ci, b in enumerate(birth_periods):
                 panel = tuple(np.asarray(arr[ci]) for arr in results)
                 panels[edu_type][int(b)] = panel
@@ -896,7 +899,7 @@ class OLGTransition:
                 (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                  ui_sim, m_sim, oop_m_sim, gov_m_sim,
                  tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                 pension_sim, retired_sim) = edu_panels[int(birth_period)]
+                 pension_sim, retired_sim, l_sim) = edu_panels[int(birth_period)]
 
                 # Fast single-age means using Numba - O(n_sim) instead of O(T × n_sim)
                 (a_mean, labor_mean,
@@ -1574,7 +1577,7 @@ class OLGTransition:
             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
              ui_sim, m_sim, oop_m_sim, gov_m_sim,
              tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-             pension_sim, retired_sim) = results
+             pension_sim, retired_sim, l_sim) = results
 
             max_age = min(self.T - 1, self.T_transition - 1 - b)
             ages = np.arange(0, max_age + 1, dtype=int)
