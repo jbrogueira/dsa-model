@@ -664,6 +664,25 @@ class OLGTransition:
         self.ss_asset_profiles = {}
         self.ss_earnings_profiles = {}
 
+        # Feature flags from lifecycle_config — forwarded to all per-cohort configs
+        _lc = self.lifecycle_config
+        _feature_kwargs = dict(
+            pension_min_floor=_lc.pension_min_floor,
+            tax_progressive=_lc.tax_progressive,
+            tax_kappa=_lc.tax_kappa,
+            tax_eta=_lc.tax_eta,
+            transfer_floor=_lc.transfer_floor,
+            survival_probs=_lc.survival_probs,
+            m_age_profile=_lc.m_age_profile,
+            P_y_by_age_health=_lc.P_y_by_age_health,
+            retirement_window=_lc.retirement_window,
+            schooling_years=_lc.schooling_years,
+            child_cost_profile=_lc.child_cost_profile,
+            labor_supply=_lc.labor_supply,
+            nu=_lc.nu,
+            phi=_lc.phi,
+        )
+
         for edu_type in self.education_shares.keys():
             ss_config = LifecycleConfig(
                 T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
@@ -674,7 +693,8 @@ class OLGTransition:
                 tau_l_path=np.ones(self.T) * (tau_l_path[0] if tau_l_path is not None else 0),
                 tau_p_path=np.ones(self.T) * (tau_p_path[0] if tau_p_path is not None else 0),
                 tau_k_path=np.ones(self.T) * (tau_k_path[0] if tau_k_path is not None else 0),
-                pension_replacement_path=np.ones(self.T) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4)
+                pension_replacement_path=np.ones(self.T) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4),
+                **_feature_kwargs,
             )
             ss_model = self._lifecycle_model_class(ss_config, verbose=False)
             ss_model.solve(verbose=False)
@@ -717,7 +737,8 @@ class OLGTransition:
                     r_path=cohort_r, w_path=cohort_w,
                     tau_c_path=cohort_tau_c, tau_l_path=cohort_tau_l,
                     tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
-                    pension_replacement_path=cohort_pension
+                    pension_replacement_path=cohort_pension,
+                    **_feature_kwargs,
                 )
                 
                 model = self._lifecycle_model_class(config, verbose=False)
@@ -1588,14 +1609,15 @@ class OLGTransition:
             emp_rate = np.mean(employed_sim[ages, :], axis=1)
             ui_rate = np.mean(ui_sim[ages, :] > 0, axis=1).astype(float)
             mean_pension = np.mean(pension_sim[ages, :], axis=1)
+            mean_l = np.mean(l_sim[ages, :], axis=1)
 
             series.append(
                 {"b": b, "ages": ages, "a": mean_a, "c": mean_c, "y_eff": mean_y_eff,
-                 "emp": emp_rate, "ui": ui_rate, "pension": mean_pension}
+                 "emp": emp_rate, "ui": ui_rate, "pension": mean_pension, "l": mean_l}
             )
 
-        # --- Plot: 6 panels (2x3) ---
-        fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+        # --- Plot: 7 panels (2x4, last slot empty) ---
+        fig, axes = plt.subplots(2, 4, figsize=(20, 9))
         axes = axes.ravel()
 
         def _plot_panel(ax, key, title, ylabel):
@@ -1624,9 +1646,11 @@ class OLGTransition:
         _plot_panel(axes[0], "a", f"Mean assets by age (edu={edu_type})", "Mean assets")
         _plot_panel(axes[1], "c", f"Mean consumption by age (edu={edu_type})", "Mean consumption")
         _plot_panel(axes[2], "y_eff", f"Effective labor income by age (edu={edu_type})", "Effective income")
-        _plot_panel(axes[3], "emp", f"Employment rate by age (edu={edu_type})", "Employment rate")
-        _plot_panel(axes[4], "ui", f"UI recipiency by age (edu={edu_type})", "UI recipiency")
-        _plot_panel(axes[5], "pension", f"Mean pension by age (edu={edu_type})", "Mean pension")
+        _plot_panel(axes[3], "l", f"Mean labor supply by age (edu={edu_type})", "Mean labor hours")
+        _plot_panel(axes[4], "emp", f"Employment rate by age (edu={edu_type})", "Employment rate")
+        _plot_panel(axes[5], "ui", f"UI recipiency by age (edu={edu_type})", "UI recipiency")
+        _plot_panel(axes[6], "pension", f"Mean pension by age (edu={edu_type})", "Mean pension")
+        axes[7].set_visible(False)
 
         plt.suptitle("Lifecycle Comparison", fontsize=14, fontweight="bold")
         plt.tight_layout()
@@ -1653,7 +1677,10 @@ def get_test_config():
         n_y=2,
         n_h=1,
         retirement_age=15,
-        education_type='medium'
+        education_type='medium',
+        labor_supply=True,
+        nu=1.0,
+        phi=2.0,
     )
     return config
 
