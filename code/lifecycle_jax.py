@@ -536,15 +536,16 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     tax_kappa_hsv=0.8,
                     tax_eta=0.15,
                     P_y_age_health=False,
-                    P_y_4d=None):
+                    P_y_4d=None,
+                    survival_probs=None):
     """
     Single time-step for one agent.
 
-    carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years)
-    t_data: (t_sim_idx, u_y, u_h)
+    carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive)
+    t_data: (t_sim_idx, u_y, u_h, u_alive)
     """
-    i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years = carry
-    t_sim_idx, u_y, u_h = t_data
+    i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive = carry
+    t_sim_idx, u_y, u_h, u_alive = t_data
 
     lifecycle_age = current_age + t_sim_idx
     is_retired = lifecycle_age >= retirement_age
@@ -642,16 +643,40 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     new_i_h = jnp.searchsorted(cum_P_h, u_h)
     new_i_h = jnp.clip(new_i_h, 0, P_h.shape[2] - 1)
 
+    # --- Mortality ---
+    # survival_probs is always an array here (ones if no mortality)
+    surv_t = survival_probs[lifecycle_age, i_h]
+    dies = alive & (u_alive > surv_t)
+    bequest_this_period = jnp.where(dies, a_grid[new_i_a], 0.0)
+    new_alive = alive & ~dies
+
     new_carry = (new_i_a.astype(jnp.int32), new_i_y.astype(jnp.int32),
                  new_i_h.astype(jnp.int32), new_i_y_last.astype(jnp.int32),
-                 new_avg_earnings, new_n_years)
+                 new_avg_earnings, new_n_years,
+                 new_alive)
 
     step_out = (
-        a_val, c_pol_val, y_val, h_val, i_h,
-        effective_y, employed, ui,
-        m_val, oop_m, gov_m,
-        tax_c, tax_l, tax_p, tax_k,
-        new_avg_earnings, pension, is_retired, l_pol_val,
+        jnp.where(alive, a_val, 0.0),
+        jnp.where(alive, c_pol_val, 0.0),
+        jnp.where(alive, y_val, 0.0),
+        jnp.where(alive, h_val, 0.0),
+        jnp.where(alive, i_h, jnp.int32(0)),
+        jnp.where(alive, effective_y, 0.0),
+        jnp.where(alive, employed, False),
+        jnp.where(alive, ui, 0.0),
+        jnp.where(alive, m_val, 0.0),
+        jnp.where(alive, oop_m, 0.0),
+        jnp.where(alive, gov_m, 0.0),
+        jnp.where(alive, tax_c, 0.0),
+        jnp.where(alive, tax_l, 0.0),
+        jnp.where(alive, tax_p, 0.0),
+        jnp.where(alive, tax_k, 0.0),
+        jnp.where(alive, new_avg_earnings, 0.0),
+        jnp.where(alive, pension, 0.0),
+        jnp.where(alive, is_retired, False),
+        jnp.where(alive, l_pol_val, 0.0),
+        alive,
+        bequest_this_period,
     )
 
     return new_carry, step_out
@@ -675,18 +700,20 @@ def simulate_lifecycle_jax(
     tax_eta=0.15,
     P_y_age_health=False,
     P_y_4d=None,
+    survival_probs=None,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
 
-    Returns tuple of 19 arrays, each shape (T_sim, n_sim).
+    Returns tuple of 21 arrays, each shape (T_sim, n_sim).
     """
     T_sim = T - current_age
 
     # Pre-generate random draws
-    key1, key2 = jax.random.split(key)
+    key1, key2, key3 = jax.random.split(key, 3)
     u_y_all = jax.random.uniform(key1, shape=(T_sim, n_sim))
     u_h_all = jax.random.uniform(key2, shape=(T_sim, n_sim))
+    u_alive_all = jax.random.uniform(key3, shape=(T_sim, n_sim))
     t_indices = jnp.arange(T_sim)
 
     # Dummy P_y_4d if not provided (for JAX tracing)
@@ -694,6 +721,13 @@ def simulate_lifecycle_jax(
         n_y = P_y.shape[0]
         n_h = P_h.shape[1]
         P_y_4d = jnp.zeros((T, n_h, n_y, n_y))
+
+    # Survival probs: always an array (ones = no mortality)
+    n_h = P_h.shape[1]
+    if survival_probs is None:
+        survival_probs_arr = jnp.ones((T, n_h))
+    else:
+        survival_probs_arr = jnp.asarray(survival_probs)
 
     step_fn = partial(
         _agent_step_jax,
@@ -712,26 +746,29 @@ def simulate_lifecycle_jax(
         tax_eta=tax_eta,
         P_y_age_health=P_y_age_health,
         P_y_4d=P_y_4d,
+        survival_probs=survival_probs_arr,
     )
 
-    def simulate_one(init_state, u_y_seq, u_h_seq):
+    initial_alive = jnp.ones(n_sim, dtype=jnp.bool_)
+
+    def simulate_one(init_state, u_y_seq, u_h_seq, u_alive_seq):
         """Scan over T_sim steps for one agent."""
-        xs = (t_indices, u_y_seq, u_h_seq)
+        xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
         return outputs
 
     # vmap across n_sim agents
     # init_states is a tuple of (n_sim,) arrays — vmap axis 0
-    # u_y_all, u_h_all are (T_sim, n_sim) — vmap axis 1 (agent dimension)
+    # u_y_all, u_h_all, u_alive_all are (T_sim, n_sim) — vmap axis 1 (agent dimension)
     init_states = (initial_i_a, initial_i_y, initial_i_h, initial_i_y_last,
-                   initial_avg_earnings, initial_n_earnings_years)
+                   initial_avg_earnings, initial_n_earnings_years, initial_alive)
 
     all_outputs = jax.vmap(
         simulate_one,
-        in_axes=(0, 1, 1),
-    )(init_states, u_y_all, u_h_all)
+        in_axes=(0, 1, 1, 1),
+    )(init_states, u_y_all, u_h_all, u_alive_all)
 
-    # all_outputs is a tuple of 19 arrays, each (n_sim, T_sim) from vmap
+    # all_outputs is a tuple of 21 arrays, each (n_sim, T_sim) from vmap
     # Transpose each to (T_sim, n_sim) to match NumPy convention
     result = tuple(out.T for out in all_outputs)
 
@@ -761,6 +798,7 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None, None,              # pension_min_floor, tax_progressive
         None, None,              # tax_kappa_hsv, tax_eta
         None, None,              # P_y_age_health, P_y_4d
+        None,                    # survival_probs (shared across cohorts)
     )),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
@@ -899,7 +937,7 @@ class LifecycleModelJAX:
         """
         Simulate lifecycle paths.
 
-        Returns same 19-tuple as LifecycleModelPerfectForesight.simulate().
+        Returns same 21-tuple as LifecycleModelPerfectForesight.simulate().
         """
         if self.V is None:
             raise RuntimeError("Must call solve() before simulate().")
@@ -930,7 +968,16 @@ class LifecycleModelJAX:
         initial_i_y_last = initial_i_y  # JAX arrays are immutable; no copy needed
         initial_i_h = jnp.zeros(n_sim, dtype=jnp.int32)
 
-        if self.config.initial_assets is not None:
+        if self.config.initial_asset_distribution is not None:
+            dist = np.asarray(self.config.initial_asset_distribution)
+            key, subkey = jax.random.split(key)
+            sample_idx = jax.random.randint(subkey, shape=(n_sim,), minval=0, maxval=len(dist))
+            sampled = jnp.array(dist)[sample_idx]
+            initial_i_a = jnp.array(
+                [int(jnp.argmin(jnp.abs(self.a_grid - float(v)))) for v in np.asarray(sampled)],
+                dtype=jnp.int32,
+            )
+        elif self.config.initial_assets is not None:
             i_a_initial = int(jnp.argmin(jnp.abs(self.a_grid - self.config.initial_assets)))
             initial_i_a = jnp.full(n_sim, i_a_initial, dtype=jnp.int32)
         else:
@@ -971,6 +1018,7 @@ class LifecycleModelJAX:
             tax_eta=self.tax_eta,
             P_y_age_health=self.P_y_age_health,
             P_y_4d=P_y_4d_sim,
+            survival_probs=self.survival_probs,
         )
 
         # Convert all outputs to numpy arrays

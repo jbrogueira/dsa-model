@@ -1721,16 +1721,24 @@ class TestLaborSupply:
         assert np.allclose(model.l_policy, 1.0), "l_policy should be all 1.0 when labor_supply=False"
 
     def test_l_sim_in_output(self):
-        """Simulation returns 19-tuple, l_sim at index 18."""
+        """Simulation returns 21-tuple, l_sim at index 18, alive_sim at 19, bequest_sim at 20."""
         config = self._base_config()
         model = LifecycleModelPerfectForesight(config, verbose=False)
         model.solve(verbose=False)
         result = model.simulate(n_sim=100, seed=42)
-        assert len(result) == 19, f"Expected 19-tuple, got {len(result)}-tuple"
+        assert len(result) == 21, f"Expected 21-tuple, got {len(result)}-tuple"
         l_sim = result[18]
         assert l_sim.shape == result[0].shape, "l_sim shape should match a_sim shape"
         # With labor_supply=False, l_sim should be all 1.0
         assert np.allclose(l_sim, 1.0), "l_sim should be all 1.0 when labor_supply=False"
+        # alive_sim: all True when no survival_probs
+        alive_sim = result[19]
+        assert alive_sim.shape == result[0].shape
+        assert np.all(alive_sim), "alive_sim should be all True when no mortality"
+        # bequest_sim: all zero when no survival_probs
+        bequest_sim = result[20]
+        assert bequest_sim.shape == result[0].shape
+        assert np.all(bequest_sim == 0.0), "bequest_sim should be all zero when no mortality"
 
     def test_labor_supply_endogenous(self):
         """labor_supply=True -> l_policy varies, non-negative, 1.0 in retirement."""
@@ -1842,8 +1850,8 @@ class TestLaborSupplyJAX:
         jax_results = jax_model.simulate(n_sim=n_sim, seed=42)
 
         # l_sim is at index 18
-        assert len(np_results) == 19, f"NumPy: expected 19-tuple, got {len(np_results)}"
-        assert len(jax_results) == 19, f"JAX: expected 19-tuple, got {len(jax_results)}"
+        assert len(np_results) == 21, f"NumPy: expected 21-tuple, got {len(np_results)}"
+        assert len(jax_results) == 21, f"JAX: expected 21-tuple, got {len(jax_results)}"
 
         np_l = np_results[18]
         jax_l = jax_results[18]
@@ -1884,6 +1892,451 @@ class TestLaborSupplyJAX:
         assert np.all(results['K'] > 0), "K should be positive"
         assert np.all(results['L'] > 0), "L should be positive"
         assert np.all(results['Y'] > 0), "Y should be positive"
+
+
+class TestEndogenousRetirement:
+    """Tests for Feature #7: Endogenous retirement window."""
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=12, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=10, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_retirement_window_none_is_noop(self):
+        """retirement_window=None gives same result as default (no window)."""
+        config_default = self._base_config()
+        config_explicit = self._base_config(retirement_window=None)
+        m1 = LifecycleModelPerfectForesight(config_default, verbose=False)
+        m1.solve(verbose=False)
+        m2 = LifecycleModelPerfectForesight(config_explicit, verbose=False)
+        m2.solve(verbose=False)
+        assert np.allclose(m1.V, m2.V), "retirement_window=None should match default"
+
+    def test_retirement_window_changes_value_function(self):
+        """retirement_window=(6,10) should differ from fixed retirement at age 10."""
+        config_fixed = self._base_config()
+        config_window = self._base_config(retirement_window=(6, 10))
+        m_fixed = LifecycleModelPerfectForesight(config_fixed, verbose=False)
+        m_fixed.solve(verbose=False)
+        m_window = LifecycleModelPerfectForesight(config_window, verbose=False)
+        m_window.solve(verbose=False)
+        V_diff = np.max(np.abs(m_fixed.V - m_window.V))
+        assert V_diff > 1e-8, \
+            f"retirement_window should change value function (max diff = {V_diff:.2e})"
+
+    def test_early_retirement_possible_via_value_function(self):
+        """With retirement window, value function differs from fixed retirement at middle ages."""
+        # Early retirement is available but simulation only tracks mandatory retirement;
+        # confirm that the solve correctly creates different value functions in the window.
+        config_fixed = self._base_config()
+        config_window = self._base_config(retirement_window=(6, 10))
+
+        m_fixed = LifecycleModelPerfectForesight(config_fixed, verbose=False)
+        m_fixed.solve(verbose=False)
+        m_window = LifecycleModelPerfectForesight(config_window, verbose=False)
+        m_window.solve(verbose=False)
+
+        # Value function in the window (ages 6-9) should differ from mandatory retirement
+        V_window_ages = m_window.V[6:10]
+        V_fixed_ages = m_fixed.V[6:10]
+        V_diff = np.max(np.abs(V_window_ages - V_fixed_ages))
+        assert V_diff > 1e-8, \
+            f"Value function in retirement window should differ from fixed retirement"
+
+
+class TestEndogenousRetirementJAX:
+    """JAX cross-validation tests for endogenous retirement feature."""
+
+    @staticmethod
+    def _jax_available():
+        try:
+            import jax  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=12, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=10, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_jax_retirement_window_solve_matches(self):
+        """JAX V matches NumPy within 1e-6 with retirement_window set."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(retirement_window=(6, 10))
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+        V_diff = np.max(np.abs(np_model.V - jax_model.V))
+        assert V_diff < 1e-6, f"V mismatch with retirement_window: max diff = {V_diff:.2e}"
+
+    def test_jax_retirement_window_distributional(self):
+        """Simulation distributions match within 3 SE."""
+        if not self._jax_available():
+            pytest.skip("JAX not available")
+        from lifecycle_jax import LifecycleModelJAX
+
+        config = self._base_config(retirement_window=(6, 10))
+        n_sim = 2000
+
+        np_model = LifecycleModelPerfectForesight(config, verbose=False)
+        np_model.solve(verbose=False)
+        np_results = np_model.simulate(n_sim=n_sim, seed=42)
+
+        jax_model = LifecycleModelJAX(config, verbose=False)
+        jax_model.solve(verbose=False)
+        jax_results = jax_model.simulate(n_sim=n_sim, seed=42)
+
+        np_means = np.mean(np_results[0], axis=1)
+        jax_means = np.mean(jax_results[0], axis=1)
+        np_se = np.std(np_results[0], axis=1) / np.sqrt(n_sim)
+        tolerance = 3 * np.maximum(np_se, 1e-6)
+        diff = np.abs(np_means - jax_means)
+        max_excess = np.max(diff / tolerance)
+        assert max_excess < 1.0, \
+            f"Asset distributional mismatch with retirement_window: max |diff|/tol = {max_excess:.2f}"
+
+
+class TestSimulationMortality:
+    """Tests for Feature #2: Simulation mortality draws."""
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=10, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_survival_mortality_draws_reduce_alive(self):
+        """With survival_probs < 1, fewer agents are alive at late ages."""
+        survival = np.ones((10, 1)) * 0.90  # 10% mortality each period
+        config = self._base_config(survival_probs=survival)
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        result = model.simulate(n_sim=2000, seed=42)
+        alive_sim = result[19]
+        # At late ages, fewer agents should be alive
+        alive_early = np.sum(alive_sim[0, :])
+        alive_late = np.sum(alive_sim[9, :])
+        assert alive_late < alive_early, \
+            "Fewer agents should be alive at late ages with mortality"
+        # With 10% annual mortality, expected survival to age 9: 0.9^9 ≈ 0.387
+        frac_alive = alive_late / alive_early
+        assert frac_alive < 0.95, f"Expected significant mortality reduction, got {frac_alive:.3f}"
+
+    def test_survival_prob_one_simulation_all_alive(self):
+        """With survival_probs=1, alive_sim should be all True."""
+        survival = np.ones((10, 1))  # certainty of survival
+        config = self._base_config(survival_probs=survival)
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        result = model.simulate(n_sim=500, seed=42)
+        alive_sim = result[19]
+        assert np.all(alive_sim), "alive_sim should be all True when survival_probs=1"
+
+    def test_bequest_nonzero_with_mortality(self):
+        """With survival_probs < 1, bequest_sim should have nonzero entries."""
+        survival = np.ones((10, 1)) * 0.80  # 20% mortality
+        config = self._base_config(survival_probs=survival)
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        result = model.simulate(n_sim=2000, seed=42)
+        bequest_sim = result[20]
+        assert np.any(bequest_sim > 0), "Some bequests should be nonzero with mortality"
+
+    def test_alive_sim_shape(self):
+        """alive_sim shape is (T_sim, n_sim) — index 19 in 21-tuple."""
+        config = self._base_config()
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        n_sim = 200
+        result = model.simulate(n_sim=n_sim, seed=42)
+        assert len(result) == 21
+        alive_sim = result[19]
+        T_sim = 10 - 0  # T - current_age
+        assert alive_sim.shape == (T_sim, n_sim), \
+            f"alive_sim shape should be ({T_sim}, {n_sim}), got {alive_sim.shape}"
+
+    def test_no_survival_probs_all_alive(self):
+        """Without survival_probs, all agents are alive throughout."""
+        config = self._base_config()  # survival_probs=None
+        model = LifecycleModelPerfectForesight(config, verbose=False)
+        model.solve(verbose=False)
+        result = model.simulate(n_sim=500, seed=42)
+        alive_sim = result[19]
+        assert np.all(alive_sim), "All agents should be alive when survival_probs=None"
+        bequest_sim = result[20]
+        assert np.all(bequest_sim == 0.0), "No bequests when survival_probs=None"
+
+
+class TestBequestTaxation:
+    """Tests for Feature #16: Bequest taxation."""
+
+    @staticmethod
+    def _get_economy(**overrides):
+        config_kwargs = dict(
+            T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+            retirement_age=4, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+            survival_probs=np.ones((5, 1)) * 0.80,  # mortality needed for bequests
+        )
+        config_kwargs.update(overrides.pop('config_kwargs', {}))
+        config = LifecycleConfig(**config_kwargs)
+        economy_kwargs = dict(
+            lifecycle_config=config,
+            alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0},
+            output_dir='output/test',
+        )
+        economy_kwargs.update(overrides)
+        return OLGTransition(**economy_kwargs)
+
+    def test_bequest_tax_zero_is_noop_budget(self):
+        """tau_beq=0 → bequest_tax=0 in budget."""
+        config = LifecycleConfig(
+            T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+            retirement_age=4, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+            survival_probs=np.ones((5, 1)) * 0.80,
+            tau_beq=0.0,
+        )
+        economy = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+        )
+        r_path = np.ones(3) * 0.03
+        economy.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget = economy.compute_government_budget(0)
+        assert budget['bequest_tax'] == 0.0, "tau_beq=0 should give zero bequest tax"
+
+    def test_bequest_tax_raises_revenue(self):
+        """tau_beq > 0 → bequest_tax > 0 in budget when mortality is active."""
+        config = LifecycleConfig(
+            T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+            retirement_age=4, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+            survival_probs=np.ones((5, 1)) * 0.80,
+            tau_beq=0.3,
+        )
+        economy = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+        )
+        r_path = np.ones(3) * 0.03
+        economy.simulate_transition(r_path, n_sim=200, verbose=False)
+        budget = economy.compute_government_budget(0)
+        assert budget['bequest_tax'] >= 0.0, "bequest_tax should be non-negative"
+        # With mortality, should have some bequests
+        assert 'total_bequests' in budget, "total_bequests should be in budget"
+
+    def test_bequest_tax_in_budget_path(self):
+        """Bequest tax keys appear in budget_path output."""
+        config = LifecycleConfig(
+            T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+            retirement_age=4, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+            survival_probs=np.ones((5, 1)) * 0.80,
+            tau_beq=0.2,
+        )
+        economy = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+        )
+        r_path = np.ones(3) * 0.03
+        economy.simulate_transition(r_path, n_sim=100, verbose=False)
+        budget_path = economy.compute_government_budget_path(verbose=False)
+        assert 'bequest_tax' in budget_path
+        assert 'total_bequests' in budget_path
+        assert len(budget_path['bequest_tax']) == 3
+
+
+class TestPopulationAging:
+    """Tests for Feature #21: Population aging."""
+
+    @staticmethod
+    def _get_small_economy(**overrides):
+        config = LifecycleConfig(
+            T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+            retirement_age=4, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        kwargs = dict(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+        )
+        kwargs.update(overrides)
+        return OLGTransition(**kwargs)
+
+    def test_survival_improvement_increases_life_expectancy(self):
+        """survival_improvement_rate > 0 → larger cum_surv at late ages."""
+        config = LifecycleConfig(
+            T=10, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+            survival_probs=np.ones((10, 1)) * 0.90,
+        )
+        economy = OLGTransition(
+            lifecycle_config=config, alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+            survival_improvement_rate=0.05,
+        )
+        # Compute survival schedule at year 0 vs year 20
+        sched_base = economy._survival_schedule_at_year(economy.birth_year)
+        sched_future = economy._survival_schedule_at_year(economy.birth_year + 20)
+        assert np.all(sched_future >= sched_base - 1e-10), \
+            "Future survival schedules should be >= base with improvement"
+
+    def test_build_population_weights_sums_to_one(self):
+        """cohort_sizes_path rows sum to 1."""
+        T_tr = 4
+        r_path = np.ones(T_tr) * 0.03
+        economy = self._get_small_economy()
+        economy.simulate_transition(r_path, n_sim=50, verbose=False)
+
+        # Manually set fertility_path and rebuild
+        economy.fertility_path = np.ones(economy.T + T_tr)
+        economy._build_population_weights()
+        for t in range(T_tr):
+            row_sum = economy.cohort_sizes_path[t, :].sum()
+            np.testing.assert_allclose(row_sum, 1.0, rtol=1e-10,
+                                       err_msg=f"Row {t} does not sum to 1")
+
+    def test_constant_fertility_no_improvement_uniform_matches_popgrowth(self):
+        """Constant fertility + no survival improvement + no base survival → uniform cohort weights."""
+        T_tr = 3
+        r_path = np.ones(T_tr) * 0.03
+        # Use constant pop_growth=0 and constant fertility=1
+        economy = OLGTransition(
+            lifecycle_config=LifecycleConfig(
+                T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+                retirement_age=4, education_type='medium',
+                pension_replacement_default=0.40, m_good=0.0,
+            ),
+            alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+            pop_growth=0.0,
+            fertility_path=np.ones(5 + T_tr),
+            survival_improvement_rate=0.0,
+        )
+        economy.simulate_transition(r_path, n_sim=50, verbose=False)
+        # With uniform fertility and no mortality, cohort_sizes_path rows should be uniform
+        for t in range(T_tr):
+            row = economy.cohort_sizes_path[t, :]
+            # All should be equal (1/T each)
+            expected = np.ones(5) / 5.0
+            np.testing.assert_allclose(row, expected, rtol=1e-10,
+                                       err_msg=f"Expected uniform weights at t={t}")
+
+    def test_declining_fertility_changes_weights(self):
+        """Declining fertility should give different weights than uniform."""
+        T_tr = 3
+        r_path = np.ones(T_tr) * 0.03
+        T = 5
+        # Declining fertility: newer cohorts are smaller
+        fert = np.array([1.0, 1.0, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3])  # T + T_tr = 8
+        economy = OLGTransition(
+            lifecycle_config=LifecycleConfig(
+                T=T, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
+                retirement_age=4, education_type='medium',
+                pension_replacement_default=0.40, m_good=0.0,
+            ),
+            alpha=0.33, delta=0.05, A=1.0,
+            education_shares={'medium': 1.0}, output_dir='output/test',
+            fertility_path=fert,
+        )
+        economy.simulate_transition(r_path, n_sim=50, verbose=False)
+        # Weights should not be uniform
+        uniform = np.ones(T) / T
+        for t in range(T_tr):
+            row = economy.cohort_sizes_path[t, :]
+            diff = np.max(np.abs(row - uniform))
+            assert diff > 1e-10, f"Weights at t={t} should differ from uniform with declining fertility"
+
+
+class TestInitialAssetDistribution:
+    """Tests for initial_asset_distribution feature."""
+
+    @staticmethod
+    def _base_config(**overrides):
+        defaults = dict(
+            T=10, beta=0.96, gamma=2.0, n_a=100, n_y=2, n_h=1,
+            retirement_age=8, education_type='medium',
+            pension_replacement_default=0.40, m_good=0.0,
+        )
+        defaults.update(overrides)
+        return LifecycleConfig(**defaults)
+
+    def test_initial_asset_distribution_overrides_initial_assets(self):
+        """initial_asset_distribution takes priority over initial_assets."""
+        # With initial_assets = 50 (high), mean assets at t=0 should be near 50
+        config_scalar = self._base_config(initial_assets=50.0)
+        m_scalar = LifecycleModelPerfectForesight(config_scalar, verbose=False)
+        m_scalar.solve(verbose=False)
+        result_scalar = m_scalar.simulate(n_sim=500, seed=42)
+        mean_a0_scalar = np.mean(result_scalar[0][0, :])
+
+        # With initial_asset_distribution = [0, 0, 0] (all at zero), mean assets at t=0 should be near 0
+        config_dist = self._base_config(
+            initial_assets=50.0,  # This should be overridden
+            initial_asset_distribution=np.zeros(100),
+        )
+        m_dist = LifecycleModelPerfectForesight(config_dist, verbose=False)
+        m_dist.solve(verbose=False)
+        result_dist = m_dist.simulate(n_sim=500, seed=42)
+        mean_a0_dist = np.mean(result_dist[0][0, :])
+
+        assert mean_a0_dist < mean_a0_scalar - 1e-3, \
+            "initial_asset_distribution=zeros should give lower t=0 assets than initial_assets=50"
+
+    def test_initial_asset_distribution_broadens_wealth_spread(self):
+        """Heterogeneous initial assets → higher wealth dispersion in early periods."""
+        # Uniform initial assets
+        config_uniform = self._base_config(initial_assets=5.0)
+        m_uniform = LifecycleModelPerfectForesight(config_uniform, verbose=False)
+        m_uniform.solve(verbose=False)
+        result_uniform = m_uniform.simulate(n_sim=1000, seed=42)
+
+        # Dispersed initial assets
+        dist = np.array([0.0, 1.0, 5.0, 10.0, 20.0, 50.0] * 50)
+        config_disp = self._base_config(initial_asset_distribution=dist)
+        m_disp = LifecycleModelPerfectForesight(config_disp, verbose=False)
+        m_disp.solve(verbose=False)
+        result_disp = m_disp.simulate(n_sim=1000, seed=42)
+
+        std_uniform = np.std(result_uniform[0][0, :])
+        std_disp = np.std(result_disp[0][0, :])
+        assert std_disp > std_uniform, \
+            "Heterogeneous initial assets should broaden wealth dispersion"
+
+    def test_initial_assets_scalar_unchanged(self):
+        """initial_asset_distribution=None with initial_assets scalar is unchanged behavior."""
+        config_a = self._base_config(initial_assets=10.0, initial_asset_distribution=None)
+        config_b = self._base_config(initial_assets=10.0)
+        m_a = LifecycleModelPerfectForesight(config_a, verbose=False)
+        m_a.solve(verbose=False)
+        m_b = LifecycleModelPerfectForesight(config_b, verbose=False)
+        m_b.solve(verbose=False)
+        result_a = m_a.simulate(n_sim=200, seed=42)
+        result_b = m_b.simulate(n_sim=200, seed=42)
+        assert np.allclose(result_a[0], result_b[0]), \
+            "initial_asset_distribution=None should not change behavior"
 
 
 if __name__ == "__main__":

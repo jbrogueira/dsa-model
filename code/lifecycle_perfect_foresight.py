@@ -158,6 +158,7 @@ class LifecycleConfig:
 
     # === Initial conditions ===
     initial_assets: Optional[float] = None  # Initial asset level (default: a_min if None)
+    initial_asset_distribution: Optional[np.ndarray] = None  # (n_samples,) initial asset values; sampled with replacement
     initial_avg_earnings: Optional[float] = 0.0
     
     def _replace(self, **changes):
@@ -923,6 +924,10 @@ class LifecycleModelPerfectForesight:
         tax_p_sim = np.zeros((T_sim, n_sim))
         tax_k_sim = np.zeros((T_sim, n_sim))
 
+        alive = np.ones(n_sim, dtype=bool)
+        alive_sim = np.zeros((T_sim, n_sim), dtype=bool)
+        bequest_sim = np.zeros((T_sim, n_sim))
+
         # avg_earnings tracking kept for diagnostics (not used for pension)
         avg_earnings_at_retirement = np.zeros(n_sim)
 
@@ -945,12 +950,14 @@ class LifecycleModelPerfectForesight:
         
         i_y_last = i_y.copy()
         i_h = np.zeros(n_sim, dtype=int)
-        if self.config.initial_assets is not None:
-            # Find closest grid point to specified initial_assets
+        if self.config.initial_asset_distribution is not None:
+            dist = np.asarray(self.config.initial_asset_distribution)
+            sampled = np.random.choice(dist, size=n_sim, replace=True)
+            i_a = np.array([np.argmin(np.abs(self.a_grid - v)) for v in sampled], dtype=int)
+        elif self.config.initial_assets is not None:
             i_a_initial = np.argmin(np.abs(self.a_grid - self.config.initial_assets))
             i_a = np.full(n_sim, i_a_initial, dtype=int)
         else:
-            # Default: start at a_min (borrowing constraint, first grid point)
             i_a = np.zeros(n_sim, dtype=int)
         if self.config.initial_avg_earnings is not None:
             avg_earnings = np.ones(n_sim) * self.config.initial_avg_earnings
@@ -966,6 +973,9 @@ class LifecycleModelPerfectForesight:
             is_retired = (lifecycle_age >= self.retirement_age)
             
             for i in range(n_sim):
+                if not alive[i]:
+                    continue
+                alive_sim[t_sim, i] = True
                 a_sim[t_sim, i] = self.a_grid[i_a[i]]
                 h_sim[t_sim, i] = self.h_grid[i_h[i]]
                 h_idx_sim[t_sim, i] = i_h[i]
@@ -1037,18 +1047,24 @@ class LifecycleModelPerfectForesight:
                 
                 if t_sim < T_sim - 1:
                     i_a[i] = self.a_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                    
+
                     if not is_retired:
                         i_y_last[i] = i_y[i]
                         P_y_row = self._get_P_y_row(lifecycle_age, i_h[i], i_y[i])
                         i_y[i] = np.searchsorted(np.cumsum(P_y_row), np.random.random())
 
                     i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
-        
+
+                if self.config.survival_probs is not None:
+                    survival_t = self.survival_probs[lifecycle_age, i_h[i]]
+                    if np.random.random() > survival_t:
+                        bequest_sim[t_sim, i] = self.a_grid[i_a[i]]
+                        alive[i] = False
+
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                pension_sim, retired_sim, l_sim)
+                pension_sim, retired_sim, l_sim, alive_sim, bequest_sim)
     
     def simulate(self, T_sim=None, n_sim=10000, seed=42, parallel=False, n_jobs=None):
         """

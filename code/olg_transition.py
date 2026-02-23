@@ -86,6 +86,11 @@ class OLGTransition:
                  S_pens_initial=0.0,
                  # Defense spending (Feature #19, simplified)
                  defense_spending_path=None,
+                 # Population aging (Feature #21)
+                 fertility_path=None,              # (T + T_transition,) relative entering cohort sizes
+                 survival_improvement_rate=0.0,    # annual multiplicative improvement in survival probs
+                 # Initial asset distribution opt-in
+                 use_initial_distribution=False,   # use ss asset distribution as initial conditions
                  # Backend selection
                  backend='numpy'):
         
@@ -178,6 +183,13 @@ class OLGTransition:
         # Backend selection ('numpy' or 'jax')
         self.backend = backend
         self._lifecycle_model_class = _get_lifecycle_model_class(backend)
+
+        # Population aging parameters (Feature #21)
+        self.fertility_path = np.asarray(fertility_path, dtype=float) if fertility_path is not None else None
+        self.survival_improvement_rate = float(survival_improvement_rate)
+
+        # Initial asset distribution opt-in
+        self.use_initial_distribution = bool(use_initial_distribution)
 
         # NEW: remember last Monte Carlo size used in simulate_transition()
         self._last_n_sim: Optional[int] = None
@@ -640,6 +652,86 @@ class OLGTransition:
             return self.cohort_sizes_path[int(t), :]
         return self.cohort_sizes
 
+    def _survival_schedule_at_year(self, cal_year):
+        """Return survival probabilities adjusted for longevity improvement at a given calendar year."""
+        base = self.lifecycle_config.survival_probs
+        if base is None:
+            return None
+        improvement = (1.0 + self.survival_improvement_rate) ** (cal_year - self.birth_year)
+        return np.clip(base * improvement, 0.0, 1.0)
+
+    def _cohort_survival_schedule(self, birth_period):
+        """
+        Build age-varying survival schedule for a cohort born at `birth_period`.
+
+        Returns shape (T, n_h): entry [j, :] is the survival probability at age j
+        using the calendar-year-adjusted schedule for that cohort at that age.
+        """
+        base = self.lifecycle_config.survival_probs
+        if base is None:
+            return None
+        T = self.T
+        n_h = self.n_h
+        sched = np.zeros((T, n_h))
+        for j in range(T):
+            cal_year = self.birth_year + birth_period + j
+            age_row = self._survival_schedule_at_year(cal_year)
+            if age_row is not None:
+                sched[j, :] = age_row[j, :]
+            else:
+                sched[j, :] = 1.0
+        return sched
+
+    def _build_population_weights(self):
+        """
+        Compute time-varying cohort size weights from fertility path and survival schedules.
+
+        Sets self.cohort_sizes_path of shape (T_transition, T).
+        """
+        if self.T_transition is None:
+            raise ValueError("T_transition must be set before building population weights.")
+
+        T_trans = int(self.T_transition)
+        T = int(self.T)
+
+        # fertility_path: relative sizes of entering cohorts by birth period index
+        # birth period index 0 = transition start; negative = pre-transition
+        # We need fertility for birth periods -(T-1) ... T_trans-1
+        # Mapped into fertility_path array as fertility_path[bp + (T-1)]
+        if self.fertility_path is not None:
+            fert = np.asarray(self.fertility_path, dtype=float)
+        else:
+            fert = np.ones(T + T_trans)
+
+        cohort_sizes_path = np.zeros((T_trans, T), dtype=float)
+
+        for t_cal in range(T_trans):
+            for age in range(T):
+                birth_period = t_cal - age
+                fert_idx = birth_period + (T - 1)
+                if 0 <= fert_idx < len(fert):
+                    fert_val = fert[fert_idx]
+                else:
+                    fert_val = fert[0] if len(fert) > 0 else 1.0
+
+                # Cumulative survival from birth to age
+                surv_sched = self._cohort_survival_schedule(birth_period)
+                if surv_sched is not None:
+                    cum_surv = 1.0
+                    for j in range(age):
+                        cum_surv *= np.mean(surv_sched[j, :])
+                else:
+                    cum_surv = 1.0
+
+                cohort_sizes_path[t_cal, age] = fert_val * cum_surv
+
+            # Normalize
+            row_sum = cohort_sizes_path[t_cal, :].sum()
+            if row_sum > 0:
+                cohort_sizes_path[t_cal, :] /= row_sum
+
+        self.cohort_sizes_path = cohort_sizes_path
+
     def solve_cohort_problems(self, r_path, w_path, 
                           tau_c_path=None, tau_l_path=None, 
                           tau_p_path=None, tau_k_path=None,
@@ -681,12 +773,19 @@ class OLGTransition:
             labor_supply=_lc.labor_supply,
             nu=_lc.nu,
             phi=_lc.phi,
+            tau_beq=_lc.tau_beq,
+        )
+
+        # Check if per-cohort survival schedules are needed
+        _use_per_cohort_survival = (
+            self.survival_improvement_rate != 0.0 and
+            self.lifecycle_config.survival_probs is not None
         )
 
         for edu_type in self.education_shares.keys():
             ss_config = LifecycleConfig(
                 T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
-                education_type=edu_type, n_a=self.n_a, n_y=self.n_y,
+                education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
                 retirement_age=self.retirement_age,
                 r_path=np.ones(self.T) * r_ss, w_path=np.ones(self.T) * w_ss,
                 tau_c_path=np.ones(self.T) * (tau_c_path[0] if tau_c_path is not None else 0),
@@ -701,6 +800,9 @@ class OLGTransition:
             results = ss_model.simulate(T_sim=self.T, n_sim=100, seed=42)
             self.ss_asset_profiles[edu_type] = np.mean(results[0], axis=1)
             self.ss_earnings_profiles[edu_type] = np.mean(results[15], axis=1)
+            if not hasattr(self, 'ss_asset_distributions'):
+                self.ss_asset_distributions = {}
+            self.ss_asset_distributions[edu_type] = results[0]  # (T, n_ss_sim)
             if verbose:
                 print(f"    {edu_type}: age {self.retirement_age} assets = {self.ss_asset_profiles[edu_type][self.retirement_age]:.4f}, avg_earnings = {self.ss_earnings_profiles[edu_type][self.retirement_age]:.4f}")
 
@@ -730,6 +832,10 @@ class OLGTransition:
                 cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4)
 
                 # Create and solve the model for this birth cohort
+                cohort_feature_kwargs = dict(_feature_kwargs)
+                if _use_per_cohort_survival:
+                    cohort_surv = self._cohort_survival_schedule(birth_period)
+                    cohort_feature_kwargs['survival_probs'] = cohort_surv
                 config = LifecycleConfig(
                     T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
                     education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
@@ -738,7 +844,7 @@ class OLGTransition:
                     tau_c_path=cohort_tau_c, tau_l_path=cohort_tau_l,
                     tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
                     pension_replacement_path=cohort_pension,
-                    **_feature_kwargs,
+                    **cohort_feature_kwargs,
                 )
                 
                 model = self._lifecycle_model_class(config, verbose=False)
@@ -793,10 +899,18 @@ class OLGTransition:
 
                 # Update config with initial conditions
                 model = birth_cohort_solutions[edu_type][birth_period]
-                model.config = model.config._replace(
-                    initial_assets=initial_assets,
-                    initial_avg_earnings=initial_avg_earnings
-                )
+                if self.use_initial_distribution and hasattr(self, 'ss_asset_distributions'):
+                    dist = self.ss_asset_distributions[edu_type][cohort_age_at_transition, :]
+                    model.config = model.config._replace(
+                        initial_assets=initial_assets,
+                        initial_avg_earnings=initial_avg_earnings,
+                        initial_asset_distribution=dist,
+                    )
+                else:
+                    model.config = model.config._replace(
+                        initial_assets=initial_assets,
+                        initial_avg_earnings=initial_avg_earnings,
+                    )
 
         if verbose:
             print("All cohort problems ready!")
@@ -898,6 +1012,18 @@ class OLGTransition:
         education_shares_array = np.array([self.education_shares[edu] for edu in education_types], dtype=float)
         cohort_sizes_t = self._cohort_weights(t)
 
+        # Feature #2: mortality-adjusted cohort weights
+        if self.lifecycle_config.survival_probs is not None:
+            surv = self.lifecycle_config.survival_probs  # (T, n_h)
+            mean_surv = np.mean(surv, axis=1)  # (T,)
+            cum_surv = np.ones(self.T)
+            for j in range(1, self.T):
+                cum_surv[j] = cum_surv[j - 1] * mean_surv[j - 1]
+            cohort_sizes_t = cohort_sizes_t * cum_surv
+            s = cohort_sizes_t.sum()
+            if s > 0:
+                cohort_sizes_t = cohort_sizes_t / s
+
         assets_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         labor_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
 
@@ -909,6 +1035,7 @@ class OLGTransition:
         ui_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         pension_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         gov_health_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
+        bequest_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
 
         panels = self._cohort_panel_cache[(n_sim, int(seed_base))]
 
@@ -917,10 +1044,19 @@ class OLGTransition:
             for age in range(self.T):
                 birth_period = t - age
 
-                (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
-                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
-                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                 pension_sim, retired_sim, l_sim) = edu_panels[int(birth_period)]
+                panel_data = edu_panels[int(birth_period)]
+                if len(panel_data) == 21:
+                    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                     ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                     pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                else:
+                    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                     ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                     pension_sim, retired_sim, l_sim) = panel_data
+                    alive_sim = np.ones_like(a_sim, dtype=bool)
+                    bequest_sim = np.zeros_like(a_sim)
 
                 # Fast single-age means using Numba - O(n_sim) instead of O(T × n_sim)
                 (a_mean, labor_mean,
@@ -943,6 +1079,7 @@ class OLGTransition:
                 ui_by_age_edu[edu_idx, age] = ui_mean
                 pension_by_age_edu[edu_idx, age] = pension_mean
                 gov_health_by_age_edu[edu_idx, age] = gov_health_mean
+                bequest_by_age_edu[edu_idx, age] = float(np.mean(bequest_sim[age, :]))
 
         out = {
             "education_types": education_types,
@@ -957,6 +1094,7 @@ class OLGTransition:
             "ui_by_age_edu": ui_by_age_edu,
             "pension_by_age_edu": pension_by_age_edu,
             "gov_health_by_age_edu": gov_health_by_age_edu,
+            "bequest_by_age_edu": bequest_by_age_edu,
         }
         self._period_cache[key] = out
         return out
@@ -1015,7 +1153,19 @@ class OLGTransition:
                 total_pension += weight * float(px["pension_by_age_edu"][edu_idx, age])
                 total_gov_health += weight * float(px["gov_health_by_age_edu"][edu_idx, age])
 
-        total_revenue = total_tax_c + total_tax_l + total_tax_p + total_tax_k
+        # Feature #16: Bequest taxation
+        total_bequests = 0.0
+        if 'bequest_by_age_edu' in px:
+            for edu_idx in range(n_edu):
+                for age in range(self.T):
+                    weight = float(px["cohort_sizes_t"][age]) * float(px["education_shares_array"][edu_idx])
+                    total_bequests += weight * float(px["bequest_by_age_edu"][edu_idx, age])
+
+        tau_beq = float(getattr(self.lifecycle_config, 'tau_beq', 0.0))
+        bequest_tax_revenue = tau_beq * total_bequests
+        bequest_transfers = (1.0 - tau_beq) * total_bequests
+
+        total_revenue = total_tax_c + total_tax_l + total_tax_p + total_tax_k + bequest_tax_revenue
 
         t_idx = int(t)
         _at = lambda path, default=0.0: float(path[t_idx]) if path is not None and t_idx < len(path) else default
@@ -1057,6 +1207,9 @@ class OLGTransition:
             "total_spending": total_spending,
             "primary_deficit": primary_deficit,
             "fiscal_deficit": fiscal_deficit,
+            "bequest_tax": bequest_tax_revenue,
+            "bequest_transfers": bequest_transfers,
+            "total_bequests": total_bequests,
         }
 
     def simulate_transition(self, r_path, w_path=None,
@@ -1166,7 +1319,11 @@ class OLGTransition:
 
         # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
         self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
-        
+
+        # Feature #21: Build population weights from fertility + survival
+        if self.fertility_path is not None or self.survival_improvement_rate != 0.0:
+            self._build_population_weights()
+
         if verbose:
             print("\nComputing aggregate quantities...")
         
@@ -1276,6 +1433,7 @@ class OLGTransition:
             'public_investment', 'defense_spending',
             'debt_service', 'new_borrowing',
             'total_spending', 'primary_deficit', 'fiscal_deficit',
+            'bequest_tax', 'bequest_transfers', 'total_bequests',
         ]
         budget_path = {k: np.zeros(self.T_transition) for k in budget_keys}
 
@@ -1598,7 +1756,7 @@ class OLGTransition:
             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
              ui_sim, m_sim, oop_m_sim, gov_m_sim,
              tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-             pension_sim, retired_sim, l_sim) = results
+             pension_sim, retired_sim, l_sim, *_) = results
 
             max_age = min(self.T - 1, self.T_transition - 1 - b)
             ages = np.arange(0, max_age + 1, dtype=int)
