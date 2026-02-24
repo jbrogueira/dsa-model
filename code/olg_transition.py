@@ -2009,10 +2009,21 @@ def run_full_simulation(backend='numpy'):
     print("RUNNING FULL SIMULATION")
     print("=" * 60)
 
-    _T, _n_h = 40, 2
-    _surv_base = np.linspace(0.995, 0.88, _T)           # baseline: 99.5% → 88% over lifecycle
-    _surv_good = np.clip(_surv_base + 0.01, 0.0, 1.0)   # healthy: 1 pp above baseline
-    _surv_bad  = np.clip(_surv_base - 0.01, 0.0, 1.0)   # unhealthy: 1 pp below baseline
+    # Lifecycle: age 20–99 (80 annual periods). Retirement at 65 = period 45.
+    _T, _n_h = 80, 2
+
+    # Survival probabilities π(j, h): piecewise linear, ages 20–99
+    #   Ages 20–39 (j=0–19):  low mortality, 99.9% → 99.5%
+    #   Ages 40–64 (j=20–44): slowly declining, 99.5% → 97.0%
+    #   Ages 65–99 (j=45–79): steeper decline, 97.0% → 80.0%
+    _surv_base = np.concatenate([
+        np.linspace(0.999, 0.995, 20),
+        np.linspace(0.995, 0.970, 25),
+        np.linspace(0.970, 0.800, 35),
+    ])                                                       # shape (80,)
+    _surv_good = np.clip(_surv_base + 0.005, 0.0, 1.0)      # healthy: +0.5 pp
+    _surv_bad  = np.clip(_surv_base - 0.005, 0.0, 1.0)      # unhealthy: -0.5 pp
+
     config = LifecycleConfig(
         T=_T,
         beta=0.99,
@@ -2020,12 +2031,12 @@ def run_full_simulation(backend='numpy'):
         n_a=100,
         n_y=2,
         n_h=_n_h,
-        retirement_age=30,
+        retirement_age=45,   # age 65 = period 45 (age 20 + 45)
         education_type='medium',
         labor_supply=True,
         nu=10.0,   # calibrated so FOC gives l≈0.1–0.3 for most agents (clamp l≤1 enforced)
         phi=2.0,
-        survival_probs=np.column_stack([_surv_good, _surv_bad]),  # (T, n_h)
+        survival_probs=np.column_stack([_surv_good, _surv_bad]),  # (80, 2)
     )
 
     economy = OLGTransition(
@@ -2034,7 +2045,7 @@ def run_full_simulation(backend='numpy'):
         delta=0.05,
         A=1.0,
         pop_growth=0.01,
-        birth_year=1960,
+        birth_year=1940,
         current_year=2020,
         education_shares={'low': 0.3, 'medium': 0.5, 'high': 0.2},
         output_dir='output',
@@ -2042,7 +2053,7 @@ def run_full_simulation(backend='numpy'):
         jax_sim_chunk_size=10 if backend == 'jax' else None,
     )
 
-    T_transition = 60  # Longer transition period
+    T_transition = 100   # ≥ one full lifecycle (T=80), ensures all cohorts complete
     r_initial = 0.04
     r_final = 0.03
 
@@ -2052,11 +2063,10 @@ def run_full_simulation(backend='numpy'):
     tau_p_path = np.ones(T_transition) * 0.2
     tau_k_path = np.ones(T_transition) * 0.2
     pension_replacement_path = np.ones(T_transition) * 0.8
-      
+
     periods = np.arange(T_transition)
     r_path = r_initial + (r_final - r_initial) * (1 - np.exp(-periods / 5))
-    
-    # NEW: ageing population experiment (declining pop growth over time)
+
     pop_growth_path = np.linspace(0.01, 0.01, T_transition)
     
     print(f"\nSimulating transition from r={r_initial:.3f} to r={r_final:.3f}")
@@ -2082,7 +2092,7 @@ def run_full_simulation(backend='numpy'):
     
     for edu_type in ['low', 'medium', 'high']:
         economy.plot_lifecycle_comparison(
-            birth_periods=[0, 20],
+            birth_periods=[0, 40],   # cohort born at t=0 vs t=40 (mid-transition)
             edu_type=edu_type,
             n_sim=None,  # reuse economy._last_n_sim (== N_SIM_FULL)
             save=True,
