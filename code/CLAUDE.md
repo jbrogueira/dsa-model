@@ -14,11 +14,21 @@ docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 
 ## Environment
 
-JAX venv is stored at `~/venvs/jax-arm/` (Python 3.11, ARM/Homebrew, native Apple Silicon). Activate before running JAX backend:
+JAX venv lives at `~/venvs/jax/`. Create it once with the setup script (auto-detects platform):
 
 ```bash
-source ~/venvs/jax-arm/bin/activate
+bash setup_jax.sh          # macOS ARM → jax[cpu], Linux x86_64 → jax[cuda12]
 ```
+
+Activate before running the JAX backend:
+
+```bash
+source ~/venvs/jax/bin/activate
+```
+
+**Platform notes:**
+- macOS ARM (Apple Silicon): use native ARM Python — x86 Python via Rosetta hits AVX issues with jaxlib
+- Linux x86_64 + CUDA: requires a working NVIDIA driver; if unavailable at runtime, set `JAX_PLATFORM_NAME=cpu`
 
 ## Run
 
@@ -114,4 +124,4 @@ pytest test_olg_transition.py -v
 - Different PRNG (ThreeFry vs MT19937): simulation paths differ individually but match distributionally
 - `OLGTransition(backend='jax')` uses JAX for all cohort solves and simulations
 - Aggregation stays in NumPy (already fast with Numba, not a bottleneck)
-- Requires ARM Python on Apple Silicon (x86 Python via Rosetta hits AVX issues with jaxlib)
+- macOS ARM: use native ARM Python (x86 Python via Rosetta hits AVX issues with jaxlib); Linux x86_64: use `jax[cuda12]` for GPU or `jax[cpu]` for CPU-only

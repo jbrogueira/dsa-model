@@ -39,9 +39,9 @@ def _hsv_tax(income, tax_kappa, tax_eta):
 
 
 def solve_labor_hours_jax(c, net_wage, nu, phi, gamma):
-    """FOC: l* = (c^{-gamma} * net_wage / nu)^{1/phi}"""
+    """FOC: l* = (c^{-gamma} * net_wage / nu)^{1/phi}, clamped to [0, 1]."""
     l = (jnp.maximum(c, 1e-10) ** (-gamma) * jnp.maximum(net_wage, 0.0) / nu) ** (1.0 / phi)
-    return jnp.maximum(l, 0.0)
+    return jnp.clip(l, 0.0, 1.0)  # time endowment is 1
 
 
 def labor_disutility_jax(l, nu, phi):
@@ -66,6 +66,7 @@ def compute_budget_jax(
     education_subsidy_rate=0.0,
     in_schooling=False,
     labor_hours=1.0,
+    bequest_lumpsum=0.0,
 ):
     """
     Vectorised budget for ALL (n_a, n_y, n_h, n_y_last) states.
@@ -126,6 +127,9 @@ def compute_budget_jax(
 
     budget = a + after_tax_capital + after_tax_labor - oop_health     # (n_a, n_y, n_h, n_y)
 
+    # After-tax bequest lump-sum transfer at age 0 (scalar, non-zero only when caller sets it)
+    budget = budget + bequest_lumpsum
+
     # Feature #4: schooling child costs
     net_child_cost = (1.0 - education_subsidy_rate) * child_cost_t
     budget = jnp.where(in_schooling, budget - net_child_cost, budget)
@@ -151,7 +155,8 @@ def solve_period_jax(V_next, period_params, model_params):
         Continuation value from t+1.
     period_params : dict-like tuple
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t, pension_replacement_t,
-         P_h_t, P_y_t, is_retired, survival_t, child_cost_t, in_schooling_t)
+         P_h_t, P_y_t, is_retired, survival_t, child_cost_t, in_schooling_t,
+         bequest_lumpsum_t)
     model_params : dict-like tuple
         (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
          ui_replacement_rate, kappa, beta, gamma,
@@ -165,7 +170,8 @@ def solve_period_jax(V_next, period_params, model_params):
     """
     (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
      pension_replacement_t, P_h_t, P_y_t, is_retired,
-     survival_t, child_cost_t, in_schooling_t) = period_params
+     survival_t, child_cost_t, in_schooling_t,
+     bequest_lumpsum_t) = period_params
 
     (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
      ui_replacement_rate, kappa, beta, gamma,
@@ -194,6 +200,7 @@ def solve_period_jax(V_next, period_params, model_params):
         child_cost_t=child_cost_t,
         education_subsidy_rate=education_subsidy_rate,
         in_schooling=in_schooling_t,
+        bequest_lumpsum=bequest_lumpsum_t,
     )
 
     # 2. Consumption candidates: (n_a, n_y, n_h, n_y, n_a_next)
@@ -209,15 +216,21 @@ def solve_period_jax(V_next, period_params, model_params):
     tau_eff = jnp.where(tax_progressive, tau_p_t, tau_l_t + tau_p_t)
     net_wage_5d = effective_wage * (1.0 - tau_eff)  # (1, n_y, n_h, 1, 1)
 
-    # l_star from FOC on c_all guess
-    l_star = solve_labor_hours_jax(jnp.maximum(c_all, 1e-10), net_wage_5d, nu, phi, gamma)
-    # Unemployed (y==0) and retired get l=1
+    # l_star from FOC: fixed-point iteration between l and c.
+    # Starting from c_all(l=1) overshoots c and undershoots l*.  Iterate to convergence.
     is_unemployed_5d = (y_5d == 0.0)                # (1, n_y, 1, 1, 1)
+    l_star = solve_labor_hours_jax(jnp.maximum(c_all, 1e-10), net_wage_5d, nu, phi, gamma)
     l_star = jnp.where(is_unemployed_5d | is_retired, 1.0, l_star)
+    for _ in range(5):
+        delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
+        delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
+        c_iter = (budget[..., None] + delta_budget - a_next) / (1.0 + tau_c_t)
+        l_new = solve_labor_hours_jax(jnp.maximum(c_iter, 1e-10), net_wage_5d, nu, phi, gamma)
+        l_new = jnp.where(is_unemployed_5d | is_retired, 1.0, l_new)
+        l_star = l_new
 
-    # Budget adjustment: delta = w*y*h*(l-1)*(1-tau_eff)
-    delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
     # When not labor_supply, delta=0 and l=1
+    delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
     delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
     l_all = jnp.where(labor_supply, l_star, 1.0)
 
@@ -321,12 +334,20 @@ def _solve_terminal_period_jax(
     tau_eff = jnp.where(tax_progressive, tau_p_T, tau_l_T + tau_p_T)
     net_wage_4d = effective_wage * (1.0 - tau_eff)
 
-    l_star = solve_labor_hours_jax(c, net_wage_4d, nu, phi, gamma)
     is_unemployed_4d = (y_4d == 0.0)
+    l_star = solve_labor_hours_jax(c, net_wage_4d, nu, phi, gamma)
     l_star = jnp.where(is_unemployed_4d | is_retired_T, 1.0, l_star)
+    # Fixed-point iteration: terminal period has a'=0, so iterate l ↔ c
+    for _ in range(5):
+        delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
+        delta_budget_it = jnp.where(labor_supply, delta_budget, 0.0)
+        c_iter = jnp.maximum((budget + delta_budget_it) / (1.0 + tau_c_T), 1e-10)
+        l_new = solve_labor_hours_jax(c_iter, net_wage_4d, nu, phi, gamma)
+        l_new = jnp.where(is_unemployed_4d | is_retired_T, 1.0, l_new)
+        l_star = l_new
     l_pol = jnp.where(labor_supply, l_star, 1.0)
 
-    # Recompute budget and consumption with labor hours
+    # Final budget and consumption with converged labor hours
     delta_budget = effective_wage * (l_pol - 1.0) * (1.0 - tau_eff)
     delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
     c = jnp.maximum((budget + delta_budget) / (1.0 + tau_c_T), 1e-10)
@@ -360,6 +381,7 @@ def solve_lifecycle_jax(
     labor_supply=False,
     nu=1.0,
     phi=2.0,
+    bequest_lumpsum=0.0,
 ):
     """
     Full backward induction using jax.lax.scan.
@@ -435,6 +457,9 @@ def solve_lifecycle_jax(
     # Stack period params for t = T-2 ... 0 (reversed)
     ts = jnp.arange(T - 2, -1, -1)
 
+    # Bequest lump-sum: non-zero only at age 0 (the last step of the backward scan)
+    bequest_at_age = jnp.where(ts == 0, bequest_lumpsum, 0.0)
+
     period_params_stack = (
         r_path[ts],
         w_path[ts],
@@ -450,12 +475,14 @@ def solve_lifecycle_jax(
         child_costs[ts],
         (ts < schooling_years),
         m_grid_path[ts],
+        bequest_at_age,
     )
 
     def scan_fn(V_next, period_params_slice):
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
-         survival_t, child_cost_t, in_schooling_t, m_grid_t) = period_params_slice
+         survival_t, child_cost_t, in_schooling_t, m_grid_t,
+         bequest_t) = period_params_slice
 
         model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:]
 
@@ -463,7 +490,7 @@ def solve_lifecycle_jax(
             V_next,
             (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
              pension_replacement_t, P_h_t, P_y_t, is_retired,
-             survival_t, child_cost_t, in_schooling_t),
+             survival_t, child_cost_t, in_schooling_t, bequest_t),
             model_params_t,
         )
         return V_t, (V_t, a_pol_t, c_pol_t, l_pol_t)
@@ -513,6 +540,7 @@ _solve_lifecycle_jax_batched = jax.jit(
         None, None,              # child_cost_profile, schooling_years
         None, None,              # survival_probs, P_y_by_age_health
         None, None, None,        # labor_supply, nu, phi
+        0,                       # bequest_lumpsum (per-cohort scalar)
     )),
     static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
                      'labor_supply'),
@@ -674,7 +702,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
         jnp.where(alive, new_avg_earnings, 0.0),
         jnp.where(alive, pension, 0.0),
         jnp.where(alive, is_retired, False),
-        jnp.where(alive, l_pol_val, 0.0),
+        jnp.where(alive & ~is_retired, l_pol_val, 0.0),  # retired supply l=0
         alive,
         bequest_this_period,
     )
@@ -857,6 +885,7 @@ class LifecycleModelJAX:
         self.tax_kappa_hsv = float(config.tax_kappa)
         self.tax_eta = float(config.tax_eta)
         self.transfer_floor = float(config.transfer_floor)
+        self.bequest_lumpsum = float(config.bequest_lumpsum)
         self.education_subsidy_rate = float(config.education_subsidy_rate)
         self.schooling_years = int(config.schooling_years)
         self.child_cost_profile = jnp.array(config.child_cost_profile)

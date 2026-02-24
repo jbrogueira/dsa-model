@@ -92,7 +92,9 @@ class OLGTransition:
                  # Initial asset distribution opt-in
                  use_initial_distribution=False,   # use ss asset distribution as initial conditions
                  # Backend selection
-                 backend='numpy'):
+                 backend='numpy',
+                 # JAX simulation chunk size (None = all cohorts at once; set e.g. 10 to avoid GPU OOM)
+                 jax_sim_chunk_size=None):
         
         # Use provided config or create default
         if lifecycle_config is None:
@@ -183,6 +185,7 @@ class OLGTransition:
         # Backend selection ('numpy' or 'jax')
         self.backend = backend
         self._lifecycle_model_class = _get_lifecycle_model_class(backend)
+        self.jax_sim_chunk_size = jax_sim_chunk_size
 
         # Population aging parameters (Feature #21)
         self.fertility_path = np.asarray(fertility_path, dtype=float) if fertility_path is not None else None
@@ -345,6 +348,8 @@ class OLGTransition:
 
             # Pass all args positionally to match vmap in_axes
             P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
+            bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
+                                          for b in birth_periods])
             V_batch, a_pol_batch, c_pol_batch, l_pol_batch = _solve_lifecycle_jax_batched(
                 ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                 ref.P_y_2d, ref.P_h,
@@ -361,6 +366,7 @@ class OLGTransition:
                 ref.child_cost_profile, ref.schooling_years,
                 ref.survival_probs, P_y_4d_arg,
                 ref.labor_supply, ref.nu, ref.phi,
+                bequest_lumpsums,
             )
 
             # Inject results back into individual model objects
@@ -478,35 +484,70 @@ class OLGTransition:
             batch_n_years = jnp.stack(all_initial_n_years)
             batch_keys = jnp.stack(all_sim_keys)
 
-            if verbose:
-                print(f"  JAX batched simulate: {edu_type} ({n_cohorts} cohorts, n_sim={n_sim})")
+            chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
-            # Pass all args positionally to match vmap in_axes
+            if verbose:
+                n_chunks = (n_cohorts + chunk_size - 1) // chunk_size
+                print(f"  JAX batched simulate: {edu_type} ({n_cohorts} cohorts, n_sim={n_sim}, chunk_size={chunk_size}, n_chunks={n_chunks})")
+
             P_y_4d_sim = ref.P_y_4d if ref.P_y_age_health else None
-            results = _simulate_lifecycle_jax_batched(
+
+            # Per-cohort arrays indexed along axis 0 — group them for easy slicing.
+            per_cohort_arrs = (
                 a_policies, c_policies, l_policies,
-                ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
-                ref.P_y_2d, ref.P_h,
                 w_paths, w_at_rets,
                 tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                 r_paths, pension_paths,
-                ref.ui_replacement_rate, ref.kappa,
-                ref.retirement_age, ref.T, ref.current_age,
-                n_sim, batch_keys,
+                batch_keys,
                 batch_i_a, batch_i_y, batch_i_h, batch_i_y_last,
                 batch_avg_earn, batch_n_years,
-                ref.pension_min_floor, ref.tax_progressive,
-                ref.tax_kappa_hsv, ref.tax_eta,
-                ref.P_y_age_health, P_y_4d_sim,
             )
 
-            # Unpack: results is tuple of 19 arrays, each (n_cohorts, T_sim, n_sim)
-            for ci, b in enumerate(birth_periods):
-                panel = tuple(np.asarray(arr[ci]) for arr in results)
-                panels[edu_type][int(b)] = panel
-                # Populate _birth_sim_cache for consistency with individual path
-                cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci])
-                self._birth_sim_cache[cache_key] = panel
+            for chunk_start in range(0, n_cohorts, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, n_cohorts)
+                chunk_actual = chunk_end - chunk_start
+
+                # Pad last chunk to keep shape static (same JIT-compiled kernel reused)
+                if chunk_actual < chunk_size:
+                    pad = chunk_size - chunk_actual
+                    idx = jnp.array(list(range(chunk_start, chunk_end)) + [chunk_end - 1] * pad)
+                else:
+                    idx = jnp.arange(chunk_start, chunk_end)
+
+                def s(arr):
+                    return arr[idx]
+
+                (ca_pol, cc_pol, cl_pol,
+                 cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
+                 ckeys,
+                 ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr) = (s(a) for a in per_cohort_arrs)
+
+                chunk_results = _simulate_lifecycle_jax_batched(
+                    ca_pol, cc_pol, cl_pol,
+                    ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                    ref.P_y_2d, ref.P_h,
+                    cw, cwret,
+                    ctau_c, ctau_l, ctau_p, ctau_k,
+                    cr, cpen,
+                    ref.ui_replacement_rate, ref.kappa,
+                    ref.retirement_age, ref.T, ref.current_age,
+                    n_sim, ckeys,
+                    ci_a, ci_y, ci_h, ci_y_last,
+                    cavg, cn_yr,
+                    ref.pension_min_floor, ref.tax_progressive,
+                    ref.tax_kappa_hsv, ref.tax_eta,
+                    ref.P_y_age_health, P_y_4d_sim,
+                    ref.survival_probs,
+                )
+
+                # Store only actual (non-padded) cohorts
+                for ci_local in range(chunk_actual):
+                    ci = chunk_start + ci_local
+                    b = birth_periods[ci]
+                    panel = tuple(np.asarray(arr[ci_local]) for arr in chunk_results)
+                    panels[edu_type][int(b)] = panel
+                    cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci])
+                    self._birth_sim_cache[cache_key] = panel
 
         return panels
 
@@ -732,10 +773,11 @@ class OLGTransition:
 
         self.cohort_sizes_path = cohort_sizes_path
 
-    def solve_cohort_problems(self, r_path, w_path, 
-                          tau_c_path=None, tau_l_path=None, 
+    def solve_cohort_problems(self, r_path, w_path,
+                          tau_c_path=None, tau_l_path=None,
                           tau_p_path=None, tau_k_path=None,
                           pension_replacement_path=None,
+                          bequest_lumpsum_path=None,
                           verbose=False):
         """
         Solve lifecycle problems for all cohorts given full price paths.
@@ -836,6 +878,11 @@ class OLGTransition:
                 if _use_per_cohort_survival:
                     cohort_surv = self._cohort_survival_schedule(birth_period)
                     cohort_feature_kwargs['survival_probs'] = cohort_surv
+                bequest_ls = (
+                    float(bequest_lumpsum_path[birth_period])
+                    if bequest_lumpsum_path is not None and birth_period in bequest_lumpsum_path
+                    else 0.0
+                )
                 config = LifecycleConfig(
                     T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
                     education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
@@ -844,6 +891,7 @@ class OLGTransition:
                     tau_c_path=cohort_tau_c, tau_l_path=cohort_tau_l,
                     tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
                     pension_replacement_path=cohort_pension,
+                    bequest_lumpsum=bequest_ls,
                     **cohort_feature_kwargs,
                 )
                 
@@ -885,32 +933,15 @@ class OLGTransition:
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
 
-        # --- SET INITIAL CONDITIONS FOR COHORTS BORN BEFORE TRANSITION ---
-        # Cohorts with birth_period < 0 need steady-state initial conditions
+        # --- INITIAL CONDITIONS FOR OLD COHORTS ---
+        # Old cohorts (birth_period < 0) simulate from age 0 with a=0 and avg_earnings=0,
+        # exactly like new cohorts.  Their price path is padded with r_path[0] for ages
+        # 0…(k-1), so the correct SS policy functions apply during those years and the
+        # cohort arrives at age k (= calendar t=0) in the proper steady-state distribution.
+        # Setting initial conditions to SS values at age k (as was done previously) placed
+        # age-k wealth at age 0 of the simulation — wrong initial state, wrong trajectory,
+        # and constant aggregate cross-sections because all cohorts looked like the SS.
         if verbose: print("\n  Setting initial conditions for pre-transition cohorts...")
-        for edu_type in self.education_shares.keys():
-            for birth_period in range(-(self.T - 1), 0):
-                # Cohort born before transition: use steady-state initial conditions
-                cohort_age_at_transition = -birth_period  # How old they are when transition starts
-
-                # Get steady-state asset and earnings profiles
-                initial_assets = self.ss_asset_profiles[edu_type][cohort_age_at_transition]
-                initial_avg_earnings = self.ss_earnings_profiles[edu_type][cohort_age_at_transition]
-
-                # Update config with initial conditions
-                model = birth_cohort_solutions[edu_type][birth_period]
-                if self.use_initial_distribution and hasattr(self, 'ss_asset_distributions'):
-                    dist = self.ss_asset_distributions[edu_type][cohort_age_at_transition, :]
-                    model.config = model.config._replace(
-                        initial_assets=initial_assets,
-                        initial_avg_earnings=initial_avg_earnings,
-                        initial_asset_distribution=dist,
-                    )
-                else:
-                    model.config = model.config._replace(
-                        initial_assets=initial_assets,
-                        initial_avg_earnings=initial_avg_earnings,
-                    )
 
         if verbose:
             print("All cohort problems ready!")
@@ -1212,12 +1243,48 @@ class OLGTransition:
             "total_bequests": total_bequests,
         }
 
+    def _compute_bequest_lumpsum_path(self, n_sim: Optional[int] = None) -> dict:
+        """Compute per-capita after-tax bequest transfer for each birth period.
+
+        Returns a dict {birth_period: bequest_lumpsum} mapping each birth cohort
+        to the per-individual lump-sum transfer received at age 0.  Must be called
+        after simulate_transition() so that the cohort panel cache is populated.
+
+        The transfer at birth period b = (1 - tau_beq) * total_bequests(b) / newborn_cohort_weight(b),
+        where total_bequests(b) is the aggregate bequest pool at calendar time b (drawn from
+        all cohorts alive at b who die that period).
+        """
+        if n_sim is None:
+            n_sim = int(self._last_n_sim)
+        tau_beq = float(getattr(self.lifecycle_config, 'tau_beq', 0.0))
+        min_bp = 1 - self.T
+        max_bp = self.T_transition - 1
+        result = {}
+        for t in range(self.T_transition):
+            px = self._period_cross_section(t=t, n_sim=int(n_sim))
+            n_edu = len(px["education_types"])
+            total_bequests = 0.0
+            if 'bequest_by_age_edu' in px:
+                for edu_idx in range(n_edu):
+                    for age in range(self.T):
+                        weight = float(px["cohort_sizes_t"][age]) * float(px["education_shares_array"][edu_idx])
+                        total_bequests += weight * float(px["bequest_by_age_edu"][edu_idx, age])
+            after_tax_bequest = (1.0 - tau_beq) * total_bequests
+            # Newborn cohort weight at calendar time t (age=0)
+            newborn_weight = float(px["cohort_sizes_t"][0])
+            if newborn_weight > 0.0:
+                result[t] = after_tax_bequest / newborn_weight
+            else:
+                result[t] = 0.0
+        return result
+
     def simulate_transition(self, r_path, w_path=None,
                            tau_c_path=None, tau_l_path=None,
                            tau_p_path=None, tau_k_path=None,
                            pension_replacement_path=None,
                            n_sim=10000, verbose=True,
-                           pop_growth_path=None):
+                           pop_growth_path=None,
+                           bequest_lumpsum_path=None):
         """
         Simulate transition dynamics with exogenous interest rate path.
         
@@ -1314,6 +1381,7 @@ class OLGTransition:
             tau_p_path=tau_p_path_full,
             tau_k_path=tau_k_path_full,
             pension_replacement_path=pension_path_full,
+            bequest_lumpsum_path=bequest_lumpsum_path,
             verbose=verbose
         )
 
@@ -1918,7 +1986,7 @@ def run_fast_test(backend='numpy'):
                            filename='test_transition_dynamics.png')
     
     economy.plot_lifecycle_comparison(
-        birth_periods=[0, 5],
+        birth_periods=[0, 20],
         edu_type='medium',
         n_sim=None,  # reuse economy._last_n_sim (== N_SIM_TEST)
         save=True,
@@ -1956,7 +2024,10 @@ def run_full_simulation(backend='numpy'):
         n_y=2,
         n_h=2,
         retirement_age=30,
-        education_type='medium'
+        education_type='medium',
+        labor_supply=True,
+        nu=10.0,   # calibrated so FOC gives l≈0.1–0.3 for most agents (clamp l≤1 enforced)
+        phi=2.0,
     )
 
     economy = OLGTransition(
@@ -1970,8 +2041,9 @@ def run_full_simulation(backend='numpy'):
         education_shares={'low': 0.3, 'medium': 0.5, 'high': 0.2},
         output_dir='output',
         backend=backend,
+        jax_sim_chunk_size=10 if backend == 'jax' else None,
     )
-    
+
     T_transition = 60  # Longer transition period
     r_initial = 0.04
     r_final = 0.03
@@ -2012,7 +2084,7 @@ def run_full_simulation(backend='numpy'):
     
     for edu_type in ['low', 'medium', 'high']:
         economy.plot_lifecycle_comparison(
-            birth_periods=[0, 5],
+            birth_periods=[0, 20],
             edu_type=edu_type,
             n_sim=None,  # reuse economy._last_n_sim (== N_SIM_FULL)
             save=True,

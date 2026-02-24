@@ -130,7 +130,8 @@ class LifecycleConfig:
     survival_probs: Optional[np.ndarray] = None  # Shape (T, n_h), π(j,s). Default: all 1.0 (deterministic)
 
     # === Bequest taxation (Feature #16) ===
-    tau_beq: float = 0.0  # Tax rate on accidental bequests
+    tau_beq: float = 0.0        # Tax rate on accidental bequests
+    bequest_lumpsum: float = 0.0  # Per-capita after-tax bequest transfer received at age 0
 
     # === Progressive taxation (Feature #14) ===
     tax_progressive: bool = False        # Use HSV progressive schedule
@@ -272,6 +273,7 @@ class LifecycleModelPerfectForesight:
         self.tax_kappa = config.tax_kappa
         self.tax_eta = config.tax_eta
         self.transfer_floor = config.transfer_floor
+        self.bequest_lumpsum = config.bequest_lumpsum
         self.labor_supply = config.labor_supply
         self.nu = config.nu
         self.phi = config.phi
@@ -636,6 +638,10 @@ class LifecycleModelPerfectForesight:
 
         budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
 
+        # After-tax bequest lump-sum transfer received at age 0
+        if t == self.current_age and self.bequest_lumpsum > 0.0:
+            budget += self.bequest_lumpsum
+
         # Feature #4: schooling child costs
         if t < self.schooling_years:
             child_cost = (1 - self.education_subsidy_rate) * self.child_cost_profile[t]
@@ -700,7 +706,7 @@ class LifecycleModelPerfectForesight:
         if net_wage <= 0 or c <= 0:
             return 0.0
         l_star = (c ** (-self.gamma) * net_wage / self.nu) ** (1.0 / self.phi)
-        return max(l_star, 0.0)
+        return min(max(l_star, 0.0), 1.0)  # clamp to [0, 1] — time endowment is 1
 
     def _labor_disutility(self, l):
         """Compute labor disutility: ν · ℓ^(1+φ) / (1+φ)."""
@@ -764,12 +770,20 @@ class LifecycleModelPerfectForesight:
         if is_terminal:
             c = max(budget / (1 + tau_c_t), 1e-10)
             if self.labor_supply and not is_retired:
+                # Fixed-point iteration for terminal period (a'=0 pinned)
                 l = self._solve_labor_hours(c, w_t, y, h, tau_l_t, tau_p_t)
-                # Recompute budget with labor hours
-                _, _, _, budget = self._compute_budget(
-                    is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                    a, y, h, i_y, i_y_last, i_h, labor_hours=l)
-                c = max(budget / (1 + tau_c_t), 1e-10)
+                for _ in range(20):
+                    _, _, _, budget_l = self._compute_budget(
+                        is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                        a, y, h, i_y, i_y_last, i_h, labor_hours=l)
+                    c_new = max(budget_l / (1 + tau_c_t), 1e-10)
+                    l_new = self._solve_labor_hours(c_new, w_t, y, h, tau_l_t, tau_p_t)
+                    if abs(l_new - l) < 1e-10:
+                        l = l_new
+                        c = c_new
+                        break
+                    l = l_new
+                    c = c_new
                 val = self.utility(c, self.gamma) - self._labor_disutility(l)
             else:
                 l = 1.0
@@ -783,15 +797,29 @@ class LifecycleModelPerfectForesight:
 
         for i_a_next, a_next in enumerate(self.a_grid):
             if self.labor_supply and not is_retired:
-                # Iterative: guess c from budget with l=1, solve l from FOC, recompute budget
+                # Fixed-point iteration: l*(c*) and c*(l*) must be mutually consistent.
+                # Starting from l=1 overshoots c (budget too high) and undershoots l*.
+                # Iterate until convergence (typically 4–6 steps).
                 c_guess = (budget - a_next) / (1 + tau_c_t)
                 if c_guess <= 0:
                     continue
                 l = self._solve_labor_hours(c_guess, w_t, y, h, tau_l_t, tau_p_t)
-                _, _, _, budget_l = self._compute_budget(
-                    is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                    a, y, h, i_y, i_y_last, i_h, labor_hours=l)
-                c = (budget_l - a_next) / (1 + tau_c_t)
+                c = c_guess
+                for _ in range(20):
+                    _, _, _, budget_l = self._compute_budget(
+                        is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
+                        a, y, h, i_y, i_y_last, i_h, labor_hours=l)
+                    c_new = (budget_l - a_next) / (1 + tau_c_t)
+                    if c_new <= 0:
+                        c = -1.0
+                        break
+                    l_new = self._solve_labor_hours(c_new, w_t, y, h, tau_l_t, tau_p_t)
+                    if abs(l_new - l) < 1e-10:
+                        l = l_new
+                        c = c_new
+                        break
+                    l = l_new
+                    c = c_new
                 if c <= 0:
                     continue
             else:
@@ -984,7 +1012,12 @@ class LifecycleModelPerfectForesight:
                 
                 # Look up policy functions (before computing income quantities)
                 c_sim[t_sim, i] = self.c_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                l_sim[t_sim, i] = self.l_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                # Retired agents supply zero labor; l_policy stores 1.0 as a convention
+                # (harmless economically since y=0 for retired), but output 0 for plots.
+                if is_retired:
+                    l_sim[t_sim, i] = 0.0
+                else:
+                    l_sim[t_sim, i] = self.l_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
 
                 if is_retired:
                     # PENSION based on last working income state (y_last)
