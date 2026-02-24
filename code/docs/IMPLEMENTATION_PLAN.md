@@ -150,8 +150,8 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
 ### Feature #2 — Survival risk (stochastic mortality)
 
 - [x] Implement config + solve
-- [ ] Implement simulation (mortality draws, bequest tracking)
-- [ ] Implement OLG aggregation (mortality-weighted cohort sizes)
+- [x] Implement simulation (mortality draws, bequest tracking)
+- [x] Implement OLG aggregation (mortality-weighted cohort sizes)
 - [x] Test (NumPy)
 - [x] Test (JAX cross-validation)
 
@@ -169,7 +169,7 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
 ### Feature #16 — Bequest taxation
 
 - [x] Implement (config param `tau_beq` added)
-- [ ] Test (requires bequest aggregation in OLG, deferred to when simulation mortality is added)
+- [x] Test
 
 **Depends on:** Feature #2 (survival risk).
 

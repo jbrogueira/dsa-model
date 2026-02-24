@@ -1042,18 +1042,9 @@ class OLGTransition:
         n_edu = len(education_types)
         education_shares_array = np.array([self.education_shares[edu] for edu in education_types], dtype=float)
         cohort_sizes_t = self._cohort_weights(t)
-
-        # Feature #2: mortality-adjusted cohort weights
-        if self.lifecycle_config.survival_probs is not None:
-            surv = self.lifecycle_config.survival_probs  # (T, n_h)
-            mean_surv = np.mean(surv, axis=1)  # (T,)
-            cum_surv = np.ones(self.T)
-            for j in range(1, self.T):
-                cum_surv[j] = cum_surv[j - 1] * mean_surv[j - 1]
-            cohort_sizes_t = cohort_sizes_t * cum_surv
-            s = cohort_sizes_t.sum()
-            if s > 0:
-                cohort_sizes_t = cohort_sizes_t / s
+        # Mortality is already encoded in simulation arrays: dead agents have zero assets/income
+        # in all periods after death (NumPy: loop skips dead agents; JAX: jnp.where(alive, val, 0.0)).
+        # Multiplying cohort weights by cum_surv would double-count mortality, so no adjustment here.
 
         assets_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         labor_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
@@ -1895,18 +1886,20 @@ class OLGTransition:
 
 def get_test_config():
     """Return a minimal LifecycleConfig for fast testing."""
+    T, n_h = 20, 1
     config = LifecycleConfig(
-        T=20,
+        T=T,
         beta=0.99,
         gamma=1.0,
         n_a=100,
         n_y=2,
-        n_h=1,
+        n_h=n_h,
         retirement_age=15,
         education_type='medium',
         labor_supply=True,
         nu=1.0,
         phi=2.0,
+        survival_probs=np.linspace(0.995, 0.90, T).reshape(T, n_h),
     )
     return config
 
@@ -2016,18 +2009,23 @@ def run_full_simulation(backend='numpy'):
     print("RUNNING FULL SIMULATION")
     print("=" * 60)
 
+    _T, _n_h = 40, 2
+    _surv_base = np.linspace(0.995, 0.88, _T)           # baseline: 99.5% → 88% over lifecycle
+    _surv_good = np.clip(_surv_base + 0.01, 0.0, 1.0)   # healthy: 1 pp above baseline
+    _surv_bad  = np.clip(_surv_base - 0.01, 0.0, 1.0)   # unhealthy: 1 pp below baseline
     config = LifecycleConfig(
-        T=40,
+        T=_T,
         beta=0.99,
         gamma=2.0,
         n_a=100,
         n_y=2,
-        n_h=2,
+        n_h=_n_h,
         retirement_age=30,
         education_type='medium',
         labor_supply=True,
         nu=10.0,   # calibrated so FOC gives l≈0.1–0.3 for most agents (clamp l≤1 enforced)
         phi=2.0,
+        survival_probs=np.column_stack([_surv_good, _surv_bad]),  # (T, n_h)
     )
 
     economy = OLGTransition(
