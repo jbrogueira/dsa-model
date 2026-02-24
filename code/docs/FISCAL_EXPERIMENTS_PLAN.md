@@ -1,5 +1,8 @@
 # Implementation Plan: Fiscal Scenario Framework
 
+> **Status: Proposed — not yet implemented.**
+> `fiscal_experiments.py` and all classes described below (`FiscalScenario`, `FiscalScenarioResult`, `run_fiscal_scenario`) do not exist in the codebase. Feature A (bequest redistribution loop) is partially implemented via `bequest_lumpsum_path` in `OLGTransition` but the automated feedback loop described here is not. Feature B (fiscal scenario framework) has not been started.
+
 Covers two independent features:
 - **Feature A** — Bequest redistribution loop in `OLGTransition` (closes the currently open bequest circuit; independent of fiscal experiments)
 - **Feature B** — Fiscal Scenario Framework (`fiscal_experiments.py`) — computes budget-balanced transition paths under different financing regimes given exogenous policy shocks

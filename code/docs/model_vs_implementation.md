@@ -19,27 +19,10 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 - [ ] OLG aggregation: aggregate labor supply from simulation
 - [ ] Tests (NumPy + JAX cross-validation)
 
-### 2. Survival risk — `Partial`
+### 2. Survival risk — `Done`
 
 **Paper:** Stochastic survival `π(j,s)` depending on age and health. Enters the Bellman as `β·π_j(s)·E[V_{j+1}]`. Deceased agents' assets are taxed and redistributed.
-**Code:** Survival probs `(T, n_h)` affect backward induction in both NumPy and JAX solves. Config: `LifecycleConfig.survival_probs`. Agents still survive all T periods in simulation.
-
-**Remaining:**
-
-- [ ] **Simulation mortality draws** — Agents die stochastically during Monte Carlo forward simulation.
-  - `_simulate_sequential()`: draw `u ~ Uniform(0,1)` per agent per period; if `u > π(t, i_h)`, agent dies; freeze dead agents' rows; track `alive (T, n_sim)` and `death_age (n_sim,)`.
-  - `_agent_step_jax()` / `simulate_lifecycle_jax()`: third uniform draw alongside `u_y`, `u_h`; use `jnp.where(alive, new_state, frozen_state)`; carry `alive` flag in scan state.
-  - Output: `alive_sim (T, n_sim)`, `bequest_sim (n_sim,)` (assets at death).
-
-- [ ] **Accidental bequests** — Track total assets left by deceased agents each period.
-  - Compute `bequests_t = sum of a[i]` for agents who died in period t.
-  - In `OLGTransition`, aggregate bequests across cohorts and education types.
-  - Redistribute as lump-sum transfers to living agents (add to `_compute_budget()` as income), or add to government revenue via bequest tax (Feature #16).
-
-- [ ] **OLG aggregation with mortality weights** — Cross-sectional aggregation accounts for mortality-thinned cohorts.
-  - `_period_cross_section()`: replace `weight = cohort_sizes[age] * education_shares[edu]` with `weight *= cumulative_survival(age)`.
-  - Analytical approach: `cum_survival[j] = cum_survival[j-1] * mean(survival_probs[j-1, :])` — avoids MC noise in weights.
-  - Impact: older cohorts get smaller weight → less K, less L from old agents → changes aggregates.
+**Code:** Survival probs `(T, n_h)` affect backward induction in both NumPy and JAX solves. Config: `LifecycleConfig.survival_probs`. Simulation mortality draws are performed in `_simulate_sequential()` via Uniform draws against `π(t, i_h)`; dead agents' rows are frozen and tracked via `alive_sim (T, n_sim)` and `bequest_sim (n_sim,)` in the 21-tuple output. OLG aggregation uses mortality-weighted cohort sizes via `_build_population_weights()` and `_cohort_survival_schedule()` in `OLGTransition`.
 
 ### 3. Human capital — `Done` (merged into #5)
 
@@ -120,13 +103,10 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 ### 16. Bequest taxation — `Partial`
 
 **Paper:** `τ^beq` on assets of deceased, redistributed lump-sum.
-**Code:** Config field `LifecycleConfig.tau_beq` exists (default 0.0) but has no effect — requires simulation mortality (Feature #2) to generate bequests.
+**Code:** Config field `LifecycleConfig.tau_beq` exists (default 0.0). Simulation mortality (Feature #2) is now done — `bequest_sim (n_sim,)` tracks assets at death. `OLGTransition` exposes `bequest_lumpsum_path` as a pass-through parameter to lifecycle configs (`solve_cohort_problems()`, `_compute_bequest_lumpsum_path()`). The feedback loop — computing total bequests from simulation, applying `tau_beq`, and re-injecting the net transfer — is not yet automated.
 
 **Remaining:**
-- [ ] Wire up `tau_beq` in `compute_government_budget()` after simulation mortality is implemented
-  - `bequest_tax_revenue = tau_beq * total_bequests_t`
-  - Net bequests after tax: `(1 - tau_beq) * total_bequests_t` redistributed to living agents
-  - Budget dict gains `"bequest_tax"` revenue field, `"bequest_transfers"` spending field
+- [ ] Wire up `tau_beq` in `compute_government_budget()`: compute `bequest_tax_revenue = tau_beq * total_bequests_t`, redistribute `(1 - tau_beq) * total_bequests_t` to living agents via `bequest_lumpsum_path`, add `"bequest_tax"` and `"bequest_transfers"` fields to the budget dict
 
 ### 17. Government spending on goods — `Done`
 
@@ -187,7 +167,7 @@ Cohort born at time `s` faces lifecycle survival schedule: `π_s(j, h) = π(s + 
 | # | Feature | Status |
 |---|---------|--------|
 | 1 | Labor supply | Partial — NumPy solve done, JAX + simulation + aggregation remaining |
-| 2 | Survival risk | Partial — solve done, simulation mortality + bequests + OLG weights remaining |
+| 2 | Survival risk | Done |
 | 3 | Human capital | Done (merged into #5) |
 | 4 | Schooling/children | Done |
 | 5 | Income process conditioning | Done |

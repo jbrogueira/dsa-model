@@ -8,7 +8,7 @@ Overlapping Generations (OLG) model simulating demographic and policy transition
 olg_transition.py              # Entry point - OLG transition simulation
 lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices (NumPy)
 lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simulate)
-test_olg_transition.py         # Pytest tests (83 tests, incl. 15 JAX cross-validation)
+test_olg_transition.py         # Pytest tests (83 tests, incl. 12 JAX tests, 7 cross-validation)
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 ```
 
