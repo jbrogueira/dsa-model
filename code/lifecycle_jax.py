@@ -44,6 +44,26 @@ def solve_labor_hours_jax(c, net_wage, nu, phi, gamma):
     return jnp.clip(l, 0.0, 1.0)  # time endowment is 1
 
 
+def newton_labor_jax(c_guess, net_wage_nd, nu, phi, gamma, tau_c_t, n_iters=2):
+    """Newton's method on F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0
+    where c(l) = c_guess + net_wage · (l - 1) / (1 + τ_c).
+
+    Converges quadratically; 2 iterations suffice for typical parameters.
+    c_guess and net_wage_nd must be broadcast-compatible.
+    """
+    dc_dl = net_wage_nd / (1.0 + tau_c_t)
+    exponent = gamma / phi
+    A_l = (jnp.maximum(net_wage_nd, 0.0) / nu) ** (1.0 / phi)
+    l = solve_labor_hours_jax(jnp.maximum(c_guess, 1e-10), net_wage_nd, nu, phi, gamma)
+    for _ in range(n_iters):
+        c_l = jnp.maximum(c_guess + net_wage_nd * (l - 1.0) / (1.0 + tau_c_t), 1e-10)
+        l_foc = A_l * c_l ** (-exponent)
+        F = l - l_foc
+        Fp = 1.0 + exponent * (l_foc / c_l) * dc_dl
+        l = jnp.clip(l - F / Fp, 0.0, 1.0)
+    return l
+
+
 def labor_disutility_jax(l, nu, phi):
     """nu * l^(1+phi) / (1+phi)"""
     return nu * l ** (1 + phi) / (1 + phi)
@@ -216,18 +236,11 @@ def solve_period_jax(V_next, period_params, model_params):
     tau_eff = jnp.where(tax_progressive, tau_p_t, tau_l_t + tau_p_t)
     net_wage_5d = effective_wage * (1.0 - tau_eff)  # (1, n_y, n_h, 1, 1)
 
-    # l_star from FOC: fixed-point iteration between l and c.
-    # Starting from c_all(l=1) overshoots c and undershoots l*.  Iterate to convergence.
+    # l_star via Newton on F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0.
+    # Converges quadratically in 2 iterations vs 5 for fixed-point.
     is_unemployed_5d = (y_5d == 0.0)                # (1, n_y, 1, 1, 1)
-    l_star = solve_labor_hours_jax(jnp.maximum(c_all, 1e-10), net_wage_5d, nu, phi, gamma)
+    l_star = newton_labor_jax(c_all, net_wage_5d, nu, phi, gamma, tau_c_t)
     l_star = jnp.where(is_unemployed_5d | is_retired, 1.0, l_star)
-    for _ in range(5):
-        delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
-        delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
-        c_iter = (budget[..., None] + delta_budget - a_next) / (1.0 + tau_c_t)
-        l_new = solve_labor_hours_jax(jnp.maximum(c_iter, 1e-10), net_wage_5d, nu, phi, gamma)
-        l_new = jnp.where(is_unemployed_5d | is_retired, 1.0, l_new)
-        l_star = l_new
 
     # When not labor_supply, delta=0 and l=1
     delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
@@ -335,16 +348,9 @@ def _solve_terminal_period_jax(
     net_wage_4d = effective_wage * (1.0 - tau_eff)
 
     is_unemployed_4d = (y_4d == 0.0)
-    l_star = solve_labor_hours_jax(c, net_wage_4d, nu, phi, gamma)
+    # Newton on F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0; terminal: a'=0.
+    l_star = newton_labor_jax(c, net_wage_4d, nu, phi, gamma, tau_c_T)
     l_star = jnp.where(is_unemployed_4d | is_retired_T, 1.0, l_star)
-    # Fixed-point iteration: terminal period has a'=0, so iterate l ↔ c
-    for _ in range(5):
-        delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
-        delta_budget_it = jnp.where(labor_supply, delta_budget, 0.0)
-        c_iter = jnp.maximum((budget + delta_budget_it) / (1.0 + tau_c_T), 1e-10)
-        l_new = solve_labor_hours_jax(c_iter, net_wage_4d, nu, phi, gamma)
-        l_new = jnp.where(is_unemployed_4d | is_retired_T, 1.0, l_new)
-        l_star = l_new
     l_pol = jnp.where(labor_supply, l_star, 1.0)
 
     # Final budget and consumption with converged labor hours

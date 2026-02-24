@@ -708,6 +708,33 @@ class LifecycleModelPerfectForesight:
         l_star = (c ** (-self.gamma) * net_wage / self.nu) ** (1.0 / self.phi)
         return min(max(l_star, 0.0), 1.0)  # clamp to [0, 1] — time endowment is 1
 
+    def _solve_labor_newton(self, c_guess, w_t, y, h, tau_l_t, tau_p_t, tau_c_t, n_iters=3):
+        """Solve for mutually consistent (c*, l*) via Newton's method on
+        F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0
+        where c(l) = c_guess + net_wage · (l - 1) / (1 + τ_c).
+
+        Newton converges quadratically; 2–3 iterations suffice.
+        Returns (c*, l*).
+        """
+        if y <= 0:
+            return c_guess, 1.0
+        tau_eff = tau_p_t if self.tax_progressive else tau_l_t + tau_p_t
+        net_wage = w_t * y * h * (1.0 - tau_eff)
+        if net_wage <= 0.0 or c_guess <= 0.0:
+            return c_guess, 1.0
+        dc_dl = net_wage / (1.0 + tau_c_t)
+        exponent = self.gamma / self.phi
+        A_l = (net_wage / self.nu) ** (1.0 / self.phi)
+        l = min(max(A_l * max(c_guess, 1e-10) ** (-exponent), 0.0), 1.0)
+        for _ in range(n_iters):
+            c_l = max(c_guess + net_wage * (l - 1.0) / (1.0 + tau_c_t), 1e-10)
+            l_foc = A_l * c_l ** (-exponent)
+            F = l - l_foc
+            Fp = 1.0 + exponent * (l_foc / c_l) * dc_dl
+            l = min(max(l - F / Fp, 0.0), 1.0)
+        c = max(c_guess + net_wage * (l - 1.0) / (1.0 + tau_c_t), 1e-10)
+        return c, l
+
     def _labor_disutility(self, l):
         """Compute labor disutility: ν · ℓ^(1+φ) / (1+φ)."""
         if not self.labor_supply or l <= 0:
@@ -768,24 +795,12 @@ class LifecycleModelPerfectForesight:
             a, y, h, i_y, i_y_last, i_h)
 
         if is_terminal:
-            c = max(budget / (1 + tau_c_t), 1e-10)
+            c_guess = max(budget / (1 + tau_c_t), 1e-10)
             if self.labor_supply and not is_retired:
-                # Fixed-point iteration for terminal period (a'=0 pinned)
-                l = self._solve_labor_hours(c, w_t, y, h, tau_l_t, tau_p_t)
-                for _ in range(20):
-                    _, _, _, budget_l = self._compute_budget(
-                        is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                        a, y, h, i_y, i_y_last, i_h, labor_hours=l)
-                    c_new = max(budget_l / (1 + tau_c_t), 1e-10)
-                    l_new = self._solve_labor_hours(c_new, w_t, y, h, tau_l_t, tau_p_t)
-                    if abs(l_new - l) < 1e-10:
-                        l = l_new
-                        c = c_new
-                        break
-                    l = l_new
-                    c = c_new
+                c, l = self._solve_labor_newton(c_guess, w_t, y, h, tau_l_t, tau_p_t, tau_c_t)
                 val = self.utility(c, self.gamma) - self._labor_disutility(l)
             else:
+                c = c_guess
                 l = 1.0
                 val = self.utility(c, self.gamma)
             return val, 0, c, l
@@ -797,31 +812,10 @@ class LifecycleModelPerfectForesight:
 
         for i_a_next, a_next in enumerate(self.a_grid):
             if self.labor_supply and not is_retired:
-                # Fixed-point iteration: l*(c*) and c*(l*) must be mutually consistent.
-                # Starting from l=1 overshoots c (budget too high) and undershoots l*.
-                # Iterate until convergence (typically 4–6 steps).
                 c_guess = (budget - a_next) / (1 + tau_c_t)
                 if c_guess <= 0:
                     continue
-                l = self._solve_labor_hours(c_guess, w_t, y, h, tau_l_t, tau_p_t)
-                c = c_guess
-                for _ in range(20):
-                    _, _, _, budget_l = self._compute_budget(
-                        is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
-                        a, y, h, i_y, i_y_last, i_h, labor_hours=l)
-                    c_new = (budget_l - a_next) / (1 + tau_c_t)
-                    if c_new <= 0:
-                        c = -1.0
-                        break
-                    l_new = self._solve_labor_hours(c_new, w_t, y, h, tau_l_t, tau_p_t)
-                    if abs(l_new - l) < 1e-10:
-                        l = l_new
-                        c = c_new
-                        break
-                    l = l_new
-                    c = c_new
-                if c <= 0:
-                    continue
+                c, l = self._solve_labor_newton(c_guess, w_t, y, h, tau_l_t, tau_p_t, tau_c_t)
             else:
                 l = 1.0
                 c = (budget - a_next) / (1 + tau_c_t)
