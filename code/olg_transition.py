@@ -2009,18 +2009,18 @@ def run_full_simulation(backend='numpy'):
     print("RUNNING FULL SIMULATION")
     print("=" * 60)
 
-    # Lifecycle: age 20–99 (80 annual periods). Retirement at 65 = period 45.
-    _T, _n_h = 80, 2
+    # Lifecycle: age 20–79 (60 annual periods). Retirement at 70 = period 50.
+    _T, _n_h = 60, 2
 
-    # Survival probabilities π(j, h): piecewise linear, ages 20–99
+    # Survival probabilities π(j, h): piecewise linear, ages 20–79
     #   Ages 20–39 (j=0–19):  low mortality, 99.9% → 99.5%
     #   Ages 40–64 (j=20–44): slowly declining, 99.5% → 97.0%
-    #   Ages 65–99 (j=45–79): steeper decline, 97.0% → 80.0%
+    #   Ages 65–79 (j=45–59): steeper decline, 97.0% → 88.0%
     _surv_base = np.concatenate([
         np.linspace(0.999, 0.995, 20),
         np.linspace(0.995, 0.970, 25),
-        np.linspace(0.970, 0.800, 35),
-    ])                                                       # shape (80,)
+        np.linspace(0.970, 0.880, 15),
+    ])                                                       # shape (60,)
     _surv_good = np.clip(_surv_base + 0.005, 0.0, 1.0)      # healthy: +0.5 pp
     _surv_bad  = np.clip(_surv_base - 0.005, 0.0, 1.0)      # unhealthy: -0.5 pp
 
@@ -2031,12 +2031,12 @@ def run_full_simulation(backend='numpy'):
         n_a=100,
         n_y=2,
         n_h=_n_h,
-        retirement_age=45,   # age 65 = period 45 (age 20 + 45)
+        retirement_age=50,   # age 70 = period 50 (age 20 + 50)
         education_type='medium',
         labor_supply=True,
         nu=10.0,   # calibrated so FOC gives l≈0.1–0.3 for most agents (clamp l≤1 enforced)
         phi=2.0,
-        survival_probs=np.column_stack([_surv_good, _surv_bad]),  # (80, 2)
+        survival_probs=np.column_stack([_surv_good, _surv_bad]),  # (60, 2)
     )
 
     economy = OLGTransition(
@@ -2053,7 +2053,7 @@ def run_full_simulation(backend='numpy'):
         jax_sim_chunk_size=10 if backend == 'jax' else None,
     )
 
-    T_transition = 100   # ≥ one full lifecycle (T=80), ensures all cohorts complete
+    T_transition = 80    # > one full lifecycle (T=60), ensures cohorts born early complete
     r_initial = 0.04
     r_final = 0.03
 
@@ -2092,7 +2092,7 @@ def run_full_simulation(backend='numpy'):
     
     for edu_type in ['low', 'medium', 'high']:
         economy.plot_lifecycle_comparison(
-            birth_periods=[0, 40],   # cohort born at t=0 vs t=40 (mid-transition)
+            birth_periods=[0, 30],   # cohort born at t=0 vs t=30 (mid-transition)
             edu_type=edu_type,
             n_sim=None,  # reuse economy._last_n_sim (== N_SIM_FULL)
             save=True,
