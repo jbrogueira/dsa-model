@@ -41,9 +41,10 @@ python olg_transition.py --test
 # Fast test mode (JAX backend)
 python olg_transition.py --test --backend jax
 
-# Full simulation
+# Full simulation (recompute_bequests=True by default)
 python olg_transition.py
 python olg_transition.py --backend jax
+python olg_transition.py --no-recompute-bequests   # skip bequest loop (open circuit)
 
 # Lifecycle standalone tests
 python lifecycle_perfect_foresight.py --test
@@ -101,7 +102,7 @@ pytest test_olg_transition.py -v
 - Net foreign assets accounting (NFA) in SOE mode
 - Pension trust fund (`S_pens_initial` in OLGTransition)
 - Defense spending (`defense_spending_path` in OLGTransition)
-- Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge
+- Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge; production CLI defaults to `True`, test CLI defaults to `False` (opt-in via `--recompute-bequests`)
 - Bequest taxation with revenue accounting (`tau_beq` in OLGTransition budget)
 - Simulation mortality draws with bequest tracking (`alive_sim`, `bequest_sim` — 21-tuple output)
 - Population aging: fertility path + longevity improvement (`fertility_path`, `survival_improvement_rate` in OLGTransition)

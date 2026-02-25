@@ -2051,7 +2051,7 @@ def run_fast_test(backend='numpy', recompute_bequests=False):
     return economy, results
 
 
-def run_full_simulation(backend='numpy'):
+def run_full_simulation(backend='numpy', recompute_bequests=True):
     """Run full OLG transition simulation."""
     # Single MC knob for this run
     N_SIM_FULL = 15000
@@ -2134,6 +2134,7 @@ def run_full_simulation(backend='numpy'):
         n_sim=N_SIM_FULL,  # <-- single knob
         verbose=True,
         pop_growth_path=pop_growth_path,
+        recompute_bequests=recompute_bequests,
     )
     end = time.time()
     
@@ -2178,7 +2179,8 @@ def main():
         recompute_bequests = '--recompute-bequests' in sys.argv
         economy, results = run_fast_test(backend=backend, recompute_bequests=recompute_bequests)
     else:
-        economy, results = run_full_simulation(backend=backend)
+        recompute_bequests = '--no-recompute-bequests' not in sys.argv
+        economy, results = run_full_simulation(backend=backend, recompute_bequests=recompute_bequests)
 
     return economy, results
 

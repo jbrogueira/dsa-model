@@ -454,6 +454,10 @@ def debt_fan_chart(
 
 **Note:** A4 tests landed in `test_fiscal_experiments.py` (not `test_olg_transition.py` as originally planned) — `TestBequestLoop` class covers all four A4 test cases.
 
+**Note (post-implementation):** CLI wiring added to `olg_transition.py`:
+- `run_full_simulation()` defaults to `recompute_bequests=True`; pass `--no-recompute-bequests` to disable.
+- `run_fast_test()` defaults to `recompute_bequests=False`; pass `--recompute-bequests` to enable.
+
 ---
 
 ## Testing Strategy
