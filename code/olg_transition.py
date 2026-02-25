@@ -1275,7 +1275,10 @@ class OLGTransition:
                            pension_replacement_path=None,
                            n_sim=10000, verbose=True,
                            pop_growth_path=None,
-                           bequest_lumpsum_path=None):
+                           bequest_lumpsum_path=None,
+                           recompute_bequests=False,
+                           bequest_tol=1e-4,
+                           max_bequest_iters=5):
         """
         Simulate transition dynamics with exogenous interest rate path.
         
@@ -1364,20 +1367,67 @@ class OLGTransition:
         self._period_cache = {}
         self._cohort_panel_cache = {}
 
-        # Solve all cohort problems with perfect foresight of r and w
-        self.solve_cohort_problems(
-            r_path_full, w_path_full,
-            tau_c_path=tau_c_path_full,
-            tau_l_path=tau_l_path_full,
-            tau_p_path=tau_p_path_full,
-            tau_k_path=tau_k_path_full,
-            pension_replacement_path=pension_path_full,
-            bequest_lumpsum_path=bequest_lumpsum_path,
-            verbose=verbose
+        # Feature A: Bequest redistribution loop (closed-circuit bequests)
+        # When recompute_bequests=True and survival_probs is set, iterate until
+        # the bequest transfer received by newborns matches the bequests generated
+        # by dying agents.  Convergence is fast (1-2 iterations) because bequests
+        # are a small fraction of newborn wealth.
+        # When survival_probs is None the loop exits after one pass with zero
+        # transfers — fully backward compatible.
+        _do_bequest_loop = (
+            recompute_bequests
+            and self.lifecycle_config.survival_probs is not None
         )
-
-        # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
-        self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
+        if _do_bequest_loop:
+            current_bequest_path = bequest_lumpsum_path  # caller value as initial guess
+            self._bequest_converged = False
+            self._bequest_iter_count = 0
+            for _bequest_iter in range(max_bequest_iters):
+                self._bequest_iter_count = _bequest_iter + 1
+                self.solve_cohort_problems(
+                    r_path_full, w_path_full,
+                    tau_c_path=tau_c_path_full,
+                    tau_l_path=tau_l_path_full,
+                    tau_p_path=tau_p_path_full,
+                    tau_k_path=tau_k_path_full,
+                    pension_replacement_path=pension_path_full,
+                    bequest_lumpsum_path=current_bequest_path,
+                    verbose=False,
+                )
+                self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=False)
+                new_bequest_path = self._compute_bequest_lumpsum_path(n_sim=int(n_sim))
+                old_vals = (
+                    np.array([current_bequest_path.get(t, 0.0) for t in range(self.T_transition)])
+                    if current_bequest_path is not None
+                    else np.zeros(self.T_transition)
+                )
+                new_vals = np.array([new_bequest_path.get(t, 0.0) for t in range(self.T_transition)])
+                if np.max(np.abs(new_vals - old_vals)) < bequest_tol:
+                    current_bequest_path = new_bequest_path
+                    self._bequest_converged = True
+                    break
+                current_bequest_path = new_bequest_path
+            # cohort panel cache is up to date from the last loop iteration
+            bequest_lumpsum_path = current_bequest_path
+            if verbose:
+                status = "converged" if self._bequest_converged else "did not converge"
+                print(f"\nBequest loop {status} in {self._bequest_iter_count} iteration(s).")
+        else:
+            self._bequest_converged = True
+            self._bequest_iter_count = 0
+            # Solve all cohort problems with perfect foresight of r and w
+            self.solve_cohort_problems(
+                r_path_full, w_path_full,
+                tau_c_path=tau_c_path_full,
+                tau_l_path=tau_l_path_full,
+                tau_p_path=tau_p_path_full,
+                tau_k_path=tau_k_path_full,
+                pension_replacement_path=pension_path_full,
+                bequest_lumpsum_path=bequest_lumpsum_path,
+                verbose=verbose
+            )
+            # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
+            self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
 
         # Feature #21: Build population weights from fertility + survival
         if self.fertility_path is not None or self.survival_improvement_rate != 0.0:
@@ -1904,7 +1954,7 @@ def get_test_config():
     return config
 
 
-def run_fast_test(backend='numpy'):
+def run_fast_test(backend='numpy', recompute_bequests=False):
     """Run OLG transition with minimal parameters for fast testing."""
     # Single MC knob for this run
     N_SIM_TEST = 100
@@ -1966,7 +2016,8 @@ def run_fast_test(backend='numpy'):
         pension_replacement_path=pension_replacement_path,
         n_sim=N_SIM_TEST,  # <-- single knob
         pop_growth_path=pop_growth_path,
-        verbose=True
+        verbose=True,
+        recompute_bequests=recompute_bequests,
     )
     end = time.time()
     
@@ -2124,7 +2175,8 @@ def main():
         print(f"Using backend: {backend}")
 
     if '--test' in sys.argv:
-        economy, results = run_fast_test(backend=backend)
+        recompute_bequests = '--recompute-bequests' in sys.argv
+        economy, results = run_fast_test(backend=backend, recompute_bequests=recompute_bequests)
     else:
         economy, results = run_full_simulation(backend=backend)
 

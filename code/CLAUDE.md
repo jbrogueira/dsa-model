@@ -8,7 +8,9 @@ Overlapping Generations (OLG) model simulating demographic and policy transition
 olg_transition.py              # Entry point - OLG transition simulation
 lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices (NumPy)
 lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simulate)
+fiscal_experiments.py          # Fiscal scenario framework (debt/tax/NFA-constrained experiments)
 test_olg_transition.py         # Pytest tests (83 tests, incl. 12 JAX tests, 7 cross-validation)
+test_fiscal_experiments.py     # Pytest tests for fiscal experiments (39 tests)
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 ```
 
@@ -57,6 +59,8 @@ pytest test_olg_transition.py -v
 - `LifecycleModelPerfectForesight`: Solves individual lifecycle problem via backward induction (NumPy/Numba)
 - `LifecycleModelJAX`: JAX-accelerated lifecycle model. Same interface, vectorized solve via `jax.lax.scan`, simulation via `jax.vmap`
 - `LifecycleConfig`: Configuration dataclass for lifecycle parameters
+- `FiscalScenario` (`fiscal_experiments.py`): dataclass specifying a policy shock, financing instrument, and budget balance condition
+- `FiscalScenarioResult` (`fiscal_experiments.py`): dataclass holding baseline + counterfactual macro/budget paths, debt path, NFA/CA paths, and convergence info
 
 ## Key Methods
 
@@ -68,6 +72,10 @@ pytest test_olg_transition.py -v
 - `_survival_prob()`: Returns survival probability π(j,s), or 1.0 if no survival risk.
 - `_solve_labor_hours()`: FOC-based optimal labor hours given consumption and wages.
 - `_print_income_diagnostics()`: Verbose income process diagnostics (called from `__init__` when `verbose=True`).
+- `simulate_transition()`: Accepts `recompute_bequests=False`, `bequest_tol=1e-4`, `max_bequest_iters=5` — runs a fixed-point bequest loop when `recompute_bequests=True` and `survival_probs` is set; stores `_bequest_converged` and `_bequest_iter_count` on `self`.
+- `run_fiscal_scenario()` (`fiscal_experiments.py`): dispatcher — runs baseline + counterfactual via Type A/B/C experiment.
+- `run_debt_financed()` / `run_tax_financed()` / `run_nfa_constrained()` (`fiscal_experiments.py`): Type A (one sim), Type B (bisection on scalar Δτ), Type C (Mode I: shock scale bisect; Mode II: tax rate bisect for NFA feasibility).
+- `compare_scenarios()` / `fiscal_multiplier()` / `debt_fan_chart()` (`fiscal_experiments.py`): output utilities for plotting and multiplier calculation.
 
 ## Model Features
 
@@ -93,6 +101,7 @@ pytest test_olg_transition.py -v
 - Net foreign assets accounting (NFA) in SOE mode
 - Pension trust fund (`S_pens_initial` in OLGTransition)
 - Defense spending (`defense_spending_path` in OLGTransition)
+- Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge
 - Bequest taxation with revenue accounting (`tau_beq` in OLGTransition budget)
 - Simulation mortality draws with bequest tracking (`alive_sim`, `bequest_sim` — 21-tuple output)
 - Population aging: fertility path + longevity improvement (`fertility_path`, `survival_improvement_rate` in OLGTransition)
@@ -114,6 +123,7 @@ pytest test_olg_transition.py -v
 - Output plots saved to `output/` directory
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
+- Fiscal G/I_g shocks use mutate+restore: temporarily overwrite `olg.govt_spending_path`/`olg.I_g_path` before `simulate_transition()`, restore with `try/finally` — safe for both numpy and JAX backends
 
 ## JAX Backend
 

@@ -15,7 +15,7 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | Phase | Features | Status |
 |-------|----------|--------|
 | 1 | #11, #17, #20 | **Done** |
-| 2 | #3+#5, #2, #16 | **Partial** — #2 solve done, simulation mortality + bequests + OLG weights remaining; #16 config only |
+| 2 | #3+#5, #2, #16 | **Done** |
 | 3 | #14, #15 | **Done** |
 | 4 | #1, #6, #7 | **Partial** — #1 done, #6 done; #7 tests remaining |
 | 5 | #4 | **Done** |

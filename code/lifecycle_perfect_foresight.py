@@ -22,7 +22,7 @@ class LifecycleConfig:
     # === Retirement parameters ===
     retirement_age: int = 45             # Mandatory retirement age (period index, e.g., 45 = age 65)
     pension_replacement_path: Optional[np.ndarray] = None  # Pension replacement rate path (fraction of avg earnings)
-    pension_replacement_default: float = 0.80  # Default pension replacement rate (60% of avg earnings)
+    pension_replacement_default: float = 0.80  # Default pension replacement rate (80% of last working income)
     pension_min_floor: float = 0.0       # Minimum pension floor (Feature #11)
     
     # === Asset grid parameters ===

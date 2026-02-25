@@ -1,7 +1,7 @@
 # Implementation Plan: Fiscal Scenario Framework
 
-> **Status: Proposed — not yet implemented.**
-> `fiscal_experiments.py` and all classes described below (`FiscalScenario`, `FiscalScenarioResult`, `run_fiscal_scenario`) do not exist in the codebase. Feature A (bequest redistribution loop) is partially implemented via `bequest_lumpsum_path` in `OLGTransition` but the automated feedback loop described here is not. Feature B (fiscal scenario framework) has not been started.
+> **Status: Implemented.**
+> `fiscal_experiments.py` exists with full implementation of `FiscalScenario`, `FiscalScenarioResult`, `run_fiscal_scenario`, `run_debt_financed`, `run_tax_financed`, `run_nfa_constrained`, `compare_scenarios`, `fiscal_multiplier`, and `debt_fan_chart`. Feature A (bequest redistribution loop) is implemented in `OLGTransition.simulate_transition()` via `recompute_bequests=True`. Feature B (fiscal scenario framework) is fully implemented in `fiscal_experiments.py` (955 lines, 39 tests in `test_fiscal_experiments.py`).
 
 Covers two independent features:
 - **Feature A** — Bequest redistribution loop in `OLGTransition` (closes the currently open bequest circuit; independent of fiscal experiments)
@@ -429,30 +429,30 @@ def debt_fan_chart(
 
 ### Feature A (bequest loop in `OLGTransition`)
 
-| Step | Change | File |
-|---|---|---|
-| A1 | Add `recompute_bequests`, `bequest_tol`, `max_bequest_iters` to `simulate_transition()` signature | `olg_transition.py` |
-| A2 | Add bequest fixed-point loop inside `simulate_transition()`, guarded by `recompute_bequests and survival_probs is not None` | `olg_transition.py` |
-| A3 | Store `_bequest_iter_count` and `_bequest_converged` on `self` for diagnostics | `olg_transition.py` |
-| A4 | Tests: backward compatibility, convergence, budget identity, newborn wealth shift | `test_olg_transition.py` |
+| Step | Change | File | Done |
+|---|---|---|---|
+| A1 | Add `recompute_bequests`, `bequest_tol`, `max_bequest_iters` to `simulate_transition()` signature | `olg_transition.py` | ✓ |
+| A2 | Add bequest fixed-point loop inside `simulate_transition()`, guarded by `recompute_bequests and survival_probs is not None` | `olg_transition.py` | ✓ |
+| A3 | Store `_bequest_iter_count` and `_bequest_converged` on `self` for diagnostics | `olg_transition.py` | ✓ |
+| A4 | Tests: backward compatibility, convergence, budget identity, newborn wealth shift | `test_fiscal_experiments.py` | ✓ |
 
 ### Feature B (fiscal experiments)
 
-| Step | Change | File |
-|---|---|---|
-| B1 | `FiscalScenario` and `FiscalScenarioResult` dataclasses | `fiscal_experiments.py` (new) |
-| B2 | Adjustment profile helpers (`uniform_profile`, `linear_phase_in`, etc.) | `fiscal_experiments.py` |
-| B3 | `compute_debt_path()` standalone utility | `fiscal_experiments.py` |
-| B4 | `_balance_residual()` — maps `(budget_path, Y_path, B_path, scenario)` to scalar | `fiscal_experiments.py` |
-| B5 | `_apply_shock()` — builds counterfactual policy paths from base + scenario deltas | `fiscal_experiments.py` |
-| B6 | `run_debt_financed()` — 1 simulate call + debt accumulation | `fiscal_experiments.py` |
-| B7 | `run_tax_financed()` — bisection loop; handles all 3 balance conditions | `fiscal_experiments.py` |
-| B8 | `run_nfa_constrained()` — outer NFA/CA check + bisection (Mode I and II) | `fiscal_experiments.py` |
-| B9 | `run_fiscal_scenario()` — dispatcher | `fiscal_experiments.py` |
-| B10 | `compare_scenarios()`, `fiscal_multiplier()`, `debt_fan_chart()` | `fiscal_experiments.py` |
-| B11 | Tests | `test_fiscal_experiments.py` (new) |
+| Step | Change | File | Done |
+|---|---|---|---|
+| B1 | `FiscalScenario` and `FiscalScenarioResult` dataclasses | `fiscal_experiments.py` | ✓ |
+| B2 | Adjustment profile helpers (`uniform_profile`, `linear_phase_in`, etc.) | `fiscal_experiments.py` | ✓ |
+| B3 | `compute_debt_path()` standalone utility | `fiscal_experiments.py` | ✓ |
+| B4 | `_balance_residual()` — maps `(budget_path, Y_path, B_path, scenario)` to scalar | `fiscal_experiments.py` | ✓ |
+| B5 | `_apply_shock()` — builds counterfactual policy paths from base + scenario deltas | `fiscal_experiments.py` | ✓ |
+| B6 | `run_debt_financed()` — 1 simulate call + debt accumulation | `fiscal_experiments.py` | ✓ |
+| B7 | `run_tax_financed()` — bisection loop; handles all 3 balance conditions | `fiscal_experiments.py` | ✓ |
+| B8 | `run_nfa_constrained()` — outer NFA/CA check + bisection (Mode I and II) | `fiscal_experiments.py` | ✓ |
+| B9 | `run_fiscal_scenario()` — dispatcher | `fiscal_experiments.py` | ✓ |
+| B10 | `compare_scenarios()`, `fiscal_multiplier()`, `debt_fan_chart()` | `fiscal_experiments.py` | ✓ |
+| B11 | Tests (39 tests) | `test_fiscal_experiments.py` | ✓ |
 
-**Dependency:** Feature A should be merged before Feature B (B uses `recompute_bequests` via `olg.simulate_transition()`).
+**Note:** A4 tests landed in `test_fiscal_experiments.py` (not `test_olg_transition.py` as originally planned) — `TestBequestLoop` class covers all four A4 test cases.
 
 ---
 
