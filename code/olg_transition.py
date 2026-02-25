@@ -1382,8 +1382,12 @@ class OLGTransition:
             current_bequest_path = bequest_lumpsum_path  # caller value as initial guess
             self._bequest_converged = False
             self._bequest_iter_count = 0
+            if verbose:
+                print(f"\nBequest redistribution loop (max {max_bequest_iters} iterations, tol={bequest_tol})...")
             for _bequest_iter in range(max_bequest_iters):
                 self._bequest_iter_count = _bequest_iter + 1
+                if verbose:
+                    print(f"\n  Bequest iteration {self._bequest_iter_count}/{max_bequest_iters}: solving cohort problems...")
                 self.solve_cohort_problems(
                     r_path_full, w_path_full,
                     tau_c_path=tau_c_path_full,
@@ -1394,6 +1398,8 @@ class OLGTransition:
                     bequest_lumpsum_path=current_bequest_path,
                     verbose=False,
                 )
+                if verbose:
+                    print(f"  Bequest iteration {self._bequest_iter_count}/{max_bequest_iters}: simulating panels (n_sim={n_sim})...")
                 self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=False)
                 new_bequest_path = self._compute_bequest_lumpsum_path(n_sim=int(n_sim))
                 old_vals = (
@@ -1402,7 +1408,10 @@ class OLGTransition:
                     else np.zeros(self.T_transition)
                 )
                 new_vals = np.array([new_bequest_path.get(t, 0.0) for t in range(self.T_transition)])
-                if np.max(np.abs(new_vals - old_vals)) < bequest_tol:
+                max_change = float(np.max(np.abs(new_vals - old_vals)))
+                if verbose:
+                    print(f"  Bequest iteration {self._bequest_iter_count}/{max_bequest_iters}: max change = {max_change:.2e} (tol={bequest_tol:.2e})")
+                if max_change < bequest_tol:
                     current_bequest_path = new_bequest_path
                     self._bequest_converged = True
                     break
@@ -2054,7 +2063,7 @@ def run_fast_test(backend='numpy', recompute_bequests=False):
 def run_full_simulation(backend='numpy', recompute_bequests=True):
     """Run full OLG transition simulation."""
     # Single MC knob for this run
-    N_SIM_FULL = 15000
+    N_SIM_FULL = 5000
 
     print("=" * 60)
     print("RUNNING FULL SIMULATION")
