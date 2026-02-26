@@ -181,6 +181,8 @@ class OLGTransition:
         self.NFA_path = None  # Net foreign assets (Feature #9)
         self.S_pens_path = None  # Pension trust fund balance (Feature #18)
         self.birth_cohort_solutions = None
+        self._active_I_g_path = None           # effective I_g used in last simulate_transition
+        self._active_govt_spending_path = None  # effective G used in last simulate_transition
 
         # Backend selection ('numpy' or 'jax')
         self.backend = backend
@@ -1192,8 +1194,8 @@ class OLGTransition:
         t_idx = int(t)
         _at = lambda path, default=0.0: float(path[t_idx]) if path is not None and t_idx < len(path) else default
 
-        G_t = _at(self.govt_spending_path)
-        I_g_t = _at(self.I_g_path)
+        G_t   = _at(self._active_govt_spending_path if self._active_govt_spending_path is not None else self.govt_spending_path)
+        I_g_t = _at(self._active_I_g_path          if self._active_I_g_path          is not None else self.I_g_path)
         defense_t = _at(self.defense_spending_path)
 
         # Feature #9: Sovereign debt service
@@ -1273,6 +1275,8 @@ class OLGTransition:
                            tau_c_path=None, tau_l_path=None,
                            tau_p_path=None, tau_k_path=None,
                            pension_replacement_path=None,
+                           I_g_path=None, govt_spending_path=None,
+                           transfer_floor=None,
                            n_sim=10000, verbose=True,
                            pop_growth_path=None,
                            bequest_lumpsum_path=None,
@@ -1301,17 +1305,29 @@ class OLGTransition:
         r_path = np.array(r_path)
         self.T_transition = len(r_path)
 
+        # Resolve effective paths for this run (explicit args override object attributes)
+        _I_g = np.asarray(I_g_path, dtype=float) if I_g_path is not None else self.I_g_path
+        _G   = np.asarray(govt_spending_path, dtype=float) if govt_spending_path is not None else self.govt_spending_path
+        self._active_I_g_path = _I_g
+        self._active_govt_spending_path = _G
+
+        # Handle transfer_floor override (used in lifecycle config during cohort solves)
+        _orig_tf = None
+        if transfer_floor is not None:
+            _orig_tf = getattr(self.lifecycle_config, 'transfer_floor', 0.0)
+            self.lifecycle_config.transfer_floor = float(transfer_floor)
+
         # NEW: build time-varying cohort sizes if requested
         if pop_growth_path is not None:
             self.set_cohort_sizes_path_from_pop_growth(pop_growth_path)
 
         # Feature #8/#10: Compute public capital path before wages (wages depend on K_g)
         K_g_path = None
-        if self.eta_g != 0.0 and self.I_g_path is not None:
+        if self.eta_g != 0.0 and _I_g is not None:
             K_g_path = np.zeros(self.T_transition)
             K_g_path[0] = self.K_g_initial
             for t in range(1, self.T_transition):
-                I_g_t = self.I_g_path[t - 1] if t - 1 < len(self.I_g_path) else self.I_g_path[-1]
+                I_g_t = _I_g[t - 1] if t - 1 < len(_I_g) else _I_g[-1]
                 K_g_path[t] = (1 - self.delta_g) * K_g_path[t - 1] + I_g_t
             if verbose:
                 print(f"\nPublic capital path: K_g[0]={K_g_path[0]:.4f} → K_g[-1]={K_g_path[-1]:.4f}")
@@ -1522,6 +1538,9 @@ class OLGTransition:
                 print(f"  K_g range: [{np.min(K_g_path):.4f}, {np.max(K_g_path):.4f}]")
             if NFA_path is not None:
                 print(f"  NFA range: [{np.min(NFA_path):.4f}, {np.max(NFA_path):.4f}]")
+
+        if _orig_tf is not None:
+            self.lifecycle_config.transfer_floor = _orig_tf
 
         result = {'r': self.r_path, 'w': self.w_path, 'K': self.K_path,
                   'L': self.L_path, 'Y': self.Y_path}
@@ -2006,7 +2025,7 @@ def run_fast_test(backend='numpy', recompute_bequests=False):
     tau_l_path = np.ones(T_transition) * 0.15
     tau_p_path = np.ones(T_transition) * 0.2
     tau_k_path = np.ones(T_transition) * 0.2
-    pension_replacement_path = np.ones(T_transition) * 0.8
+    pension_replacement_path = np.ones(T_transition) * 0.3
     
     print(f"Simulating transition from r={r_initial:.3f} to r={r_final:.3f}")
     print(f"Transition periods: {T_transition}")
@@ -2122,7 +2141,7 @@ def run_full_simulation(backend='numpy', recompute_bequests=True):
     tau_l_path = np.ones(T_transition) * 0.15
     tau_p_path = np.ones(T_transition) * 0.2
     tau_k_path = np.ones(T_transition) * 0.2
-    pension_replacement_path = np.ones(T_transition) * 0.8
+    pension_replacement_path = np.ones(T_transition) * 0.3
 
     periods = np.arange(T_transition)
     r_path = r_initial + (r_final - r_initial) * (1 - np.exp(-periods / 5))

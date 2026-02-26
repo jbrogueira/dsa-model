@@ -124,7 +124,7 @@ pytest test_olg_transition.py -v
 - Output plots saved to `output/` directory
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
-- Fiscal G/I_g shocks use mutate+restore: temporarily overwrite `olg.govt_spending_path`/`olg.I_g_path` before `simulate_transition()`, restore with `try/finally` — safe for both numpy and JAX backends
+- Fiscal G/I_g shocks pass `govt_spending_path=` and `I_g_path=` as explicit args to `simulate_transition()`; `transfer_floor=` (absolute value) is also an explicit arg — no external mutation needed
 
 ## JAX Backend
 

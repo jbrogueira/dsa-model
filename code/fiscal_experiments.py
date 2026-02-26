@@ -315,51 +315,29 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
                         recompute_bequests: bool) -> tuple:
     """Run simulate_transition + compute_government_budget_path for cf paths.
 
-    Temporarily mutates olg.govt_spending_path and olg.I_g_path to apply
-    G / I_g shocks, restoring them with try/finally.
-
     Returns (macro_result, budget_path).
     """
-    # Save original object-level paths that can't be passed via simulate_transition
-    orig_G   = olg.govt_spending_path
-    orig_I_g = olg.I_g_path
+    r_path = np.asarray(base_paths['r_path'], dtype=float)
+
+    tf_delta = cf.get('transfer_floor_delta', 0.0)
     orig_tf  = getattr(olg.lifecycle_config, 'transfer_floor', 0.0)
+    transfer_floor = orig_tf + float(tf_delta) if tf_delta != 0.0 else None
 
-    try:
-        # Apply G and I_g shocks by temporarily mutating object state
-        G_cf   = cf.get('G_path')
-        I_g_cf = cf.get('I_g_path')
-
-        if G_cf is not None:
-            olg.govt_spending_path = np.asarray(G_cf, dtype=float)
-        if I_g_cf is not None:
-            olg.I_g_path = np.asarray(I_g_cf, dtype=float)
-
-        # Apply transfer_floor adjustment (scalar)
-        tf_delta = cf.get('transfer_floor_delta', 0.0)
-        if tf_delta != 0.0:
-            olg.lifecycle_config.transfer_floor = orig_tf + float(tf_delta)
-
-        r_path = np.asarray(base_paths['r_path'], dtype=float)
-
-        macro = olg.simulate_transition(
-            r_path=r_path,
-            tau_c_path=cf.get('tau_c'),
-            tau_l_path=cf.get('tau_l'),
-            tau_p_path=cf.get('tau_p'),
-            tau_k_path=cf.get('tau_k'),
-            pension_replacement_path=cf.get('pension'),
-            n_sim=n_sim,
-            verbose=verbose,
-            recompute_bequests=recompute_bequests,
-        )
-        budget = olg.compute_government_budget_path(n_sim=n_sim, verbose=verbose)
-
-    finally:
-        olg.govt_spending_path = orig_G
-        olg.I_g_path           = orig_I_g
-        olg.lifecycle_config.transfer_floor = orig_tf
-
+    macro = olg.simulate_transition(
+        r_path=r_path,
+        tau_c_path=cf.get('tau_c'),
+        tau_l_path=cf.get('tau_l'),
+        tau_p_path=cf.get('tau_p'),
+        tau_k_path=cf.get('tau_k'),
+        pension_replacement_path=cf.get('pension'),
+        I_g_path=cf.get('I_g_path'),
+        govt_spending_path=cf.get('G_path'),
+        transfer_floor=transfer_floor,
+        n_sim=n_sim,
+        verbose=verbose,
+        recompute_bequests=recompute_bequests,
+    )
+    budget = olg.compute_government_budget_path(n_sim=n_sim, verbose=verbose)
     return macro, budget
 
 
