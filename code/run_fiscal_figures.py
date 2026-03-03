@@ -17,6 +17,34 @@ os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+def _normalise_by_Y(results, macro_keys=(), budget_keys=()):
+    """Divide specified series by Y and scale to % (×100), in-place, for each result."""
+    for res in results:
+        Y = np.asarray(res.cf_macro['Y'])
+        for key in macro_keys:
+            if key in res.cf_macro:
+                res.cf_macro[key] = np.asarray(res.cf_macro[key]) / Y * 100
+        for key in budget_keys:
+            if key in res.cf_budget:
+                res.cf_budget[key] = np.asarray(res.cf_budget[key]) / Y * 100
+
+
+def _zoom_out(fig: plt.Figure, min_rel_span: float = 0.05) -> None:
+    """Prevent axes from zooming into MC noise.
+
+    For each axis, if the y-range is narrower than *min_rel_span* × |midpoint|,
+    expand the limits symmetrically so the span equals that minimum.
+    This keeps flat-but-noisy series (e.g. Labour) visually flat.
+    """
+    for ax in fig.axes:
+        if not ax.get_visible():
+            continue
+        ylo, yhi = ax.get_ylim()
+        mid = (ylo + yhi) / 2.0
+        current_span = yhi - ylo
+        min_span = min_rel_span * abs(mid) if mid != 0 else min_rel_span
+        if current_span < min_span:
+            ax.set_ylim(mid - min_span / 2, mid + min_span / 2)
 
 from lifecycle_perfect_foresight import LifecycleConfig
 from olg_transition import OLGTransition
@@ -41,7 +69,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 T_LC  = 20   # lifecycle periods
 N_H   = 1
-N_SIM = 4000
+N_SIM = 12000
 
 config = LifecycleConfig(
     T              = T_LC,
@@ -182,6 +210,19 @@ for res in (res_base, res_g_debt, res_g_taul):
     _r = np.asarray(res.cf_macro['r'])
     res.cf_budget['interest_payments'] = _r * _B      # r_t · B_t
 
+# Normalise stock/flow variables to % of Y (economic convention).
+# Prices (w, r), indices (L), Y itself, and pre-computed ratios (B_gdp_path) stay in levels.
+_MACRO_PCT_Y  = ['K_domestic', 'C', 'A']
+_BUDGET_PCT_Y = ['primary_deficit',
+                 'tax_l', 'tax_c', 'tax_p', 'tax_k',
+                 'ui', 'pension', 'govt_spending', 'public_investment',
+                 'interest_payments']
+_normalise_by_Y(
+    [res_base, res_g_debt, res_g_taul],
+    macro_keys=_MACRO_PCT_Y,
+    budget_keys=_BUDGET_PCT_Y,
+)
+
 SCENARIOS   = [res_base, res_g_debt, res_g_taul]
 SCN_LABELS  = ['baseline', 'G shock (debt)', 'G shock (τ_l)']
 
@@ -189,20 +230,21 @@ SCN_LABELS  = ['baseline', 'G shock (debt)', 'G shock (τ_l)']
 MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A']
 MACRO_LABELS = {
     'Y':          'Output (Y)',
-    'K_domestic': 'Domestic capital (K)',
+    'K_domestic': 'Domestic capital (K, % of Y)',
     'L':          'Labour (L)',
-    'C':          'Consumption (C)',
+    'C':          'Consumption (C, % of Y)',
     'B_gdp_path': 'Debt / GDP (B/Y)',
-    'A':          'Household wealth (A)',
+    'A':          'Household wealth (A, % of Y)',
 }
 fig1 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,
     variables  = MACRO_VARS,
     var_labels = MACRO_LABELS,
     title      = 'Macro Overview',
-    output_dir = OUTPUT_DIR,
-    filename   = 'macro_overview.png',
+    save       = False,
 )
+_zoom_out(fig1)
+fig1.savefig(os.path.join(OUTPUT_DIR, 'macro_overview.png'), dpi=150, bbox_inches='tight')
 plt.show()
 
 # Figure 2 — Prices sanity check: w and r should be constant in SOE
@@ -213,9 +255,10 @@ fig2 = compare_scenarios(
     variables  = PRICE_VARS,
     var_labels = PRICE_LABELS,
     title      = 'Prices (SOE sanity check)',
-    output_dir = OUTPUT_DIR,
-    filename   = 'prices_sanity.png',
+    save       = False,
 )
+_zoom_out(fig2)
+fig2.savefig(os.path.join(OUTPUT_DIR, 'prices_sanity.png'), dpi=150, bbox_inches='tight')
 plt.show()
 
 # Figure 3 — Fiscal decomposition
@@ -226,34 +269,36 @@ FISCAL_VARS = [
     'interest_payments',
 ]
 FISCAL_LABELS = {
-    'primary_deficit':   'Primary deficit',
-    'tax_l':             'Labour tax',
-    'tax_c':             'Consumption tax',
-    'tax_p':             'Payroll tax',
-    'tax_k':             'Capital tax',
-    'ui':                'UI benefits',
-    'pension':           'Pensions',
-    'govt_spending':     'Govt spending (G)',
-    'public_investment': 'Public investment (I_g)',
-    'interest_payments': 'Interest payments (r·B)',
+    'primary_deficit':   'Primary deficit (% of Y)',
+    'tax_l':             'Labour tax (% of Y)',
+    'tax_c':             'Consumption tax (% of Y)',
+    'tax_p':             'Payroll tax (% of Y)',
+    'tax_k':             'Capital tax (% of Y)',
+    'ui':                'UI benefits (% of Y)',
+    'pension':           'Pensions (% of Y)',
+    'govt_spending':     'Govt spending G (% of Y)',
+    'public_investment': 'Public investment I_g (% of Y)',
+    'interest_payments': 'Interest payments r·B (% of Y)',
 }
 fig3 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,
     variables  = FISCAL_VARS,
     var_labels = FISCAL_LABELS,
     title      = 'Fiscal Decomposition',
-    output_dir = OUTPUT_DIR,
-    filename   = 'fiscal_decomp.png',
+    save       = False,
 )
+_zoom_out(fig3)
+fig3.savefig(os.path.join(OUTPUT_DIR, 'fiscal_decomp.png'), dpi=150, bbox_inches='tight')
 plt.show()
 
 # Figure 4 — Debt fan chart
 fig4 = debt_fan_chart(
     scenarios  = SCENARIOS,
     labels     = SCN_LABELS,
-    output_dir = OUTPUT_DIR,
-    filename   = 'debt_fan_chart.png',
+    save       = False,
 )
+_zoom_out(fig4)
+fig4.savefig(os.path.join(OUTPUT_DIR, 'debt_fan_chart.png'), dpi=150, bbox_inches='tight')
 plt.show()
 
 print(f"\nFigures saved to {OUTPUT_DIR}/")
