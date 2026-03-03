@@ -187,15 +187,17 @@ for res in (res_base, res_g_debt, res_g_taul):
 SCENARIOS   = [res_base, res_g_debt, res_g_taul]
 SCN_LABELS  = ['baseline', 'G shock (debt)', 'G shock (τ_l)']
 
-# Figure 1 — Macro overview: Y, K, L, C, B/Y, A
-MACRO_VARS = ['Y', 'K', 'L', 'C', 'B_gdp_path', 'A']
+# Figure 1 — Macro overview: Y, K, L, C, B/Y, A, w, r
+MACRO_VARS = ['Y', 'K', 'L', 'C', 'B_gdp_path', 'A', 'w', 'r']
 MACRO_LABELS = {
     'Y':         'Output (Y)',
     'K':         'Capital (K)',
     'L':         'Labour (L)',
     'C':         'Consumption (C)',
     'B_gdp_path':'Debt / GDP (B/Y)',
-    'A':         'Household assets (A)',
+    'A':         'Household assets (A = K + B)',
+    'w':         'Wage rate (w)',
+    'r':         'Interest rate (r)',
 }
 fig1 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,
