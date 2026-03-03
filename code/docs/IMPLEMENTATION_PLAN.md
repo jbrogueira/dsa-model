@@ -17,7 +17,7 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 1 | #11, #17, #20 | **Done** |
 | 2 | #3+#5, #2, #16 | **Done** |
 | 3 | #14, #15 | **Done** |
-| 4 | #1, #6, #7 | **Partial** — #1 done, #6 done; #7 tests remaining |
+| 4 | #1, #6, #7 | **Done** |
 | 5 | #4 | **Done** |
 | 6 | #8, #10, #9 | **Done** |
 | 7 | #18, #19 | **Done** |
@@ -256,8 +256,8 @@ This is the largest single feature. It changes the utility function, the solve a
 ### Feature #7 — Endogenous retirement
 
 - [x] Implement
-- [ ] Test (NumPy)
-- [ ] Test (JAX cross-validation)
+- [x] Test (NumPy)
+- [x] Test (JAX cross-validation)
 
 **Paper:** Retirement is a choice within window `[J_R^min, J_R^max]`.
 

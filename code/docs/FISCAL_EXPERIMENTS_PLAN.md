@@ -1,7 +1,7 @@
 # Implementation Plan: Fiscal Scenario Framework
 
 > **Status: Implemented.**
-> `fiscal_experiments.py` exists with full implementation of `FiscalScenario`, `FiscalScenarioResult`, `run_fiscal_scenario`, `run_debt_financed`, `run_tax_financed`, `run_nfa_constrained`, `compare_scenarios`, `fiscal_multiplier`, and `debt_fan_chart`. Feature A (bequest redistribution loop) is implemented in `OLGTransition.simulate_transition()` via `recompute_bequests=True`. Feature B (fiscal scenario framework) is fully implemented in `fiscal_experiments.py` (955 lines, 39 tests in `test_fiscal_experiments.py`).
+> `fiscal_experiments.py` exists with full implementation of `FiscalScenario`, `FiscalScenarioResult`, `run_fiscal_scenario`, `run_debt_financed`, `run_tax_financed`, `run_nfa_constrained`, `compare_scenarios`, `fiscal_multiplier`, and `debt_fan_chart`. Feature A (bequest redistribution loop) is implemented in `OLGTransition.simulate_transition()` via `recompute_bequests=True`. Feature B (fiscal scenario framework) is fully implemented in `fiscal_experiments.py` (979 lines, 39 tests in `test_fiscal_experiments.py`).
 
 Covers two independent features:
 - **Feature A** — Bequest redistribution loop in `OLGTransition` (closes the currently open bequest circuit; independent of fiscal experiments)

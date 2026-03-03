@@ -1,0 +1,88 @@
+\documentclass{article}
+\usepackage{eurosym}
+%\usepackage[pdftex]{graphics}
+\usepackage{amsmath,amssymb,bbm,enumitem}
+\usepackage{amsfonts,amsthm,mathrsfs,verbatim,bm}
+\usepackage{import}
+\DeclareMathOperator*{\argmax}{argmax}
+\usepackage[authoryear,semicolon]{natbib}
+\usepackage[toc,page]{appendix}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{colortbl}
+\usepackage{xcolor}
+\usepackage[caption = false]{subfig}
+%\usepackage{caption,subcaption}
+\usepackage{adjustbox}
+\usepackage{threeparttable} 
+\usepackage{booktabs,multirow}
+\usepackage{color}
+\usepackage{threeparttable}
+\usepackage{booktabs}
+\usepackage[bookmarks=true,            pdfstartview=FitH,            breaklinks=true,            colorlinks=true,            
+citecolor=blue,            pagebackref=false]{hyperref}
+\usepackage{subfiles}
+\usepackage[colorinlistoftodos]{todonotes}
+\newcommand{\authnote}[3][]{\todo[color=#1!20]{\textbf{#2}: #3}}
+\newtheorem{theorem}{Theorem} 
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{definition}{Definition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{example}{Example}
+\newtheorem{assumption}{Assumption}
+\newcommand{\blue}{\color{blue}}
+\newcommand{\red}{\color{red}}
+\newcommand{\redblue}{red!80!blue!}
+\newcommand{\magblue}{magenta!60!blue!}
+\newcommand{\JS}[1]{\authnote[blue]{JS}{#1}}
+\newcommand{\RM}[1]{\authnote[teal]{RM}{#1}}
+\newcommand{\LZ}[1]{\authnote[magenta]{LZ}{#1}}
+\newcommand{\KS}[1]{\authnote[purple]{KS}{#1}}
+%\textheight=23cm
+%\usepackage{atbegshi}% http://ctan.org/pkg/atbegshi
+%\AtBeginDocument{\AtBeginShipoutNext{\AtBeginShipoutDiscard}}
+
+%\textwidth=15.7cm
+\textwidth=16.5cm
+\topmargin=-1cm
+\oddsidemargin=0cm
+
+\begin{document}
+
+
+
+\title{\large\bf{\color{\redblue}
+From Debt Sustainability Analysis to Liability Sustainability Analysis:\\
+Making the European Welfare State Sustainable} \\{\color{gray}with ageing and increasing defence expenditures}\thanks{Internal working document, not to be shared.}}
+\author{
+{\small\bf\color{blue}Ramon Marimon}
+\and
+{\small\bf\color{blue}Kamila Slawinska}
+\and
+{\small\bf\color{blue}Jo\~ao Brogueira de Sousa}
+\and
+{\small\bf\color{blue}Luca Zavalloni}}
+
+\maketitle
+
+\section*{To do (27.01.2026):}
+
+\begin{enumerate}
+    \item Calibrate the model to a reference year and country. 
+    \begin{itemize}
+        \item Joao: describe (write) the calibration procedure; identify which data is needed for calibration.
+    \end{itemize}
+    \item Define the policy exercises / model simulations. Ramon, then Joao. 
+    
+    \begin{itemize}
+    \item The main policy exercise is a fiscal consolidation or reform due to an increase of military expenditures. To start, I would take the IMF "How Europe can pay for things it cannnot afford?" (IMF RegEcoOUt 2025111 in our Related Papers), eventually with the calibrated model, but we can already experiment with simulations (e.g. the first one with the demographic transition)
+\item With the increase of expenditures they claim, what do we get (i.e. debt) without reforms? (RM) we need to define which part of the miliary expenditures corresponds to $K^g$ and which part to $G$; i.e. to equations (10) and (11) respectively. \JS{From equation (18), if "military expenditures" (not defined in the model) is described by $G_t$, a debt financed increase in $G_t$ has no effect in the equilibrium.}
+\item Alternative full or partial fiscal consolidations, the latter with reduction of expenditures on education, health, partially absorb by private expenditures.
+\item Exercise: increase in $G$ or $K_g$ under different restrictions: limit to net imports, limit to debt, taxes/expenditures.
+\item For this the model, as it is, can do the job. Although, we may also want to have non pure PAYG as foreseen. Similalry, if private exp. not fully absorb the reduction in public exp. this can be described as a lower quality and tehnlook at the health and adducation effects. {RM} This will require changes in $\kappa^h \& \kappa^s$, respectively, in equation (17) et al. 
+\end{itemize}
+    
+\end{enumerate}
+
+\end{document}

@@ -8,16 +8,10 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 
 ## Household Side
 
-### 1. Labor supply — `Partial`
+### 1. Labor supply — `Done`
 
 **Paper:** Endogenous labor hours `ℓ` with disutility of labor: `u(c,ℓ) = c^(1-σ)/(1-σ) - ν·ℓ^(1+φ)/(1+φ)`.
-**Code:** FOC-based labor supply implemented in NumPy solve (`labor_supply=True`, `nu`, `phi` params). Config: `LifecycleConfig.labor_supply`, `nu`, `phi`.
-
-**Remaining:**
-- [ ] JAX solve (FOC-based)
-- [ ] Simulation: record labor hours in both backends
-- [ ] OLG aggregation: aggregate labor supply from simulation
-- [ ] Tests (NumPy + JAX cross-validation)
+**Code:** FOC-based labor supply implemented in both NumPy and JAX backends. Config: `LifecycleConfig.labor_supply`, `nu`, `phi`. Labor hours recorded in simulation (`l_policy` arrays); OLG aggregation uses simulated labor supply. NumPy and JAX cross-validation tests pass.
 
 ### 2. Survival risk — `Done`
 
@@ -44,13 +38,10 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 **Paper:** `y^L = w_t·h_j·f(s)·z·ℓ`.
 **Code:** `wage = w · y_grid[i_y] · h_grid[i_h] · ℓ` when labor supply is enabled.
 
-### 7. Endogenous retirement — `Partial`
+### 7. Endogenous retirement — `Done`
 
 **Paper:** Retirement is a choice within window `[J_R^min, J_R^max]`.
-**Code:** Discrete choice between working and retired during retirement window. Config: `LifecycleConfig.retirement_window`.
-
-**Remaining:**
-- [ ] Tests (NumPy + JAX cross-validation)
+**Code:** Discrete choice between working and retired during retirement window. Config: `LifecycleConfig.retirement_window`. NumPy and JAX cross-validation tests pass (`test_retirement_window_*`, `test_jax_retirement_window_*`).
 
 ---
 
@@ -100,13 +91,10 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 **Paper:** `T^W(·)` for workers, `T^R(·)` for retirees.
 **Code:** Huggett-style consumption floor: `T(a, y) = max(0, c_floor - resources)`. Config: `LifecycleConfig.transfer_floor`.
 
-### 16. Bequest taxation — `Partial`
+### 16. Bequest taxation — `Done`
 
 **Paper:** `τ^beq` on assets of deceased, redistributed lump-sum.
-**Code:** Config field `LifecycleConfig.tau_beq` exists (default 0.0). Simulation mortality (Feature #2) is now done — `bequest_sim (n_sim,)` tracks assets at death. `OLGTransition` exposes `bequest_lumpsum_path` as a pass-through parameter to lifecycle configs (`solve_cohort_problems()`, `_compute_bequest_lumpsum_path()`). The feedback loop — computing total bequests from simulation, applying `tau_beq`, and re-injecting the net transfer — is not yet automated.
-
-**Remaining:**
-- [ ] Wire up `tau_beq` in `compute_government_budget()`: compute `bequest_tax_revenue = tau_beq * total_bequests_t`, redistribute `(1 - tau_beq) * total_bequests_t` to living agents via `bequest_lumpsum_path`, add `"bequest_tax"` and `"bequest_transfers"` fields to the budget dict
+**Code:** Config field `LifecycleConfig.tau_beq` (default 0.0). `tau_beq` is wired into `compute_government_budget()`: `bequest_tax_revenue = tau_beq * total_bequests`, `bequest_transfers = (1 - tau_beq) * total_bequests`; both fields appear in the budget dict. The bequest redistribution fixed-point loop (`recompute_bequests=True` in `simulate_transition()`) closes the feedback circuit automatically. Tested in `TestBequestLoop` in `test_fiscal_experiments.py`.
 
 ### 17. Government spending on goods — `Done`
 
@@ -136,29 +124,11 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 
 ## Demographics
 
-### 21. Population aging (fertility decline + mortality improvement) — `TODO`
+### 21. Population aging (fertility decline + mortality improvement) — `Done`
 
 **Paper:** Population aging driven by declining fertility (smaller entering cohorts) and improving longevity (higher survival at older ages). Both shift the cross-sectional age distribution toward older ages, affecting aggregate K, L, fiscal balance, and individual lifecycle decisions.
 
-**Code:** `set_cohort_sizes_path_from_pop_growth()` provides reduced-form time-varying age weights via a single growth rate per period. `survival_probs (T, n_h)` is shared across all birth cohorts. Neither mechanism separates fertility from survival structurally.
-
-**Formulation:**
-
-Population at calendar time `t`, age `j`: `N(t, j) = fertility(t − j) · Π_{k=0}^{j-1} π̄(t−j+k, k)` where `fertility(s)` is the relative entering cohort size at birth time `s` and `π̄(year, age) = Σ_h weight(h) · π(year, age, h)` is health-averaged survival.
-
-Cohort born at time `s` faces lifecycle survival schedule: `π_s(j, h) = π(s + j, j, h)` — evaluated at the calendar year when they reach age `j`.
-
-**Remaining:**
-
-- [ ] **`OLGTransition` parameters**: `fertility_path` (1D, relative entering cohort size by birth year), `survival_probs_initial` and `survival_probs_final` (each `(T, n_h)`, interpolated for transition cohorts), or `survival_improvement_rate` (scalar annual multiplicative improvement).
-- [ ] **`_build_population_weights()`**: Compute `population_weights[t, age]` from fertility × cumulative survival. Supersedes `set_cohort_sizes_path_from_pop_growth()`. Populates `cohort_sizes_path` so existing `_cohort_weights(t)` dispatch works.
-- [ ] **`_survival_schedule_at_year(cal_year)`**: Interpolate between initial/final survival schedules, or apply improvement rate to base schedule. Returns `(T, n_h)`.
-- [ ] **`_cohort_survival_schedule(birth_period)`**: Build `(T, n_h)` survival array for a specific birth cohort by evaluating `survival_schedule_at_year(birth_period + j)` at each lifecycle age `j`.
-- [ ] **`solve_cohort_problems()` per-cohort survival**: Pass cohort-specific `survival_probs` to each `LifecycleConfig` (currently all cohorts get the same default — this is a prerequisite bug-fix).
-- [ ] **JAX batched solve**: Stack `survival_probs` as `(n_cohorts, T, n_h)` and vmap over cohort axis (currently uses shared `ref.survival_probs`).
-- [ ] **Tests**: constant fertility + no survival improvement matches baseline; declining fertility raises dependency ratio and lowers L; improving survival raises K and pension spending.
-
-**Dependencies:** Does not require simulation mortality (Feature #2 remaining work). Uses analytical cumulative survival for aggregation weights.
+**Code:** `OLGTransition` parameters `fertility_path` (1D, relative entering cohort size by birth year) and `survival_improvement_rate` (scalar annual multiplicative improvement) are implemented. `_survival_schedule_at_year(cal_year)` applies improvement rate to base schedule; `_cohort_survival_schedule(birth_period)` builds a `(T, n_h)` per-cohort survival array; `_build_population_weights()` computes `population_weights[t, age]` from fertility × cumulative survival and populates `cohort_sizes_path` so existing `_cohort_weights(t)` dispatch works. Per-cohort survival probs are passed to each `LifecycleConfig` in `solve_cohort_problems()`.
 
 ---
 
@@ -166,13 +136,13 @@ Cohort born at time `s` faces lifecycle survival schedule: `π_s(j, h) = π(s + 
 
 | # | Feature | Status |
 |---|---------|--------|
-| 1 | Labor supply | Partial — NumPy solve done, JAX + simulation + aggregation remaining |
+| 1 | Labor supply | Done |
 | 2 | Survival risk | Done |
 | 3 | Human capital | Done (merged into #5) |
 | 4 | Schooling/children | Done |
 | 5 | Income process conditioning | Done |
 | 6 | Wage income structure | Done (part of #1) |
-| 7 | Endogenous retirement | Partial — implementation done, tests remaining |
+| 7 | Endogenous retirement | Done |
 | 8 | Public capital | Done |
 | 9 | SOE / sovereign debt | Done |
 | 10 | Public investment | Done |
@@ -181,18 +151,10 @@ Cohort born at time `s` faces lifecycle survival schedule: `π_s(j, h) = π(s + 
 | 13 | Capital income tax | Skipped (code more general) |
 | 14 | Progressive taxation | Done |
 | 15 | Means-tested transfers | Done |
-| 16 | Bequest taxation | Partial — config exists, needs simulation mortality |
+| 16 | Bequest taxation | Done |
 | 17 | Govt spending | Done |
 | 18 | Pension trust fund | Done |
 | 19 | Defense spending | Done (simplified) |
 | 20 | Medical age-dependence | Done |
-| 21 | Population aging (fertility + survival) | TODO |
+| 21 | Population aging (fertility + survival) | Done |
 
-**Testing notes for remaining features:**
-- `survival_probs = 1.0` must match deterministic baseline exactly
-- With low survival, fewer agents alive at old ages → lower aggregate K from retirees
-- `tau_beq = 0.0` must be a no-op
-- JAX cross-validation: mortality-weighted aggregates must match NumPy within tolerance
-- Constant fertility + equal initial/final survival → must match current baseline
-- Declining fertility → higher old-age dependency ratio, lower L
-- Improving survival → higher K, more pension spending
