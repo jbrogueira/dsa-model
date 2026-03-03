@@ -185,8 +185,8 @@ for res in (res_base, res_g_debt, res_g_taul):
 SCENARIOS   = [res_base, res_g_debt, res_g_taul]
 SCN_LABELS  = ['baseline', 'G shock (debt)', 'G shock (τ_l)']
 
-# Figure 1 — Macro overview: Y, K_domestic, L, C, B/Y, A, w, r
-MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A', 'w', 'r']
+# Figure 1 — Macro overview: Y, K_domestic, L, C, B/Y, A
+MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A']
 MACRO_LABELS = {
     'Y':          'Output (Y)',
     'K_domestic': 'Domestic capital (K)',
@@ -194,8 +194,6 @@ MACRO_LABELS = {
     'C':          'Consumption (C)',
     'B_gdp_path': 'Debt / GDP (B/Y)',
     'A':          'Household wealth (A)',
-    'w':          'Wage rate (w)',
-    'r':          'Interest rate (r)',
 }
 fig1 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,
@@ -207,7 +205,20 @@ fig1 = compare_scenarios(
 )
 plt.show()
 
-# Figure 2 — Fiscal decomposition
+# Figure 2 — Prices sanity check: w and r should be constant in SOE
+PRICE_VARS   = ['w', 'r']
+PRICE_LABELS = {'w': 'Wage rate (w)', 'r': 'Interest rate (r)'}
+fig2 = compare_scenarios(
+    res_base, res_g_debt, res_g_taul,
+    variables  = PRICE_VARS,
+    var_labels = PRICE_LABELS,
+    title      = 'Prices (SOE sanity check)',
+    output_dir = OUTPUT_DIR,
+    filename   = 'prices_sanity.png',
+)
+plt.show()
+
+# Figure 3 — Fiscal decomposition
 FISCAL_VARS = [
     'primary_deficit',
     'tax_l', 'tax_c', 'tax_p', 'tax_k',
@@ -226,7 +237,7 @@ FISCAL_LABELS = {
     'public_investment': 'Public investment (I_g)',
     'interest_payments': 'Interest payments (r·B)',
 }
-fig2 = compare_scenarios(
+fig3 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,
     variables  = FISCAL_VARS,
     var_labels = FISCAL_LABELS,
@@ -236,8 +247,8 @@ fig2 = compare_scenarios(
 )
 plt.show()
 
-# Figure 3 — Debt fan chart
-fig3 = debt_fan_chart(
+# Figure 4 — Debt fan chart
+fig4 = debt_fan_chart(
     scenarios  = SCENARIOS,
     labels     = SCN_LABELS,
     output_dir = OUTPUT_DIR,
