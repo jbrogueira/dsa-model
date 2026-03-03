@@ -16,7 +16,7 @@ docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 
 ## Environment
 
-JAX venv lives at `~/venvs/jax/`. Create it once with the setup script (auto-detects platform):
+JAX venv lives at `~/venvs/jax-arm/`. Create it once with the setup script (auto-detects platform):
 
 ```bash
 bash setup_jax.sh          # macOS ARM → jax[cpu], Linux x86_64 → jax[cuda12]
@@ -25,7 +25,7 @@ bash setup_jax.sh          # macOS ARM → jax[cpu], Linux x86_64 → jax[cuda12
 Activate before running the JAX backend:
 
 ```bash
-source ~/venvs/jax/bin/activate
+source ~/venvs/jax-arm/bin/activate
 ```
 
 **Platform notes:**

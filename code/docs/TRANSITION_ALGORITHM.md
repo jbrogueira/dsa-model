@@ -47,19 +47,48 @@ cohort_r[j] = r_path[0]          for j = 0, …, k-1   (pre-transition SS price,
 cohort_r[j] = r_path[j - k]      for j = k, …, T-1   (actual transition path)
 ```
 
-This is implemented in `_extract_cohort_path`. The agent knows at birth that
-prices will be at the initial steady-state level for their first `k` periods,
-and then follow the announced transition path from age `k` onward.
-This is **perfect foresight**: the full price path is known from birth.
+This is implemented in `_extract_cohort_path`. Under an **MIT shock** convention the
+pre-transition padding must always use the **baseline (steady-state)** value of each policy
+instrument, regardless of which counterfactual is being run. Using the counterfactual `path[0]`
+for pre-transition years would let the shock contaminate the pre-transition history of old cohorts,
+making K_0 differ across scenarios even though the shock is supposed to be unexpected at t=0.
+
+**Why path-padding alone is insufficient.** Even with baseline padding, backward induction
+propagates the post-t=0 counterfactual policy into the pre-transition value functions.  An old
+cohort born at `b = -k` whose lifecycle path has baseline taxes for ages `0…k-1` and counterfactual
+taxes for ages `k…T-1` still *anticipates* the future tax change.  Its savings decisions at ages
+`0…k-1` therefore differ from the pure-baseline case, and the resulting asset distribution at
+`t = 0` differs from the baseline — a K_0 jump persists.
+
+**Policy-function stitching (MIT shock).** The correct fix is to solve *two* lifecycle models for
+each old cohort:
+
+1. **Counterfactual model** — paths padded with baseline for ages `0…k-1`, counterfactual from
+   age `k` onward (as above).  Its policy functions from age `k` onward are the agent's optimal
+   response to the shock.
+2. **Pure-baseline model** — full lifecycle at baseline paths.  Its policy functions at ages
+   `0…k-1` reflect no knowledge of the future shock.
+
+The counterfactual model's policy arrays (`a_policy`, `c_policy`, `l_policy`) for ages `0…k-1`
+are then **replaced** with those from the pure-baseline model.  Simulation runs from age 0 as
+usual: baseline policy functions drive savings before t=0 → the cohort arrives at t=0 with the
+baseline asset distribution → K_0 is identical across all scenarios.  From age `k` onward the
+counterfactual policy functions take over, giving the correct behavioural response to the shock.
+
+Pure-baseline models are solved once per `(edu_type, birth_period)` pair and cached in
+`self._mit_baseline_cache`; the cache is invalidated when `pre_transition_paths` changes so
+that bisection iterations within a single fiscal experiment reuse the cached solutions.  The
+default (`pre_transition_paths=None`) disables all stitching and preserves the original behaviour
+for standalone `simulate_transition()` calls.
 
 **Initial conditions for old cohorts:**
 
 All cohorts — old and new — are simulated from age 0 with `a=0` and
 `avg_earnings=0`. For old cohorts born at `b = -k`, their price path is
 padded with `r_path[0]` (the initial SS price) for ages `0, …, k-1`.
-Because those prices are identical to the steady state, the policy functions
-at those ages reproduce the SS lifecycle exactly, and the cohort arrives at
-age `k` (calendar `t=0`) in the correct steady-state asset distribution.
+With policy-function stitching, the pre-transition policy functions reproduce
+the pure-baseline lifecycle exactly, and the cohort arrives at age `k`
+(calendar `t=0`) in the correct baseline asset distribution.
 
 Placing SS age-k wealth at age 0 (a previous approach) is wrong: the age-0
 policy function maps it incorrectly, producing a distorted trajectory that
@@ -98,8 +127,8 @@ State space per period: `n_a × n_y × n_h × n_y_last`
 
 After solving, `n_sim` agents per cohort are simulated **forward** from age 0
 using the computed policy functions. Random draws for income shocks, health
-shocks, and mortality are pre-generated. Old cohorts start from their
-steady-state initial conditions (Step 2 above) rather than from age 0.
+shocks, and mortality are pre-generated. All cohorts, including old ones, are
+simulated forward from age 0 with a=0 as described in Step 2.
 
 ---
 

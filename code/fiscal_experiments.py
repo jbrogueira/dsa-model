@@ -312,7 +312,8 @@ def _apply_shock(scenario: FiscalScenario,
 
 def _run_one_simulation(olg, base_paths: dict, cf: dict,
                         n_sim: int, verbose: bool,
-                        recompute_bequests: bool) -> tuple:
+                        recompute_bequests: bool,
+                        pre_transition_paths: Optional[dict] = None) -> tuple:
     """Run simulate_transition + compute_government_budget_path for cf paths.
 
     Returns (macro_result, budget_path).
@@ -336,6 +337,7 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
         n_sim=n_sim,
         verbose=verbose,
         recompute_bequests=recompute_bequests,
+        pre_transition_paths=pre_transition_paths,
     )
     budget = olg.compute_government_budget_path(n_sim=n_sim, verbose=verbose)
     return macro, budget
@@ -378,11 +380,15 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     """
     T = int(olg.T_transition)
     r_path = np.asarray(base_paths['r_path'], dtype=float)
+    pre_tp = {k: base_paths.get(k) for k in
+              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+               'tau_k_path', 'pension_replacement_path')}
 
     cf = _apply_shock(scenario, base_paths, T, instrument_delta=0.0, shock_scale=1.0)
     cf_macro, cf_budget = _run_one_simulation(
         olg, base_paths, cf, n_sim=n_sim, verbose=verbose,
         recompute_bequests=scenario.recompute_bequests,
+        pre_transition_paths=pre_tp,
     )
 
     B_path = compute_debt_path(
@@ -442,6 +448,9 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     psi = _get_psi(scenario, T)
     cond = scenario.balance_condition
     residual_history = []
+    pre_tp = {k: base_paths.get(k) for k in
+              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+               'tau_k_path', 'pension_replacement_path')}
 
     def _simulate_and_residual(Delta):
         cf = _apply_shock(scenario, base_paths, T,
@@ -449,6 +458,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         _, budget = _run_one_simulation(
             olg, base_paths, cf, n_sim=n_sim, verbose=False,
             recompute_bequests=scenario.recompute_bequests,
+            pre_transition_paths=pre_tp,
         )
         # Get Y_path from last simulate_transition result (stored on olg)
         Y = np.asarray(olg.Y_path, dtype=float)
@@ -567,6 +577,9 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     T = int(olg.T_transition)
     r_path = np.asarray(base_paths['r_path'], dtype=float)
     residual_history = []
+    pre_tp = {k: base_paths.get(k) for k in
+              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+               'tau_k_path', 'pension_replacement_path')}
 
     # ── Step 1: Debt-financed, full shock ────────────────────────────────────
     full_debt_result = run_debt_financed(
@@ -590,6 +603,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
             macro, budget = _run_one_simulation(
                 olg, base_paths, cf, n_sim=n_sim, verbose=False,
                 recompute_bequests=scenario.recompute_bequests,
+                pre_transition_paths=pre_tp,
             )
             NFA, CA = _nfa_ca_paths(macro)
             return not _check_nfa_violation(NFA, CA, scenario), macro, budget
@@ -629,6 +643,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
             macro, budget = _run_one_simulation(
                 olg, base_paths, cf, n_sim=n_sim, verbose=False,
                 recompute_bequests=scenario.recompute_bequests,
+                pre_transition_paths=pre_tp,
             )
             NFA, CA = _nfa_ca_paths(macro)
             return not _check_nfa_violation(NFA, CA, scenario), macro, budget
@@ -736,6 +751,10 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
         base_paths['I_g_path'] = olg.I_g_path
 
     # ── Run (or retrieve) baseline ───────────────────────────────────────────
+    pre_tp = {k: base_paths.get(k) for k in
+              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+               'tau_k_path', 'pension_replacement_path')}
+
     if 'base_macro' in base_paths and 'base_budget' in base_paths:
         base_macro  = base_paths['base_macro']
         base_budget = base_paths['base_budget']
@@ -750,6 +769,7 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
         base_macro, base_budget = _run_one_simulation(
             olg, base_paths, base_cf, n_sim=n_sim, verbose=verbose,
             recompute_bequests=scenario.recompute_bequests,
+            pre_transition_paths=pre_tp,
         )
 
     # ── Dispatch ─────────────────────────────────────────────────────────────
@@ -780,6 +800,8 @@ def compare_scenarios(
     base: FiscalScenarioResult,
     *counterfactuals: FiscalScenarioResult,
     variables: Optional[list] = None,
+    var_labels: Optional[dict] = None,
+    title: Optional[str] = None,
     save: bool = True,
     filename: Optional[str] = None,
     output_dir: str = 'output',
@@ -791,10 +813,17 @@ def compare_scenarios(
     variables : list of str, optional
         Keys to plot.  Each key is looked up in cf_macro, cf_budget, B_gdp_path,
         NFA_path.  Defaults to ['Y', 'primary_deficit', 'B_gdp_path', 'NFA'].
+    var_labels : dict, optional
+        Mapping from variable key to display label, e.g. {'B_gdp_path': 'B/Y'}.
+        Keys not present fall back to the raw key string.
+    title : str, optional
+        Figure suptitle.  Defaults to 'Fiscal Scenario Comparison'.
     """
     import os
     if variables is None:
         variables = ['Y', 'primary_deficit', 'B_gdp_path', 'NFA']
+    if var_labels is None:
+        var_labels = {}
 
     n_vars = len(variables)
     ncols  = min(3, n_vars)
@@ -831,8 +860,9 @@ def compare_scenarios(
             if series is None:
                 continue
             ax.plot(periods, series[:T], label=label,
-                    color=colours[i % len(colours)], linewidth=1.8)
-        ax.set_title(key, fontweight='bold')
+                    color=colours[i % len(colours)], linewidth=1.8,
+                    marker='o' if i == 0 else None, markersize=3)
+        ax.set_title(var_labels.get(key, key), fontweight='bold')
         ax.set_xlabel('Period')
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
@@ -841,7 +871,7 @@ def compare_scenarios(
     for ax in list(all_axes)[n_vars:]:
         ax.set_visible(False)
 
-    plt.suptitle('Fiscal Scenario Comparison', fontsize=14, fontweight='bold')
+    plt.suptitle(title or 'Fiscal Scenario Comparison', fontsize=14, fontweight='bold')
     plt.tight_layout()
 
     if save:

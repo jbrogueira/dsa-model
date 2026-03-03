@@ -1,17 +1,19 @@
 """
 Fiscal experiment figures — quick demo script.
 
-Runs four scenarios on the fast-test OLG configuration and produces:
-  output/fiscal_test/comparison_g_shock.png      — G shock: debt vs tax financing
-  output/fiscal_test/comparison_pension_cut.png  — pension cut: debt vs tax financing
-  output/fiscal_test/debt_fan_chart.png          — B/Y paths for all four scenarios
+Runs three scenarios on the fast-test OLG configuration and produces:
+  output/fiscal_test/comparison_g_shock.png  — G shock: debt vs tax financing
+  output/fiscal_test/debt_fan_chart.png      — B/Y paths for all scenarios
 
 Run:
     cd code
-    python run_fiscal_figures.py
+    python run_fiscal_figures.py               # NumPy backend (default)
+    python run_fiscal_figures.py --backend jax # JAX backend
 """
 
+import argparse
 import os
+os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,6 +28,10 @@ from fiscal_experiments import (
     fiscal_multiplier,
 )
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--backend', choices=['numpy', 'jax'], default='numpy')
+args = parser.parse_args()
+
 OUTPUT_DIR = 'output/fiscal_test'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -35,13 +41,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 T_LC  = 20   # lifecycle periods
 N_H   = 1
-N_SIM = 300
+N_SIM = 4000
 
 config = LifecycleConfig(
     T              = T_LC,
     beta           = 0.96,
     gamma          = 2.0,
-    n_a            = 30,
+    n_a            = 60,
     n_y            = 2,
     n_h            = N_H,
     retirement_age = 15,
@@ -61,37 +67,40 @@ economy = OLGTransition(
     birth_year        = 2005,
     current_year      = 2020,
     education_shares  = {'medium': 1.0},
+    eta_g             = 0.10,
+    K_g_initial       = 1.0,
+    backend           = args.backend,
     output_dir        = OUTPUT_DIR,
 )
 
 # ---------------------------------------------------------------------------
 # 2. Calibrate baseline G = 30% of Y
-#    eta_g = 0, so Y does not depend on G — run one cheap preliminary
-#    simulation to read off Y, then set G_path = 0.30 * Y_path.
+#    K_g is held constant: I_g = delta_g * K_g_initial = 0.05 * 1.0 = 0.05
+#    Run one cheap preliminary simulation to read off Y, then set G_path.
 # ---------------------------------------------------------------------------
 
-T_TR = 25   # transition periods
+T_TR = 40   # transition periods
 
-periods = np.arange(T_TR)
-r_path  = 0.04 + (0.03 - 0.04) * (periods / (T_TR - 1))   # 4 % → 3 %
+r_path  = np.full(T_TR, 0.04)          # constant 4 %
+I_g_path = np.full(T_TR, 0.05 * 1.0)  # delta_g * K_g_initial → K_g constant
 
 tax_paths = dict(
     tau_l_path               = np.full(T_TR, 0.15),
     tau_c_path               = np.full(T_TR, 0.18),
     tau_p_path               = np.full(T_TR, 0.20),
     tau_k_path               = np.full(T_TR, 0.20),
-    pension_replacement_path = np.full(T_TR, 0.80),
+    pension_replacement_path = np.full(T_TR, 0.60),
 )
 
 print("Calibrating baseline G (30 %% of Y) …")
 _calib = economy.simulate_transition(
-    r_path=r_path, n_sim=50, verbose=False, **tax_paths
+    r_path=r_path, I_g_path=I_g_path, n_sim=50, verbose=False, **tax_paths
 )
 Y_path = np.asarray(_calib['Y'])
 G_path = 0.30 * Y_path
 print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
-base_paths = dict(r_path=r_path, G_path=G_path, **tax_paths)
+base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
 
 # The G shock is 2 % of mean(Y) — a concrete absolute amount
 delta_G = np.full(T_TR, 0.02 * Y_path.mean())
@@ -122,15 +131,6 @@ scn_g_taul = FiscalScenario(
     target_debt_gdp   = 0.0,
 )
 
-# --- Scenario D: -10 pp pension replacement, savings via labour tax cut ---
-scn_pens = FiscalScenario(
-    name               = 'pension_cut_tau_l',
-    delta_pension_path = np.full(T_TR, -0.10),   # 80 % → 70 %
-    financing          = 'tau_l',
-    balance_condition  = 'terminal_debt_gdp',
-    target_debt_gdp    = 0.0,
-)
-
 # ---------------------------------------------------------------------------
 # 4. Run experiments
 # ---------------------------------------------------------------------------
@@ -141,18 +141,14 @@ print("=" * 60)
 
 t0 = time.time()
 
-print("\n[1/4] Baseline …")
+print("\n[1/3] Baseline …")
 res_base   = run_fiscal_scenario(economy, scn_base,   base_paths, n_sim=N_SIM, verbose=False)
 
-print("[2/4] G shock — debt-financed …")
+print("[2/3] G shock — debt-financed …")
 res_g_debt = run_fiscal_scenario(economy, scn_g_debt, base_paths, n_sim=N_SIM, verbose=False)
 
-print("[3/4] G shock — labour-tax-financed …")
+print("[3/3] G shock — labour-tax-financed …")
 res_g_taul = run_fiscal_scenario(economy, scn_g_taul, base_paths, n_sim=N_SIM, verbose=False,
-                                 bisect_tol=1e-3)
-
-print("[4/4] Pension cut — labour-tax-financed …")
-res_pens   = run_fiscal_scenario(economy, scn_pens,   base_paths, n_sim=N_SIM, verbose=False,
                                  bisect_tol=1e-3)
 
 print(f"\nAll experiments done in {time.time() - t0:.1f}s")
@@ -167,9 +163,6 @@ print(f"  G shock (debt)   : final B/Y = {res_g_debt.B_gdp_path[-1]*100:.1f}%")
 print(f"  G shock (tau_l)  : converged={res_g_taul.converged}, "
       f"Δτ_l = {res_g_taul.adjustment_scalar*100:+.2f} pp, "
       f"final B/Y = {res_g_taul.B_gdp_path[-1]*100:.1f}%")
-print(f"  Pension cut      : converged={res_pens.converged}, "
-      f"Δτ_l = {res_pens.adjustment_scalar*100:+.2f} pp, "
-      f"final B/Y = {res_pens.B_gdp_path[-1]*100:.1f}%")
 
 mult = fiscal_multiplier(res_base, res_g_debt, shock_variable='govt_spending')
 print(f"  Fiscal multiplier (G shock, debt): {np.nanmean(mult):.3f}")
@@ -180,28 +173,73 @@ print(f"  Fiscal multiplier (G shock, debt): {np.nanmean(mult):.3f}")
 
 print("\n--- Saving figures ---")
 
-# Figure 1: G shock comparison (debt vs tax financing)
+# ── post-process: attach derived quantities to each result ──────────────────
+# A = K + B  (total household wealth = physical capital + sovereign bonds)
+# interest_payments = r_t · B_t  (debt-service cost from fiscal accounting)
+for res in (res_base, res_g_debt, res_g_taul):
+    _T  = len(res.cf_macro['Y'])
+    _K  = np.asarray(res.cf_macro['K'])
+    _B  = res.B_path[:_T]                            # start-of-period debt
+    _r  = np.asarray(res.cf_macro['r'])
+    res.cf_macro['A']                    = _K + _B   # total household assets
+    res.cf_budget['interest_payments']   = _r * _B   # r_t · B_t
+
+SCENARIOS   = [res_base, res_g_debt, res_g_taul]
+SCN_LABELS  = ['baseline', 'G shock (debt)', 'G shock (τ_l)']
+
+# Figure 1 — Macro overview: Y, K, L, C, B/Y, A
+MACRO_VARS = ['Y', 'K', 'L', 'C', 'B_gdp_path', 'A']
+MACRO_LABELS = {
+    'Y':         'Output (Y)',
+    'K':         'Capital (K)',
+    'L':         'Labour (L)',
+    'C':         'Consumption (C)',
+    'B_gdp_path':'Debt / GDP (B/Y)',
+    'A':         'Household assets (A)',
+}
 fig1 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,
-    variables  = ['Y', 'K', 'primary_deficit', 'B_gdp_path', 'total_revenue', 'total_spending'],
+    variables  = MACRO_VARS,
+    var_labels = MACRO_LABELS,
+    title      = 'Macro Overview',
     output_dir = OUTPUT_DIR,
-    filename   = 'comparison_g_shock.png',
+    filename   = 'macro_overview.png',
 )
 plt.show()
 
-# Figure 2: Pension cut comparison (baseline vs pension cut)
+# Figure 2 — Fiscal decomposition
+FISCAL_VARS = [
+    'primary_deficit',
+    'tax_l', 'tax_c', 'tax_p', 'tax_k',
+    'ui', 'pension', 'govt_spending', 'public_investment',
+    'interest_payments',
+]
+FISCAL_LABELS = {
+    'primary_deficit':   'Primary deficit',
+    'tax_l':             'Labour tax',
+    'tax_c':             'Consumption tax',
+    'tax_p':             'Payroll tax',
+    'tax_k':             'Capital tax',
+    'ui':                'UI benefits',
+    'pension':           'Pensions',
+    'govt_spending':     'Govt spending (G)',
+    'public_investment': 'Public investment (I_g)',
+    'interest_payments': 'Interest payments (r·B)',
+}
 fig2 = compare_scenarios(
-    res_base, res_pens,
-    variables  = ['Y', 'K', 'primary_deficit', 'B_gdp_path', 'total_revenue', 'total_spending'],
+    res_base, res_g_debt, res_g_taul,
+    variables  = FISCAL_VARS,
+    var_labels = FISCAL_LABELS,
+    title      = 'Fiscal Decomposition',
     output_dir = OUTPUT_DIR,
-    filename   = 'comparison_pension_cut.png',
+    filename   = 'fiscal_decomp.png',
 )
 plt.show()
 
-# Figure 3: Debt fan chart across all four scenarios
+# Figure 3 — Debt fan chart
 fig3 = debt_fan_chart(
-    scenarios  = [res_base, res_g_debt, res_g_taul, res_pens],
-    labels     = ['baseline', 'G shock (debt)', 'G shock (τ_l)', 'pension cut (τ_l)'],
+    scenarios  = SCENARIOS,
+    labels     = SCN_LABELS,
     output_dir = OUTPUT_DIR,
     filename   = 'debt_fan_chart.png',
 )

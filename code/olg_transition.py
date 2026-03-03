@@ -31,14 +31,24 @@ def _extend_path(path, n_extra):
     return np.concatenate([path, np.ones(n_extra) * path[-1]])
 
 
-def _extract_cohort_path(path, birth_period, T, default=0.0):
-    """Extract a cohort-length slice from a path, handling pre-transition cohorts."""
+def _extract_cohort_path(path, birth_period, T, default=0.0, pre_value=None):
+    """Extract a cohort-length slice from a path, handling pre-transition cohorts.
+
+    Parameters
+    ----------
+    pre_value : float or None
+        If provided, used as the fill value for pre-transition periods instead of
+        ``path[0]``.  Pass the baseline (steady-state) value to enforce MIT-shock
+        convention: pre-transition cohorts always experience baseline policy before
+        t=0, regardless of which counterfactual scenario is being run.
+    """
     if birth_period < 0:
         pre = -birth_period
+        fill = pre_value if pre_value is not None else (path[0] if path is not None else default)
         if path is not None:
-            return np.concatenate([np.ones(pre) * path[0], path[0:T - pre]])
+            return np.concatenate([np.ones(pre) * fill, path[0:T - pre]])
         else:
-            return np.full(T, default)
+            return np.full(T, fill)
     else:
         if path is not None:
             return path[birth_period:birth_period + T]
@@ -780,6 +790,7 @@ class OLGTransition:
                           tau_p_path=None, tau_k_path=None,
                           pension_replacement_path=None,
                           bequest_lumpsum_path=None,
+                          pre_transition_paths=None,
                           verbose=False):
         """
         Solve lifecycle problems for all cohorts given full price paths.
@@ -852,28 +863,57 @@ class OLGTransition:
 
         # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
-        
+
         if verbose: print("\n  Solving for unique birth cohorts...")
-        
+
+        # Safety: ensure MIT baseline cache exists (handles standalone calls).
+        if not hasattr(self, '_mit_baseline_cache'):
+            self._mit_baseline_cache = {}
+
+        # Helper: get baseline (steady-state) scalar for a given instrument key.
+        # Returns None when pre_transition_paths is not set (preserves old behaviour).
+        def _pv(key):
+            if pre_transition_paths is None:
+                return None
+            arr = pre_transition_paths.get(key)
+            return float(arr[0]) if arr is not None else None
+
+        # Pre-compute extended baseline paths for MIT shock stitching.
+        # These represent the FULL baseline lifecycle path (all ages at baseline values),
+        # needed to solve the pure-baseline model that supplies pre-transition policy functions.
+        if pre_transition_paths is not None:
+            _base_tau_c_ext = _extend_path(pre_transition_paths.get('tau_c_path'), self.T)
+            _base_tau_l_ext = _extend_path(pre_transition_paths.get('tau_l_path'), self.T)
+            _base_tau_p_ext = _extend_path(pre_transition_paths.get('tau_p_path'), self.T)
+            _base_tau_k_ext = _extend_path(pre_transition_paths.get('tau_k_path'), self.T)
+            _base_pension_ext = _extend_path(
+                pre_transition_paths.get('pension_replacement_path'), self.T)
+        else:
+            _base_tau_c_ext = _base_tau_l_ext = _base_tau_p_ext = \
+                _base_tau_k_ext = _base_pension_ext = None
+
         # Define the range of birth cohorts we need to solve for
         min_birth_period = 1 - self.T  # Oldest cohort alive at t=0
         max_birth_period = self.T_transition - 1  # Last cohort born during transition
-        
+
         for edu_type in self.education_shares.keys():
             birth_cohort_solutions[edu_type] = {}
-            
+
             for birth_period in range(min_birth_period, max_birth_period + 1):
                 if verbose and birth_period % 10 == 0:
                     print(f"    Solving for cohort born at t={birth_period}...")
 
-                # Extract cohort-specific price/policy paths
-                cohort_r = _extract_cohort_path(r_path, birth_period, self.T)
-                cohort_w = _extract_cohort_path(w_path, birth_period, self.T)
-                cohort_tau_c = _extract_cohort_path(tau_c_path, birth_period, self.T, default=0.0)
-                cohort_tau_l = _extract_cohort_path(tau_l_path, birth_period, self.T, default=0.0)
-                cohort_tau_p = _extract_cohort_path(tau_p_path, birth_period, self.T, default=0.0)
-                cohort_tau_k = _extract_cohort_path(tau_k_path, birth_period, self.T, default=0.0)
-                cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4)
+                # Extract cohort-specific price/policy paths.
+                # When pre_transition_paths is provided (MIT shock convention),
+                # pre-transition years are padded with baseline values so that
+                # K_0 is identical across all counterfactual scenarios.
+                cohort_r = _extract_cohort_path(r_path, birth_period, self.T, pre_value=_pv('r_path'))
+                cohort_w = _extract_cohort_path(w_path, birth_period, self.T, pre_value=_pv('w_path'))
+                cohort_tau_c = _extract_cohort_path(tau_c_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_c_path'))
+                cohort_tau_l = _extract_cohort_path(tau_l_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_l_path'))
+                cohort_tau_p = _extract_cohort_path(tau_p_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_p_path'))
+                cohort_tau_k = _extract_cohort_path(tau_k_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_k_path'))
+                cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4, pre_value=_pv('pension_replacement_path'))
 
                 # Create and solve the model for this birth cohort
                 cohort_feature_kwargs = dict(_feature_kwargs)
@@ -900,6 +940,52 @@ class OLGTransition:
                 model = self._lifecycle_model_class(config, verbose=False)
                 if self.backend != 'jax':
                     model.solve(verbose=False)
+
+                # MIT shock stitching: pre-transition policy functions must equal baseline.
+                # Even with baseline-padded paths, backward induction propagates the
+                # post-t=0 counterfactual tax into ages 0…pre-1.  Fix: solve a pure
+                # baseline lifecycle model (NumPy, cached) and copy its policy functions
+                # for ages 0…pre-1 so that simulated assets at t=0 equal the baseline.
+                if pre_transition_paths is not None and birth_period < 0:
+                    pre = -birth_period
+                    bcs_key = (edu_type, birth_period)
+                    if bcs_key not in self._mit_baseline_cache:
+                        base_cohort_tau_c = _extract_cohort_path(
+                            _base_tau_c_ext, birth_period, self.T, default=0.0)
+                        base_cohort_tau_l = _extract_cohort_path(
+                            _base_tau_l_ext, birth_period, self.T, default=0.0)
+                        base_cohort_tau_p = _extract_cohort_path(
+                            _base_tau_p_ext, birth_period, self.T, default=0.0)
+                        base_cohort_tau_k = _extract_cohort_path(
+                            _base_tau_k_ext, birth_period, self.T, default=0.0)
+                        base_cohort_pension = _extract_cohort_path(
+                            _base_pension_ext, birth_period, self.T, default=0.4)
+                        base_config = LifecycleConfig(
+                            T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
+                            education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
+                            retirement_age=self.retirement_age,
+                            r_path=cohort_r, w_path=cohort_w,
+                            tau_c_path=base_cohort_tau_c, tau_l_path=base_cohort_tau_l,
+                            tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,
+                            pension_replacement_path=base_cohort_pension,
+                            bequest_lumpsum=bequest_ls,
+                            **cohort_feature_kwargs,
+                        )
+                        base_model = LifecycleModelPerfectForesight(base_config, verbose=False)
+                        base_model.solve(verbose=False)
+                        self._mit_baseline_cache[bcs_key] = base_model
+                    else:
+                        base_model = self._mit_baseline_cache[bcs_key]
+                    # Stitch: overwrite pre-transition ages with baseline policy arrays.
+                    if self.backend != 'jax':
+                        for attr in ('a_policy', 'c_policy', 'l_policy'):
+                            base_arr = getattr(base_model, attr, None)
+                            cf_arr   = getattr(model, attr, None)
+                            if base_arr is None or cf_arr is None:
+                                continue
+                            arr = np.asarray(cf_arr).copy()
+                            arr[:pre] = np.asarray(base_arr)[:pre]
+                            setattr(model, attr, arr)
 
                 # DEBUG: Print asset policy for cohorts born during transition
                 # (skipped for JAX batched mode — policies not yet available)
@@ -931,6 +1017,26 @@ class OLGTransition:
         # JAX batched solve: all cohorts in one vmapped XLA call per education type
         if self.backend == 'jax':
             self._solve_cohorts_jax_batched(birth_cohort_solutions, verbose)
+
+        # MIT shock stitching for JAX backend (post batch-solve).
+        # Baseline models were built with NumPy during the loop above (and cached).
+        if self.backend == 'jax' and pre_transition_paths is not None:
+            for edu_type_jax in self.education_shares.keys():
+                for bp in range(min_birth_period, 0):
+                    bcs_key = (edu_type_jax, bp)
+                    if bcs_key not in self._mit_baseline_cache:
+                        continue
+                    base_m = self._mit_baseline_cache[bcs_key]
+                    jax_m  = birth_cohort_solutions[edu_type_jax][bp]
+                    pre    = -bp
+                    for attr in ('a_policy', 'c_policy', 'l_policy'):
+                        base_arr = getattr(base_m, attr, None)
+                        jax_arr  = getattr(jax_m, attr, None)
+                        if base_arr is None or jax_arr is None:
+                            continue
+                        arr = np.asarray(jax_arr).copy()
+                        arr[:pre] = np.asarray(base_arr)[:pre]
+                        setattr(jax_m, attr, arr)
 
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
@@ -1282,7 +1388,8 @@ class OLGTransition:
                            bequest_lumpsum_path=None,
                            recompute_bequests=False,
                            bequest_tol=1e-4,
-                           max_bequest_iters=5):
+                           max_bequest_iters=5,
+                           pre_transition_paths=None):
         """
         Simulate transition dynamics with exogenous interest rate path.
         
@@ -1383,6 +1490,15 @@ class OLGTransition:
         self._period_cache = {}
         self._cohort_panel_cache = {}
 
+        # MIT shock baseline-solution cache: keyed by (edu_type, birth_period).
+        # Valid while pre_transition_paths is the same object across calls (bisection
+        # iterations within a single run all share the same pre_tp dict).
+        # Invalidated whenever pre_transition_paths changes (new experiment or new run).
+        _new_pre_tp_id = id(pre_transition_paths) if pre_transition_paths is not None else None
+        if getattr(self, '_mit_pre_tp_id', None) != _new_pre_tp_id:
+            self._mit_baseline_cache = {}
+            self._mit_pre_tp_id = _new_pre_tp_id
+
         # Feature A: Bequest redistribution loop (closed-circuit bequests)
         # When recompute_bequests=True and survival_probs is set, iterate until
         # the bequest transfer received by newborns matches the bequests generated
@@ -1412,6 +1528,7 @@ class OLGTransition:
                     tau_k_path=tau_k_path_full,
                     pension_replacement_path=pension_path_full,
                     bequest_lumpsum_path=current_bequest_path,
+                    pre_transition_paths=pre_transition_paths,
                     verbose=False,
                 )
                 if verbose:
@@ -1449,6 +1566,7 @@ class OLGTransition:
                 tau_k_path=tau_k_path_full,
                 pension_replacement_path=pension_path_full,
                 bequest_lumpsum_path=bequest_lumpsum_path,
+                pre_transition_paths=pre_transition_paths,
                 verbose=verbose
             )
             # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
@@ -1513,12 +1631,34 @@ class OLGTransition:
             if verbose:
                 print(f"\n  SOE: NFA[0]={NFA_path[0]:.4f}, NFA[-1]={NFA_path[-1]:.4f}")
 
+        # Aggregate consumption from the resource constraint:
+        #   C = Y − I_priv − G − I_g − Δ NFA
+        # where I_priv[t] = K[t+1] − (1−δ)·K[t]  (gross private capital formation),
+        # and Δ NFA[t] = NFA[t+1] − NFA[t]  (current-account surplus; zero in closed economy).
+        I_priv = np.empty(self.T_transition)
+        I_priv[:-1] = K_path[1:] - (1.0 - self.delta) * K_path[:-1]
+        I_priv[-1]  = self.delta * K_path[-1]  # terminal period: assume steady-state (ΔK=0)
+
+        _G_arr  = (np.asarray(_G,   dtype=float)[:self.T_transition]
+                   if _G   is not None else np.zeros(self.T_transition))
+        _Ig_arr = (np.asarray(_I_g, dtype=float)[:self.T_transition]
+                   if _I_g is not None else np.zeros(self.T_transition))
+
+        if NFA_path is not None:
+            # forward difference: Δ NFA[t] = NFA[t+1] − NFA[t]; last period uses NFA[-1]
+            delta_NFA = np.diff(NFA_path, append=NFA_path[-1])
+        else:
+            delta_NFA = np.zeros(self.T_transition)
+
+        C_path = Y_path - I_priv - _G_arr - _Ig_arr - delta_NFA
+
         # Store results
         self.r_path = r_path
         self.w_path = w_path
         self.K_path = K_path
         self.L_path = L_path
         self.Y_path = Y_path
+        self.C_path = C_path
         self.K_g_path = K_g_path
         self.NFA_path = NFA_path
 
@@ -1543,7 +1683,7 @@ class OLGTransition:
             self.lifecycle_config.transfer_floor = _orig_tf
 
         result = {'r': self.r_path, 'w': self.w_path, 'K': self.K_path,
-                  'L': self.L_path, 'Y': self.Y_path}
+                  'L': self.L_path, 'Y': self.Y_path, 'C': self.C_path}
         if K_g_path is not None:
             result['K_g'] = K_g_path
         if NFA_path is not None:
