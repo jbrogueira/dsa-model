@@ -284,16 +284,18 @@ class OLGTransition:
 
     @staticmethod
     @njit
-    def _slice_mean_single_age_njit(a_sim, effective_y_sim, tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
+    def _slice_mean_single_age_njit(a_sim, c_sim, effective_y_sim,
+                                    tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
                                     ui_sim, pension_sim, gov_m_sim, age: int):
         """
         Compute means for a SINGLE age from cohort simulation arrays (shape (T, n_sim)).
-        Returns 9 scalar values. O(n_sim) instead of O(T × n_sim).
+        Returns 10 scalar values. O(n_sim) instead of O(T × n_sim).
         """
         n_sim = a_sim.shape[1]
         inv = 1.0 / n_sim
 
         sa = 0.0
+        sc = 0.0
         sl = 0.0
         stc = 0.0
         stl = 0.0
@@ -305,6 +307,7 @@ class OLGTransition:
 
         for j in range(n_sim):
             sa += a_sim[age, j]
+            sc += c_sim[age, j]
             sl += effective_y_sim[age, j]
             stc += tax_c_sim[age, j]
             stl += tax_l_sim[age, j]
@@ -314,7 +317,7 @@ class OLGTransition:
             spen += pension_sim[age, j]
             sg += gov_m_sim[age, j]
 
-        return (sa * inv, sl * inv,
+        return (sa * inv, sc * inv, sl * inv,
                 stc * inv, stl * inv, stp * inv, stk * inv,
                 sui * inv, spen * inv, sg * inv)
 
@@ -604,20 +607,23 @@ class OLGTransition:
     
     @staticmethod
     @njit
-    def _aggregate_capital_labor_njit(assets_by_age_edu, labor_by_age_edu, 
+    def _aggregate_capital_labor_njit(assets_by_age_edu, consumption_by_age_edu,
+                                      labor_by_age_edu,
                                       cohort_sizes, education_shares_array):
-        """JIT-compiled aggregation of capital and labor across age and education."""
+        """JIT-compiled aggregation of capital, consumption, and labor across age and education."""
         n_edu, T = assets_by_age_edu.shape
         K = 0.0
+        C = 0.0
         L = 0.0
-        
+
         for edu in range(n_edu):
             for age in range(T):
                 weight = cohort_sizes[age] * education_shares_array[edu]
                 K += weight * assets_by_age_edu[edu, age]
+                C += weight * consumption_by_age_edu[edu, age]
                 L += weight * labor_by_age_edu[edu, age]
-        
-        return K, L
+
+        return K, C, L
     
     @staticmethod
     @njit
@@ -1155,8 +1161,9 @@ class OLGTransition:
         # in all periods after death (NumPy: loop skips dead agents; JAX: jnp.where(alive, val, 0.0)).
         # Multiplying cohort weights by cum_surv would double-count mortality, so no adjustment here.
 
-        assets_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
-        labor_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
+        assets_by_age_edu      = np.zeros((n_edu, self.T), dtype=float)
+        consumption_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
+        labor_by_age_edu       = np.zeros((n_edu, self.T), dtype=float)
 
         tax_c_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         tax_l_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
@@ -1190,17 +1197,18 @@ class OLGTransition:
                     bequest_sim = np.zeros_like(a_sim)
 
                 # Fast single-age means using Numba - O(n_sim) instead of O(T × n_sim)
-                (a_mean, labor_mean,
+                (a_mean, c_mean, labor_mean,
                  tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
                  ui_mean, pension_mean, gov_health_mean) = self._slice_mean_single_age_njit(
-                    a_sim, effective_y_sim,
+                    a_sim, c_sim, effective_y_sim,
                     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
                     ui_sim, pension_sim, gov_m_sim,
                     int(age)
                 )
 
-                assets_by_age_edu[edu_idx, age] = a_mean
-                labor_by_age_edu[edu_idx, age] = labor_mean
+                assets_by_age_edu[edu_idx, age]      = a_mean
+                consumption_by_age_edu[edu_idx, age] = c_mean
+                labor_by_age_edu[edu_idx, age]        = labor_mean
 
                 tax_c_by_age_edu[edu_idx, age] = tax_c_mean
                 tax_l_by_age_edu[edu_idx, age] = tax_l_mean
@@ -1217,6 +1225,7 @@ class OLGTransition:
             "education_shares_array": education_shares_array,
             "cohort_sizes_t": cohort_sizes_t,
             "assets_by_age_edu": assets_by_age_edu,
+            "consumption_by_age_edu": consumption_by_age_edu,
             "labor_by_age_edu": labor_by_age_edu,
             "tax_c_by_age_edu": tax_c_by_age_edu,
             "tax_l_by_age_edu": tax_l_by_age_edu,
@@ -1231,7 +1240,7 @@ class OLGTransition:
         return out
 
     def compute_aggregates(self, t, n_sim: Optional[int] = None):
-        """Compute aggregate capital and labor for period t (reuses period cross-section cache)."""
+        """Compute aggregate household wealth (A), consumption (C), and labor (L) for period t."""
         if n_sim is None:
             if self._last_n_sim is None:
                 raise ValueError("n_sim is None and no previous simulate_transition() n_sim is stored.")
@@ -1239,13 +1248,14 @@ class OLGTransition:
 
         px = self._period_cross_section(t=int(t), n_sim=int(n_sim))
 
-        K, L = self._aggregate_capital_labor_njit(
+        K, C, L = self._aggregate_capital_labor_njit(
             px["assets_by_age_edu"],
+            px["consumption_by_age_edu"],
             px["labor_by_age_edu"],
             px["cohort_sizes_t"],
             px["education_shares_array"],
         )
-        return K, L
+        return K, L, C
 
     def compute_government_budget(self, t, n_sim: Optional[int] = None):
         """
@@ -1582,12 +1592,13 @@ class OLGTransition:
         
         # Compute aggregates from household decisions
         K_path = np.zeros(self.T_transition)
+        C_path = np.zeros(self.T_transition)
         L_path = np.zeros(self.T_transition)
-        
+
         for t in range(self.T_transition):
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
-            K_path[t], L_path[t] = self.compute_aggregates(t, n_sim=None)  # reuse stored n_sim
+            K_path[t], L_path[t], C_path[t] = self.compute_aggregates(t, n_sim=None)
         
         # Compute output (with public capital if present)
         Y_path = self._compute_output_path_njit(K_path, L_path, self.alpha, self.A,
@@ -1632,28 +1643,7 @@ class OLGTransition:
             if verbose:
                 print(f"\n  SOE: NFA[0]={NFA_path[0]:.4f}, NFA[-1]={NFA_path[-1]:.4f}")
 
-        # Aggregate consumption from the resource constraint:
-        #   C = Y − I_K − G − I_g − Δ NFA
-        # where I_K[t] = K_domestic[t+1] − (1−δ)·K_domestic[t]  (domestic capital formation).
-        # In SOE mode K_path = A (household wealth) ≠ K_domestic, so we must use K_domestic
-        # for capital formation; in closed economy K_path = K_domestic so there is no difference.
-        K_for_inv = K_domestic if K_domestic is not None else K_path
-        I_priv = np.empty(self.T_transition)
-        I_priv[:-1] = K_for_inv[1:] - (1.0 - self.delta) * K_for_inv[:-1]
-        I_priv[-1]  = self.delta * K_for_inv[-1]  # terminal: assume steady-state (ΔK=0)
-
-        _G_arr  = (np.asarray(_G,   dtype=float)[:self.T_transition]
-                   if _G   is not None else np.zeros(self.T_transition))
-        _Ig_arr = (np.asarray(_I_g, dtype=float)[:self.T_transition]
-                   if _I_g is not None else np.zeros(self.T_transition))
-
-        if NFA_path is not None:
-            # forward difference: Δ NFA[t] = NFA[t+1] − NFA[t]; last period uses NFA[-1]
-            delta_NFA = np.diff(NFA_path, append=NFA_path[-1])
-        else:
-            delta_NFA = np.zeros(self.T_transition)
-
-        C_path = Y_path - I_priv - _G_arr - _Ig_arr - delta_NFA
+        # C_path is aggregated directly from individual consumption decisions above.
 
         # Store results
         self.r_path = r_path
