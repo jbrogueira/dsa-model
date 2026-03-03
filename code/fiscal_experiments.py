@@ -397,6 +397,10 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     Y_path = np.asarray(cf_macro['Y'], dtype=float)
     B_gdp  = B_path[:-1] / Y_path  # length T
 
+    # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
+    if cf_macro.get('NFA') is not None:
+        cf_macro = dict(cf_macro)
+        cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T]
     NFA, CA = _nfa_ca_paths(cf_macro)
 
     return FiscalScenarioResult(
@@ -528,12 +532,19 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     # Reconstruct full macro from last run (already stored on olg)
     cf_macro = {
         'r': olg.r_path, 'w': olg.w_path,
-        'K': olg.K_path, 'L': olg.L_path, 'Y': olg.Y_path,
+        'K': olg.K_path, 'A': olg.K_path,   # K = A = household wealth
+        'L': olg.L_path, 'Y': olg.Y_path, 'C': olg.C_path,
     }
+    if olg.K_domestic_path is not None:
+        cf_macro['K_domestic'] = olg.K_domestic_path
     if olg.K_g_path is not None:
         cf_macro['K_g'] = olg.K_g_path
     if olg.NFA_path is not None:
         cf_macro['NFA'] = olg.NFA_path
+
+    # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
+    if cf_macro.get('NFA') is not None:
+        cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T]
 
     B_gdp = B_path[:-1] / Y_path
     NFA, CA = _nfa_ca_paths(cf_macro)
@@ -687,6 +698,11 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     )
     Y_path = np.asarray(cf_macro_star['Y'], dtype=float)
     B_gdp  = B_path[:-1] / Y_path
+
+    # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
+    if cf_macro_star.get('NFA') is not None:
+        cf_macro_star = dict(cf_macro_star)
+        cf_macro_star['NFA'] = np.asarray(cf_macro_star['NFA']) - B_path[:T]
     NFA, CA = _nfa_ca_paths(cf_macro_star)
 
     return FiscalScenarioResult(

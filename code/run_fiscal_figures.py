@@ -174,30 +174,28 @@ print(f"  Fiscal multiplier (G shock, debt): {np.nanmean(mult):.3f}")
 print("\n--- Saving figures ---")
 
 # ── post-process: attach derived quantities to each result ──────────────────
-# A = K + B  (total household wealth = physical capital + sovereign bonds)
+# A is already in cf_macro (= K_path = total household wealth from simulation).
 # interest_payments = r_t · B_t  (debt-service cost from fiscal accounting)
 for res in (res_base, res_g_debt, res_g_taul):
-    _T  = len(res.cf_macro['Y'])
-    _K  = np.asarray(res.cf_macro['K'])
-    _B  = res.B_path[:_T]                            # start-of-period debt
-    _r  = np.asarray(res.cf_macro['r'])
-    res.cf_macro['A']                    = _K + _B   # total household assets
-    res.cf_budget['interest_payments']   = _r * _B   # r_t · B_t
+    _T = len(res.cf_macro['Y'])
+    _B = res.B_path[:_T]                              # start-of-period debt
+    _r = np.asarray(res.cf_macro['r'])
+    res.cf_budget['interest_payments'] = _r * _B      # r_t · B_t
 
 SCENARIOS   = [res_base, res_g_debt, res_g_taul]
 SCN_LABELS  = ['baseline', 'G shock (debt)', 'G shock (τ_l)']
 
-# Figure 1 — Macro overview: Y, K, L, C, B/Y, A, w, r
-MACRO_VARS = ['Y', 'K', 'L', 'C', 'B_gdp_path', 'A', 'w', 'r']
+# Figure 1 — Macro overview: Y, K_domestic, L, C, B/Y, A, w, r
+MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A', 'w', 'r']
 MACRO_LABELS = {
-    'Y':         'Output (Y)',
-    'K':         'Capital (K)',
-    'L':         'Labour (L)',
-    'C':         'Consumption (C)',
-    'B_gdp_path':'Debt / GDP (B/Y)',
-    'A':         'Household assets (A = K + B)',
-    'w':         'Wage rate (w)',
-    'r':         'Interest rate (r)',
+    'Y':          'Output (Y)',
+    'K_domestic': 'Domestic capital (K)',
+    'L':          'Labour (L)',
+    'C':          'Consumption (C)',
+    'B_gdp_path': 'Debt / GDP (B/Y)',
+    'A':          'Household wealth (A)',
+    'w':          'Wage rate (w)',
+    'r':          'Interest rate (r)',
 }
 fig1 = compare_scenarios(
     res_base, res_g_debt, res_g_taul,

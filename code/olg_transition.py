@@ -188,7 +188,8 @@ class OLGTransition:
         self.L_path = None
         self.Y_path = None
         self.K_g_path = None  # Public capital path (Feature #8)
-        self.NFA_path = None  # Net foreign assets (Feature #9)
+        self.NFA_path = None          # Net foreign assets: A - K_domestic - B (Feature #9)
+        self.K_domestic_path = None   # Domestic physical capital from firm's FOC (SOE only)
         self.S_pens_path = None  # Pension trust fund balance (Feature #18)
         self.birth_cohort_solutions = None
         self._active_I_g_path = None           # effective I_g used in last simulate_transition
@@ -1612,13 +1613,13 @@ class OLGTransition:
                 print(f"    Exogenous r: {r_path[-1]:.4f}, Implied r: {r_implied_end:.4f}")
                 print(f"    Computed w:  {w_path[-1]:.4f}, Implied w: {w_implied_end:.4f}")
 
-        # Feature #9: Compute net foreign assets in SOE mode
+        # Feature #9: Compute net foreign assets in SOE mode.
+        # K_path = A = total household wealth (aggregated from simulation).
+        # K_domestic = domestic capital demand, pinned by firm's FOC given exogenous r and L.
+        # NFA = A - K_domestic  (partial; B is subtracted by fiscal_experiments callers).
         NFA_path = None
+        K_domestic = None
         if self.economy_type == 'soe':
-            # In SOE: domestic capital demand K is determined by production function
-            # Household savings supply K_hh = K_path (from aggregation)
-            # NFA = K_hh - K_domestic (positive = net creditor)
-            # With public capital: K_domestic = K_over_L * L
             K_g_factor_arr = np.ones(self.T_transition)
             if K_g_path is not None and self.eta_g != 0.0:
                 K_g_factor_arr = K_g_path ** self.eta_g
@@ -1627,17 +1628,19 @@ class OLGTransition:
                 1.0 / (self.alpha - 1.0)
             )
             K_domestic = K_over_L_implied * L_path
-            NFA_path = K_path - K_domestic
+            NFA_path = K_path - K_domestic   # = A - K; B not yet subtracted
             if verbose:
                 print(f"\n  SOE: NFA[0]={NFA_path[0]:.4f}, NFA[-1]={NFA_path[-1]:.4f}")
 
         # Aggregate consumption from the resource constraint:
-        #   C = Y − I_priv − G − I_g − Δ NFA
-        # where I_priv[t] = K[t+1] − (1−δ)·K[t]  (gross private capital formation),
-        # and Δ NFA[t] = NFA[t+1] − NFA[t]  (current-account surplus; zero in closed economy).
+        #   C = Y − I_K − G − I_g − Δ NFA
+        # where I_K[t] = K_domestic[t+1] − (1−δ)·K_domestic[t]  (domestic capital formation).
+        # In SOE mode K_path = A (household wealth) ≠ K_domestic, so we must use K_domestic
+        # for capital formation; in closed economy K_path = K_domestic so there is no difference.
+        K_for_inv = K_domestic if K_domestic is not None else K_path
         I_priv = np.empty(self.T_transition)
-        I_priv[:-1] = K_path[1:] - (1.0 - self.delta) * K_path[:-1]
-        I_priv[-1]  = self.delta * K_path[-1]  # terminal period: assume steady-state (ΔK=0)
+        I_priv[:-1] = K_for_inv[1:] - (1.0 - self.delta) * K_for_inv[:-1]
+        I_priv[-1]  = self.delta * K_for_inv[-1]  # terminal: assume steady-state (ΔK=0)
 
         _G_arr  = (np.asarray(_G,   dtype=float)[:self.T_transition]
                    if _G   is not None else np.zeros(self.T_transition))
@@ -1655,24 +1658,25 @@ class OLGTransition:
         # Store results
         self.r_path = r_path
         self.w_path = w_path
-        self.K_path = K_path
-        self.L_path = L_path
-        self.Y_path = Y_path
-        self.C_path = C_path
-        self.K_g_path = K_g_path
-        self.NFA_path = NFA_path
+        self.K_path          = K_path      # = A: total household wealth
+        self.K_domestic_path = K_domestic  # domestic physical capital (SOE only, else None)
+        self.L_path          = L_path
+        self.Y_path          = Y_path
+        self.C_path          = C_path
+        self.K_g_path        = K_g_path
+        self.NFA_path        = NFA_path    # = A - K_domestic; B subtracted by fiscal callers
 
         if verbose:
             print("\n" + "=" * 60)
             print("Transition Simulation Complete")
             print("=" * 60)
             print(f"\nSummary Statistics:")
-            print(f"  Average K: {np.mean(K_path):.4f}")
+            print(f"  Average A (hh wealth): {np.mean(K_path):.4f}")
             print(f"  Average L: {np.mean(L_path):.4f}")
             print(f"  Average Y: {np.mean(Y_path):.4f}")
             print(f"  Average w: {np.mean(w_path):.4f}")
-            print(f"  Average K/Y: {np.mean(K_path/Y_path):.4f}")
-            print(f"  K range: [{np.min(K_path):.4f}, {np.max(K_path):.4f}]")
+            print(f"  Average A/Y: {np.mean(K_path/Y_path):.4f}")
+            print(f"  A range: [{np.min(K_path):.4f}, {np.max(K_path):.4f}]")
             print(f"  L range: [{np.min(L_path):.4f}, {np.max(L_path):.4f}]")
             if K_g_path is not None:
                 print(f"  K_g range: [{np.min(K_g_path):.4f}, {np.max(K_g_path):.4f}]")
@@ -1682,10 +1686,16 @@ class OLGTransition:
         if _orig_tf is not None:
             self.lifecycle_config.transfer_floor = _orig_tf
 
-        result = {'r': self.r_path, 'w': self.w_path, 'K': self.K_path,
+        # 'K' kept for backward compatibility (= A, household wealth).
+        # 'A' is the semantically correct name for total household wealth.
+        # 'K_domestic' is the domestic physical capital stock (SOE only).
+        result = {'r': self.r_path, 'w': self.w_path,
+                  'K': self.K_path, 'A': self.K_path,
                   'L': self.L_path, 'Y': self.Y_path, 'C': self.C_path}
         if K_g_path is not None:
             result['K_g'] = K_g_path
+        if K_domestic is not None:
+            result['K_domestic'] = K_domestic
         if NFA_path is not None:
             result['NFA'] = NFA_path
         return result
@@ -1929,7 +1939,7 @@ class OLGTransition:
 
         # K
         axes[2].plot(periods, np.asarray(self.K_path)[burn:], linewidth=2)
-        axes[2].set_title("Aggregate capital K")
+        axes[2].set_title("Household wealth A")
         axes[2].set_xlabel("Period")
         axes[2].set_xticks(x_ticks)
         axes[2].grid(True, alpha=0.3)
@@ -1958,7 +1968,7 @@ class OLGTransition:
         # K/Y
         ky = np.asarray(self.K_path) / np.asarray(self.Y_path)
         axes[5].plot(periods, ky[burn:], linewidth=2)
-        axes[5].set_title("K/Y")
+        axes[5].set_title("A/Y")
         axes[5].set_xlabel("Period")
         axes[5].set_xticks(x_ticks)
         axes[5].grid(True, alpha=0.3)
