@@ -1600,31 +1600,7 @@ class OLGTransition:
                 print(f"  Period {t + 1}/{self.T_transition}")
             K_path[t], L_path[t], C_path[t] = self.compute_aggregates(t, n_sim=None)
         
-        # Compute output (with public capital if present)
-        Y_path = self._compute_output_path_njit(K_path, L_path, self.alpha, self.A,
-                                                 K_g_path, self.eta_g)
-
-        # Verify consistency: check if implied r from aggregates matches exogenous r
-        if verbose:
-            print("\nVerifying consistency with production function...")
-            K_g_0 = K_g_path[0] if K_g_path is not None else 1.0
-            K_g_end = K_g_path[-1] if K_g_path is not None else 1.0
-            r_implied, w_implied = self._marginal_products_njit(
-                K_path[0], L_path[0], self.alpha, self.delta, self.A, K_g_0, self.eta_g
-            )
-            print(f"  Period 0:")
-            print(f"    Exogenous r: {r_path[0]:.4f}, Implied r: {r_implied:.4f}")
-            print(f"    Computed w:  {w_path[0]:.4f}, Implied w: {w_implied:.4f}")
-
-            if self.T_transition > 1:
-                r_implied_end, w_implied_end = self._marginal_products_njit(
-                    K_path[-1], L_path[-1], self.alpha, self.delta, self.A, K_g_end, self.eta_g
-                )
-                print(f"  Period {self.T_transition-1}:")
-                print(f"    Exogenous r: {r_path[-1]:.4f}, Implied r: {r_implied_end:.4f}")
-                print(f"    Computed w:  {w_path[-1]:.4f}, Implied w: {w_implied_end:.4f}")
-
-        # Feature #9: Compute net foreign assets in SOE mode.
+        # Feature #9: Compute K_domestic before Y — Y must use domestic capital, not household wealth.
         # K_path = A = total household wealth (aggregated from simulation).
         # K_domestic = domestic capital demand, pinned by firm's FOC given exogenous r and L.
         # NFA = A - K_domestic  (partial; B is subtracted by fiscal_experiments callers).
@@ -1639,9 +1615,36 @@ class OLGTransition:
                 1.0 / (self.alpha - 1.0)
             )
             K_domestic = K_over_L_implied * L_path
-            NFA_path = K_path - K_domestic   # = A - K; B not yet subtracted
+            NFA_path = K_path - K_domestic   # = A - K_domestic; B not yet subtracted
             if verbose:
                 print(f"\n  SOE: NFA[0]={NFA_path[0]:.4f}, NFA[-1]={NFA_path[-1]:.4f}")
+
+        # In SOE, firms hire K_domestic (pinned by FOC); in closed economy K_domestic = A = K_path.
+        K_for_Y = K_domestic if K_domestic is not None else K_path
+
+        # Compute output (with public capital if present)
+        Y_path = self._compute_output_path_njit(K_for_Y, L_path, self.alpha, self.A,
+                                                 K_g_path, self.eta_g)
+
+        # Verify consistency: check if implied r from aggregates matches exogenous r
+        if verbose:
+            print("\nVerifying consistency with production function...")
+            K_g_0 = K_g_path[0] if K_g_path is not None else 1.0
+            K_g_end = K_g_path[-1] if K_g_path is not None else 1.0
+            r_implied, w_implied = self._marginal_products_njit(
+                K_for_Y[0], L_path[0], self.alpha, self.delta, self.A, K_g_0, self.eta_g
+            )
+            print(f"  Period 0:")
+            print(f"    Exogenous r: {r_path[0]:.4f}, Implied r: {r_implied:.4f}")
+            print(f"    Computed w:  {w_path[0]:.4f}, Implied w: {w_implied:.4f}")
+
+            if self.T_transition > 1:
+                r_implied_end, w_implied_end = self._marginal_products_njit(
+                    K_for_Y[-1], L_path[-1], self.alpha, self.delta, self.A, K_g_end, self.eta_g
+                )
+                print(f"  Period {self.T_transition-1}:")
+                print(f"    Exogenous r: {r_path[-1]:.4f}, Implied r: {r_implied_end:.4f}")
+                print(f"    Computed w:  {w_path[-1]:.4f}, Implied w: {w_implied_end:.4f}")
 
         # C_path is aggregated directly from individual consumption decisions above.
 

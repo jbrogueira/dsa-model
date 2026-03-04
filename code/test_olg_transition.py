@@ -174,8 +174,10 @@ class TestConstantInterestRate:
         assert np.all(results['L'] > 0)
         assert np.all(results['Y'] > 0)
         
-        # Check production function: Y = A * K^alpha * L^(1-alpha)
-        Y_implied = economy.A * (results['K'] ** economy.alpha) * (results['L'] ** (1 - economy.alpha))
+        # Check production function: Y = A * K_domestic^alpha * L^(1-alpha)
+        # In SOE mode, firms hire K_domestic (pinned by FOC), not household wealth K.
+        K_for_Y = results.get('K_domestic', results['K'])
+        Y_implied = economy.A * (K_for_Y ** economy.alpha) * (results['L'] ** (1 - economy.alpha))
         assert np.allclose(results['Y'], Y_implied, rtol=1e-5)
     
     def test_constant_r_implies_constant_w(self):
@@ -366,8 +368,9 @@ class TestConstantInterestRate:
         print(f"   Labor:    {L_slope_pct:+.4f}%/period {'✓' if abs(L_slope_pct) < slope_tolerance else '✗'}")
         print(f"   Output:   {Y_slope_pct:+.4f}%/period {'✓' if abs(Y_slope_pct) < slope_tolerance else '✗'}")
         
-        # Test 4: Production function
-        Y_check = economy.A * (K_path ** economy.alpha) * (L_path ** (1 - economy.alpha))
+        # Test 4: Production function — use K_domestic in SOE (firm's capital, not household wealth)
+        K_for_Y = results.get('K_domestic', K_path)
+        Y_check = economy.A * (K_for_Y ** economy.alpha) * (L_path ** (1 - economy.alpha))
         prod_fn_holds = np.allclose(Y_path, Y_check, rtol=1e-5)
         
         print(f"\n4. Production function Y = A·K^α·L^(1-α): {'✓ PASS' if prod_fn_holds else '✗ FAIL'}")
