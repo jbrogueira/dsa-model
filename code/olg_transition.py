@@ -210,6 +210,10 @@ class OLGTransition:
         # NEW: remember last Monte Carlo size used in simulate_transition()
         self._last_n_sim: Optional[int] = None
 
+        # Policy version counter: incremented each time solve_cohort_problems() runs.
+        # Used as part of the cohort-panel cache key so stale panels are not reused.
+        self._policy_version: int = 0
+
     @staticmethod
     def _seed_u32(x: int) -> int:
         """Map any integer (incl. negative/large) into NumPy's allowed seed range."""
@@ -385,7 +389,13 @@ class OLGTransition:
                 bequest_lumpsums,
             )
 
+            # Cache batched JAX policy arrays to avoid round-trip in _simulate_cohorts_jax_batched
+            if not hasattr(self, '_jax_policy_batch'):
+                self._jax_policy_batch = {}
+            self._jax_policy_batch[edu_type] = (a_pol_batch, c_pol_batch, l_pol_batch)
+
             # Inject results back into individual model objects
+            # (needed for NumPy backend + external inspection)
             for ci, b in enumerate(birth_periods):
                 model = models_dict[b]
                 model.V = np.asarray(V_batch[ci])
@@ -417,20 +427,29 @@ class OLGTransition:
             n_y = ref.n_y
 
             # Stationary distribution for initial income draws — use 2D P_y
-            edu_unemployment_rate = ref.config.edu_params[ref.config.education_type]['unemployment_rate']
-            if edu_unemployment_rate < 1e-10:
-                stationary = None
-            else:
-                eigenvalues, eigenvectors = eig(np.asarray(ref.P_y_2d).T)
-                stationary_idx = np.argmax(eigenvalues.real)
-                stationary_dist = eigenvectors[:, stationary_idx].real
-                stationary_dist = stationary_dist / stationary_dist.sum()
-                stationary = jnp.array(stationary_dist)
+            # Cache: keyed by edu_type; P_y_2d is fixed for object lifetime
+            if not hasattr(self, '_stationary_dist_cache'):
+                self._stationary_dist_cache = {}
+            if edu_type not in self._stationary_dist_cache:
+                edu_unemployment_rate = ref.config.edu_params[ref.config.education_type]['unemployment_rate']
+                if edu_unemployment_rate < 1e-10:
+                    self._stationary_dist_cache[edu_type] = None
+                else:
+                    eigenvalues, eigenvectors = eig(np.asarray(ref.P_y_2d).T)
+                    stationary_idx = np.argmax(eigenvalues.real)
+                    stationary_dist = eigenvectors[:, stationary_idx].real
+                    stationary_dist = stationary_dist / stationary_dist.sum()
+                    self._stationary_dist_cache[edu_type] = jnp.array(stationary_dist)
+            stationary = self._stationary_dist_cache[edu_type]
 
-            # Stack per-cohort policies and paths
-            a_policies = jnp.stack([jnp.array(m.a_policy) for m in model_list])
-            c_policies = jnp.stack([jnp.array(m.c_policy) for m in model_list])
-            l_policies = jnp.stack([jnp.array(m.l_policy) for m in model_list])
+            # Stack per-cohort policies — reuse JAX arrays cached by _solve_cohorts_jax_batched
+            # if available to avoid a device→host→device round-trip.
+            if hasattr(self, '_jax_policy_batch') and edu_type in self._jax_policy_batch:
+                a_policies, c_policies, l_policies = self._jax_policy_batch[edu_type]
+            else:
+                a_policies = jnp.stack([jnp.array(m.a_policy) for m in model_list])
+                c_policies = jnp.stack([jnp.array(m.c_policy) for m in model_list])
+                l_policies = jnp.stack([jnp.array(m.l_policy) for m in model_list])
             w_paths = jnp.stack([m.w_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
             r_paths = jnp.stack([m.r_path for m in model_list])
@@ -442,63 +461,77 @@ class OLGTransition:
 
             # Pre-compute per-cohort initial conditions and PRNG keys
             # (replicates LifecycleModelJAX.simulate() setup per cohort)
-            all_initial_i_a = []
-            all_initial_i_y = []
-            all_initial_avg_earnings = []
-            all_initial_n_years = []
-            all_sim_keys = []
-            all_seeds_u32 = []
+            # Cache: keyed by (edu_type, n_sim, seed_base); independent of policy functions.
+            if not hasattr(self, '_sim_init_cache'):
+                self._sim_init_cache = {}
+            _init_key = (edu_type, int(n_sim), int(seed_base))
+            if _init_key in self._sim_init_cache:
+                (_, batch_i_a, batch_i_y, batch_i_h,
+                 batch_i_y_last, batch_avg_earn, batch_n_years,
+                 batch_keys, all_seeds_u32) = self._sim_init_cache[_init_key]
+            else:
+                all_initial_i_a = []
+                all_initial_i_y = []
+                all_initial_avg_earnings = []
+                all_initial_n_years = []
+                all_sim_keys = []
+                all_seeds_u32 = []
 
-            for ci, (b, model) in enumerate(zip(birth_periods, model_list)):
-                seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
-                seed = self._seed_u32(seed)
-                all_seeds_u32.append(seed)
+                for ci, (b, model) in enumerate(zip(birth_periods, model_list)):
+                    seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
+                    seed = self._seed_u32(seed)
+                    all_seeds_u32.append(seed)
 
-                key = jax.random.PRNGKey(seed)
+                    key = jax.random.PRNGKey(seed)
 
-                # 1st split: draw initial income state
-                key, subkey = jax.random.split(key)
-                if stationary is None:
-                    initial_i_y = jax.random.choice(
-                        subkey, jnp.arange(1, n_y), shape=(n_sim,)
-                    ).astype(jnp.int32)
-                else:
-                    initial_i_y = jax.random.choice(
-                        subkey, n_y, shape=(n_sim,), p=stationary
-                    ).astype(jnp.int32)
+                    # 1st split: draw initial income state
+                    key, subkey = jax.random.split(key)
+                    if stationary is None:
+                        initial_i_y = jax.random.choice(
+                            subkey, jnp.arange(1, n_y), shape=(n_sim,)
+                        ).astype(jnp.int32)
+                    else:
+                        initial_i_y = jax.random.choice(
+                            subkey, n_y, shape=(n_sim,), p=stationary
+                        ).astype(jnp.int32)
 
-                # 2nd split: key for simulation random draws
-                key, subkey = jax.random.split(key)
+                    # 2nd split: key for simulation random draws
+                    key, subkey = jax.random.split(key)
 
-                # Initial assets
-                if model.config.initial_assets is not None:
-                    i_a_init = int(jnp.argmin(jnp.abs(ref.a_grid - model.config.initial_assets)))
-                    initial_i_a = jnp.full(n_sim, i_a_init, dtype=jnp.int32)
-                else:
-                    initial_i_a = jnp.zeros(n_sim, dtype=jnp.int32)
+                    # Initial assets
+                    if model.config.initial_assets is not None:
+                        i_a_init = int(jnp.argmin(jnp.abs(ref.a_grid - model.config.initial_assets)))
+                        initial_i_a = jnp.full(n_sim, i_a_init, dtype=jnp.int32)
+                    else:
+                        initial_i_a = jnp.zeros(n_sim, dtype=jnp.int32)
 
-                # Initial earnings
-                if model.config.initial_avg_earnings is not None:
-                    initial_avg = jnp.ones(n_sim) * model.config.initial_avg_earnings
-                    initial_n = jnp.full(n_sim, model.current_age, dtype=jnp.float64)
-                else:
-                    initial_avg = jnp.zeros(n_sim)
-                    initial_n = jnp.zeros(n_sim, dtype=jnp.float64)
+                    # Initial earnings
+                    if model.config.initial_avg_earnings is not None:
+                        initial_avg = jnp.ones(n_sim) * model.config.initial_avg_earnings
+                        initial_n = jnp.full(n_sim, model.current_age, dtype=jnp.float64)
+                    else:
+                        initial_avg = jnp.zeros(n_sim)
+                        initial_n = jnp.zeros(n_sim, dtype=jnp.float64)
 
-                all_initial_i_a.append(initial_i_a)
-                all_initial_i_y.append(initial_i_y)
-                all_initial_avg_earnings.append(initial_avg)
-                all_initial_n_years.append(initial_n)
-                all_sim_keys.append(subkey)
+                    all_initial_i_a.append(initial_i_a)
+                    all_initial_i_y.append(initial_i_y)
+                    all_initial_avg_earnings.append(initial_avg)
+                    all_initial_n_years.append(initial_n)
+                    all_sim_keys.append(subkey)
 
-            # Stack into batched arrays
-            batch_i_a = jnp.stack(all_initial_i_a)
-            batch_i_y = jnp.stack(all_initial_i_y)
-            batch_i_h = jnp.zeros((n_cohorts, n_sim), dtype=jnp.int32)
-            batch_i_y_last = jnp.stack(all_initial_i_y)  # copy of initial_i_y
-            batch_avg_earn = jnp.stack(all_initial_avg_earnings)
-            batch_n_years = jnp.stack(all_initial_n_years)
-            batch_keys = jnp.stack(all_sim_keys)
+                batch_i_a = jnp.stack(all_initial_i_a)
+                batch_i_y = jnp.stack(all_initial_i_y)
+                batch_i_h = jnp.zeros((n_cohorts, n_sim), dtype=jnp.int32)
+                batch_i_y_last = jnp.stack(all_initial_i_y)
+                batch_avg_earn = jnp.stack(all_initial_avg_earnings)
+                batch_n_years = jnp.stack(all_initial_n_years)
+                batch_keys = jnp.stack(all_sim_keys)
+
+                self._sim_init_cache[_init_key] = (
+                    stationary, batch_i_a, batch_i_y, batch_i_h,
+                    batch_i_y_last, batch_avg_earn, batch_n_years,
+                    batch_keys, all_seeds_u32,
+                )
 
             chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
@@ -807,10 +840,14 @@ class OLGTransition:
         - Each cohort born at calendar time t faces prices from t to t+T-1
         - Policy functions are indexed by LIFECYCLE AGE (0 to T-1)
         """
+        # Each call produces new policy functions → bump the version counter so that
+        # _ensure_cohort_panel_cache() treats the upcoming simulation as distinct.
+        self._policy_version = getattr(self, '_policy_version', 0) + 1
+
         if verbose:
             print("\nSolving cohort lifecycle problems with perfect foresight...")
             print(f"  Education types: {list(self.education_shares.keys())}")
-        
+
         # --- STEADY-STATE PROFILES (for initial conditions) ---
         if verbose: print("  Computing initial steady-state profiles...")
         r_ss = r_path[0]
@@ -1090,7 +1127,8 @@ class OLGTransition:
         if not hasattr(self, "_cohort_panel_cache"):
             self._cohort_panel_cache = {}
 
-        cache_key = (int(n_sim), int(seed_base))
+        pv = getattr(self, '_policy_version', 0)
+        cache_key = (int(n_sim), int(seed_base), int(pv))
         if cache_key in self._cohort_panel_cache:
             return
 
@@ -1118,6 +1156,10 @@ class OLGTransition:
                     )
 
         self._cohort_panel_cache[cache_key] = panels
+        # Evict entries with a different policy_version to bound memory use
+        stale_keys = [k for k in self._cohort_panel_cache if k[2] != pv]
+        for k in stale_keys:
+            del self._cohort_panel_cache[k]
 
     def _get_cached_cohort_panel(self, *, edu_type: str, birth_period: int,
                                  n_sim: Optional[int] = None, seed_base: int = 42, verbose: bool = False):
@@ -1130,7 +1172,8 @@ class OLGTransition:
             n_sim = int(n_sim)
 
         self._ensure_cohort_panel_cache(n_sim=n_sim, seed_base=seed_base, verbose=verbose)
-        return self._cohort_panel_cache[(int(n_sim), int(seed_base))][edu_type][int(birth_period)]
+        pv = getattr(self, '_policy_version', 0)
+        return self._cohort_panel_cache[(int(n_sim), int(seed_base), int(pv))][edu_type][int(birth_period)]
 
     def _period_cross_section(self, t: int, n_sim: int):
         """
@@ -1175,7 +1218,8 @@ class OLGTransition:
         gov_health_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         bequest_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
 
-        panels = self._cohort_panel_cache[(n_sim, int(seed_base))]
+        pv = getattr(self, '_policy_version', 0)
+        panels = self._cohort_panel_cache[(n_sim, int(seed_base), int(pv))]
 
         for edu_idx, edu_type in enumerate(education_types):
             edu_panels = panels[edu_type]
@@ -1238,6 +1282,87 @@ class OLGTransition:
         }
         self._period_cache[key] = out
         return out
+
+    def _compute_all_cross_sections(self, n_sim: int):
+        """
+        Compute per-(edu,age) means for ALL T_transition periods in one pass.
+
+        Iterates (edu_type, age) in the outer loops — one panel lookup per cohort —
+        then writes the result into every transition period t for which the cohort is alive.
+        This is more cache-friendly than the per-period loop in simulate_transition(),
+        which repeated the panel lookup T times per cohort.
+
+        Returns (T_transition, n_edu, T) arrays for assets, labor, consumption plus
+        budget components, matching what _period_cross_section() computes individually.
+        """
+        T_tr = int(self.T_transition)
+        education_types = list(self.education_shares.keys())
+        n_edu = len(education_types)
+        T = int(self.T)
+        seed_base = 42
+        n_sim = int(n_sim)
+        pv = getattr(self, '_policy_version', 0)
+        panels = self._cohort_panel_cache[(n_sim, int(seed_base), int(pv))]
+
+        # Allocate output arrays
+        assets  = np.zeros((T_tr, n_edu, T), dtype=float)
+        consum  = np.zeros((T_tr, n_edu, T), dtype=float)
+        labor   = np.zeros((T_tr, n_edu, T), dtype=float)
+        tax_c   = np.zeros((T_tr, n_edu, T), dtype=float)
+        tax_l   = np.zeros((T_tr, n_edu, T), dtype=float)
+        tax_p   = np.zeros((T_tr, n_edu, T), dtype=float)
+        tax_k   = np.zeros((T_tr, n_edu, T), dtype=float)
+        ui_arr  = np.zeros((T_tr, n_edu, T), dtype=float)
+        pension = np.zeros((T_tr, n_edu, T), dtype=float)
+        gov_h   = np.zeros((T_tr, n_edu, T), dtype=float)
+        bequest = np.zeros((T_tr, n_edu, T), dtype=float)
+
+        min_birth = -(T - 1)
+        max_birth = T_tr - 1
+
+        for edu_idx, edu_type in enumerate(education_types):
+            edu_panels = panels[edu_type]
+            for age in range(T):
+                for t in range(T_tr):
+                    b = t - age
+                    if b < min_birth or b > max_birth:
+                        continue
+                    if b not in edu_panels:
+                        continue
+                    panel_data = edu_panels[int(b)]
+                    if len(panel_data) == 21:
+                        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                         ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                         pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                    else:
+                        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                         ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                         pension_sim, retired_sim, l_sim) = panel_data
+                        alive_sim = np.ones_like(a_sim, dtype=bool)
+                        bequest_sim = np.zeros_like(a_sim)
+
+                    (a_m, c_m, l_m, tc_m, tl_m, tp_m, tk_m,
+                     ui_m, pen_m, gh_m) = self._slice_mean_single_age_njit(
+                        a_sim, c_sim, effective_y_sim,
+                        tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
+                        ui_sim, pension_sim, gov_m_sim,
+                        int(age),
+                    )
+                    assets[t, edu_idx, age]  = a_m
+                    consum[t, edu_idx, age]  = c_m
+                    labor[t, edu_idx, age]   = l_m
+                    tax_c[t, edu_idx, age]   = tc_m
+                    tax_l[t, edu_idx, age]   = tl_m
+                    tax_p[t, edu_idx, age]   = tp_m
+                    tax_k[t, edu_idx, age]   = tk_m
+                    ui_arr[t, edu_idx, age]  = ui_m
+                    pension[t, edu_idx, age] = pen_m
+                    gov_h[t, edu_idx, age]   = gh_m
+                    bequest[t, edu_idx, age] = float(np.mean(bequest_sim[age, :]))
+
+        return assets, consum, labor, tax_c, tax_l, tax_p, tax_k, ui_arr, pension, gov_h, bequest
 
     def compute_aggregates(self, t, n_sim: Optional[int] = None):
         """Compute aggregate household wealth (A), consumption (C), and labor (L) for period t."""
@@ -1499,7 +1624,12 @@ class OLGTransition:
         # clear caches for this run
         self._birth_sim_cache = {}
         self._period_cache = {}
-        self._cohort_panel_cache = {}
+        # _cohort_panel_cache is intentionally NOT cleared here — it is keyed by
+        # (n_sim, seed_base, _policy_version); solve_cohort_problems() increments
+        # _policy_version so stale panels are never reused.
+        if not hasattr(self, '_cohort_panel_cache'):
+            self._cohort_panel_cache = {}
+        self._jax_policy_batch = {}
 
         # MIT shock baseline-solution cache: keyed by (edu_type, birth_period).
         # Valid while pre_transition_paths is the same object across calls (bisection
@@ -1595,11 +1725,21 @@ class OLGTransition:
         C_path = np.zeros(self.T_transition)
         L_path = np.zeros(self.T_transition)
 
+        # Compute all cross-sections in one pass (fewer panel lookups than T_transition × T × n_edu)
+        _edu_types_ordered = list(self.education_shares.keys())
+        _edu_shares_arr = np.array([self.education_shares[e] for e in _edu_types_ordered], dtype=float)
+        (assets_all, consum_all, labor_all,
+         _tax_c_all, _tax_l_all, _tax_p_all, _tax_k_all,
+         _ui_all, _pension_all, _gov_h_all, _bequest_all) = self._compute_all_cross_sections(int(n_sim))
+
         for t in range(self.T_transition):
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
-            K_path[t], L_path[t], C_path[t] = self.compute_aggregates(t, n_sim=None)
-        
+            cohort_sizes_t = self._cohort_weights(t)
+            K_path[t], L_path[t], C_path[t] = self._aggregate_capital_labor_njit(
+                assets_all[t], consum_all[t], labor_all[t], cohort_sizes_t, _edu_shares_arr
+            )
+
         # Feature #9: Compute K_domestic before Y — Y must use domestic capital, not household wealth.
         # K_path = A = total household wealth (aggregated from simulation).
         # K_domestic = domestic capital demand, pinned by firm's FOC given exogenous r and L.

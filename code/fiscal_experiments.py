@@ -381,7 +381,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     T = int(olg.T_transition)
     r_path = np.asarray(base_paths['r_path'], dtype=float)
     pre_tp = {k: base_paths.get(k) for k in
-              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+              ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
 
     cf = _apply_shock(scenario, base_paths, T, instrument_delta=0.0, shock_scale=1.0)
@@ -453,7 +453,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     cond = scenario.balance_condition
     residual_history = []
     pre_tp = {k: base_paths.get(k) for k in
-              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+              ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
 
     def _simulate_and_residual(Delta):
@@ -470,13 +470,21 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
                                B_initial=scenario.B_initial)
         return _balance_residual(budget, Y, B, scenario), budget, B, Y
 
+    # Mutable container to hold the last evaluated (budget, B, Y) tuple
+    _last_result = [None]  # [0] = (budget, B, Y) or None
+
+    def _simulate_and_residual_cached(Delta):
+        res, budget, B, Y = _simulate_and_residual(Delta)
+        _last_result[0] = (budget, B, Y)
+        return res, budget, B, Y
+
     # For 'period_balance', use bounded minimization
     if cond == 'period_balance':
         eval_count = [0]
 
         def _objective(Delta):
             eval_count[0] += 1
-            res, budget, B, Y = _simulate_and_residual(Delta)
+            res, budget, B, Y = _simulate_and_residual_cached(Delta)
             residual_history.append(res)
             return res  # minimise max_t |PD_t|
 
@@ -489,35 +497,41 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         Delta_star = float(opt.x)
         converged  = opt.success
         n_iters    = eval_count[0]
-        _, cf_budget, B_path, Y_path = _simulate_and_residual(Delta_star)
+        # Reuse last cached result if available; otherwise run once more
+        if _last_result[0] is not None:
+            cf_budget, B_path, Y_path = _last_result[0]
+        else:
+            _, cf_budget, B_path, Y_path = _simulate_and_residual_cached(Delta_star)
 
     else:
         # Bisection for 'terminal_debt_gdp' and 'pv_balance'
         # ── Verify / expand bracket ──────────────────────────────────────────
-        res_lo, _, _, _ = _simulate_and_residual(Delta_lo)
+        res_lo, _, _, _ = _simulate_and_residual_cached(Delta_lo)
         residual_history.append(res_lo)
-        res_hi, _, _, _ = _simulate_and_residual(Delta_hi)
+        res_hi, _, _, _ = _simulate_and_residual_cached(Delta_hi)
         residual_history.append(res_hi)
 
         # Expand hi until we have opposite signs
         _expand = 0
         while np.sign(res_lo) == np.sign(res_hi) and _expand < 10:
             Delta_hi *= 2.0
-            res_hi, _, _, _ = _simulate_and_residual(Delta_hi)
+            res_hi, _, _, _ = _simulate_and_residual_cached(Delta_hi)
             residual_history.append(res_hi)
             _expand += 1
 
         converged  = False
         n_iters    = len(residual_history)
         Delta_star = Delta_lo  # fallback
+        cf_budget = B_path = Y_path = None
 
         for _ in range(max_iter):
             Delta_mid = 0.5 * (Delta_lo + Delta_hi)
-            res_mid, _, _, _ = _simulate_and_residual(Delta_mid)
+            res_mid, last_budget, last_B, last_Y = _simulate_and_residual_cached(Delta_mid)
             residual_history.append(res_mid)
             n_iters += 1
             if abs(res_mid) < tol or (Delta_hi - Delta_lo) < tol:
                 Delta_star = Delta_mid
+                cf_budget, B_path, Y_path = last_budget, last_B, last_Y
                 converged  = True
                 break
             if np.sign(res_mid) == np.sign(res_lo):
@@ -526,8 +540,9 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
                 Delta_hi, res_hi = Delta_mid, res_mid
             Delta_star = Delta_mid
 
-        # Final simulation at converged Δ
-        _, cf_budget, B_path, Y_path = _simulate_and_residual(Delta_star)
+        # If bisection did not converge within loop (fallback), run final simulation
+        if not converged or cf_budget is None:
+            _, cf_budget, B_path, Y_path = _simulate_and_residual_cached(Delta_star)
 
     # Reconstruct full macro from last run (already stored on olg)
     cf_macro = {
@@ -589,7 +604,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     r_path = np.asarray(base_paths['r_path'], dtype=float)
     residual_history = []
     pre_tp = {k: base_paths.get(k) for k in
-              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+              ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
 
     # ── Step 1: Debt-financed, full shock ────────────────────────────────────
@@ -768,7 +783,7 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
 
     # ── Run (or retrieve) baseline ───────────────────────────────────────────
     pre_tp = {k: base_paths.get(k) for k in
-              ('r_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
+              ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
 
     if 'base_macro' in base_paths and 'base_budget' in base_paths:
@@ -787,6 +802,10 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
             recompute_bequests=scenario.recompute_bequests,
             pre_transition_paths=pre_tp,
         )
+        # Capture baseline wage path so that MIT-shock stitching in counterfactual
+        # runs uses the correct (baseline) wages, not the counterfactual ones.
+        # Critical when I_g shocks change K_g → w.
+        base_paths['w_path'] = np.array(olg.w_path)
 
     # ── Dispatch ─────────────────────────────────────────────────────────────
     kwargs = dict(n_sim=n_sim, verbose=verbose)
