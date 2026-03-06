@@ -932,9 +932,11 @@ class OLGTransition:
             _base_tau_k_ext = _extend_path(pre_transition_paths.get('tau_k_path'), self.T)
             _base_pension_ext = _extend_path(
                 pre_transition_paths.get('pension_replacement_path'), self.T)
+            _base_r_ext = _extend_path(pre_transition_paths.get('r_path'), self.T)
+            _base_w_ext = _extend_path(pre_transition_paths.get('w_path'), self.T)
         else:
             _base_tau_c_ext = _base_tau_l_ext = _base_tau_p_ext = \
-                _base_tau_k_ext = _base_pension_ext = None
+                _base_tau_k_ext = _base_pension_ext = _base_r_ext = _base_w_ext = None
 
         # Define the range of birth cohorts we need to solve for
         min_birth_period = 1 - self.T  # Oldest cohort alive at t=0
@@ -1004,11 +1006,17 @@ class OLGTransition:
                             _base_tau_k_ext, birth_period, self.T, default=0.0)
                         base_cohort_pension = _extract_cohort_path(
                             _base_pension_ext, birth_period, self.T, default=0.4)
+                        base_cohort_r = _extract_cohort_path(
+                            _base_r_ext if _base_r_ext is not None else r_path,
+                            birth_period, self.T)
+                        base_cohort_w = _extract_cohort_path(
+                            _base_w_ext if _base_w_ext is not None else w_path,
+                            birth_period, self.T)
                         base_config = LifecycleConfig(
                             T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
                             education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
                             retirement_age=self.retirement_age,
-                            r_path=cohort_r, w_path=cohort_w,
+                            r_path=base_cohort_r, w_path=base_cohort_w,
                             tau_c_path=base_cohort_tau_c, tau_l_path=base_cohort_tau_l,
                             tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,
                             pension_replacement_path=base_cohort_pension,
