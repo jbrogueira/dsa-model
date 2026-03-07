@@ -1370,6 +1370,30 @@ class OLGTransition:
                     gov_h[t, edu_idx, age]   = gh_m
                     bequest[t, edu_idx, age] = float(np.mean(bequest_sim[age, :]))
 
+        # Populate _period_cache so compute_government_budget_path() can reuse
+        # these results instead of recomputing via _period_cross_section().
+        education_types = list(self.education_shares.keys())
+        education_shares_array = np.array([self.education_shares[e] for e in education_types], dtype=float)
+        for t in range(T_tr):
+            cohort_sizes_t = self._cohort_weights(t)
+            cache_key = (t, n_sim, seed_base)
+            self._period_cache[cache_key] = {
+                "education_types": education_types,
+                "education_shares_array": education_shares_array,
+                "cohort_sizes_t": cohort_sizes_t,
+                "assets_by_age_edu": assets[t],
+                "consumption_by_age_edu": consum[t],
+                "labor_by_age_edu": labor[t],
+                "tax_c_by_age_edu": tax_c[t],
+                "tax_l_by_age_edu": tax_l[t],
+                "tax_p_by_age_edu": tax_p[t],
+                "tax_k_by_age_edu": tax_k[t],
+                "ui_by_age_edu": ui_arr[t],
+                "pension_by_age_edu": pension[t],
+                "gov_health_by_age_edu": gov_h[t],
+                "bequest_by_age_edu": bequest[t],
+            }
+
         return assets, consum, labor, tax_c, tax_l, tax_p, tax_k, ui_arr, pension, gov_h, bequest
 
     def compute_aggregates(self, t, n_sim: Optional[int] = None):
