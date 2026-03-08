@@ -383,6 +383,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     pre_tp = {k: base_paths.get(k) for k in
               ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
+    pre_tp['transfer_floor'] = getattr(olg.lifecycle_config, 'transfer_floor', 0.0)
 
     cf = _apply_shock(scenario, base_paths, T, instrument_delta=0.0, shock_scale=1.0)
     cf_macro, cf_budget = _run_one_simulation(
@@ -455,6 +456,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     pre_tp = {k: base_paths.get(k) for k in
               ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
+    pre_tp['transfer_floor'] = getattr(olg.lifecycle_config, 'transfer_floor', 0.0)
 
     def _simulate_and_residual(Delta):
         cf = _apply_shock(scenario, base_paths, T,
@@ -606,6 +608,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     pre_tp = {k: base_paths.get(k) for k in
               ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
+    pre_tp['transfer_floor'] = getattr(olg.lifecycle_config, 'transfer_floor', 0.0)
 
     # ── Step 1: Debt-financed, full shock ────────────────────────────────────
     full_debt_result = run_debt_financed(
@@ -785,6 +788,7 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
     pre_tp = {k: base_paths.get(k) for k in
               ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                'tau_k_path', 'pension_replacement_path')}
+    pre_tp['transfer_floor'] = getattr(olg.lifecycle_config, 'transfer_floor', 0.0)
 
     if 'base_macro' in base_paths and 'base_budget' in base_paths:
         base_macro  = base_paths['base_macro']

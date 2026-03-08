@@ -1012,6 +1012,14 @@ class OLGTransition:
                         base_cohort_w = _extract_cohort_path(
                             _base_w_ext if _base_w_ext is not None else w_path,
                             birth_period, self.T)
+                        # MIT baseline must use baseline feature values, not the
+                        # (possibly mutated) counterfactual ones.  Currently only
+                        # transfer_floor can be mutated on lifecycle_config by
+                        # simulate_transition(); restore it from pre_transition_paths.
+                        base_feature_kwargs = dict(cohort_feature_kwargs)
+                        _base_tf = pre_transition_paths.get('transfer_floor')
+                        if _base_tf is not None:
+                            base_feature_kwargs['transfer_floor'] = float(_base_tf)
                         base_config = LifecycleConfig(
                             T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
                             education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
@@ -1021,7 +1029,7 @@ class OLGTransition:
                             tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,
                             pension_replacement_path=base_cohort_pension,
                             bequest_lumpsum=bequest_ls,
-                            **cohort_feature_kwargs,
+                            **base_feature_kwargs,
                         )
                         base_model = LifecycleModelPerfectForesight(base_config, verbose=False)
                         base_model.solve(verbose=False)
