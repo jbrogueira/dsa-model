@@ -1097,6 +1097,10 @@ class OLGTransition:
                         arr = np.asarray(jax_arr).copy()
                         arr[:pre] = np.asarray(base_arr)[:pre]
                         setattr(jax_m, attr, arr)
+            # Invalidate the cached pre-stitching JAX policy arrays so that
+            # _simulate_cohorts_jax_batched re-reads from the (now stitched)
+            # model objects instead of the stale batch-solve output.
+            self._jax_policy_batch.pop(edu_type_jax, None)
 
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
