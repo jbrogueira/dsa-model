@@ -9,7 +9,7 @@ olg_transition.py              # Entry point - OLG transition simulation
 lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices (NumPy)
 lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simulate)
 fiscal_experiments.py          # Fiscal scenario framework (debt/tax/NFA-constrained experiments)
-test_olg_transition.py         # Pytest tests (83 tests, incl. 12 JAX tests, 3 cross-validation classes)
+test_olg_transition.py         # Pytest tests (83 tests, incl. 15 JAX tests, 4 cross-validation classes)
 run_fiscal_figures.py          # Fiscal shock figures: G, Ig, or both shocks; CLI --shock flag
 test_fiscal_experiments.py     # Pytest tests for fiscal experiments (39 tests)
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress

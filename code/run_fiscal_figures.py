@@ -100,7 +100,7 @@ _calib = economy.simulate_transition(
     r_path=r_path, I_g_path=I_g_path, n_sim=50, verbose=False, **tax_paths
 )
 Y_path = np.asarray(_calib['Y'])
-G_path = 0.30 * Y_path
+G_path = np.full(T_TR, 0.30 * Y_path.mean())  # constant level, calibrated to 30% of SS output
 print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
