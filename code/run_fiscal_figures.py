@@ -13,9 +13,14 @@ Run:
 """
 
 import argparse
+import functools
 import os
+import sys
 os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import time
+
+# Force unbuffered print so progress is visible over SSH / pipes
+print = functools.partial(print, flush=True)
 import numpy as np
 import matplotlib.pyplot as plt
 
