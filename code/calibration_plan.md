@@ -96,8 +96,8 @@ These parameters are calibrated via moment matching (Simulated Method of Moments
 
 | Parameter | Role | Identified By | Notes |
 |-----------|------|---------------|-------|
-| `edu_params[type].rho_y` | Income persistence (per education) | Consumption-income comovement | Can calibrate jointly (same for all types) or separately |
-| `edu_params[type].sigma_y` | Income shock variance (per education) | Wealth Gini, fraction with zero wealth | Can calibrate jointly (same for all types) or separately |
+| `edu_params[type].rho_y` | Income persistence (per education) | Cross-sectional variance of log earnings by age (slope) | Can calibrate jointly (same for all types) or separately |
+| `edu_params[type].sigma_y` | Income shock variance (per education) | Cross-sectional variance of log earnings by age (level), wealth Gini | Can calibrate jointly (same for all types) or separately |
 | `job_finding_rate` | Probability of exiting unemployment | Unemployment duration | Single parameter, shared across education types |
 | `max_job_separation_rate` | Cap on separation rate | Unemployment rate by age | Actual separation rate is derived: `min(u/(1-u) * jfr, max_sep_rate)` |
 | `P_h_young`, `P_h_middle`, `P_h_old` | Health transition matrices by age group | Health status distribution by age | 3 matrices × `n_h²` entries; highly parametric; reduce by imposing structure |
@@ -106,6 +106,7 @@ These parameters are calibrated via moment matching (Simulated Method of Moments
 
 **Notes:**
 - `rho_y` and `sigma_y` are defined per education type in `edu_params`. Joint calibration (same for all types) reduces dimensionality; type-specific calibration requires sufficient identifying variation in education-group wealth distributions.
+- `rho_y` and `sigma_y` are identified from the cross-sectional variance of log earnings by age, computed from a single household survey. Under an AR(1) process, `Var(y_j) = sigma_eps^2 * (1 - rho^{2j}) / (1 - rho^2)`: the slope of this age profile identifies `rho_y`, the level identifies `sigma_y`. No panel data or consumption-income comovement is required. Wealth distribution moments (Gini, zero-wealth fraction, wealth-to-income by age) provide additional identification because `rho_y` and `sigma_y` affect wealth dispersion differently: persistent shocks generate wide wealth dispersion at older ages; transitory shocks generate precautionary saving but less dispersion.
 - `job_separation_rate` is not a free parameter — it's computed from `unemployment_rate` and `job_finding_rate`. The free parameters are `job_finding_rate`, `max_job_separation_rate`, and `edu_params[type].unemployment_rate`.
 - `initial_asset_distribution` is now implemented — pass an array of samples to `LifecycleConfig`. When the entry-age wealth distribution is well-measured (e.g., from SCF for 25-year-olds), this is preferable to a scalar `initial_assets`.
 - When `P_y_by_age_health` is used instead of the Tauchen-based `rho_y`/`sigma_y`, the transition matrices themselves are constructed from data (e.g., PSID earnings transitions by age group and health status). In this case, `rho_y`/`sigma_y` are no longer free calibration parameters for those dimensions.
@@ -128,9 +129,10 @@ These are the empirical moments used to identify the internally calibrated param
 | Wealth-to-income ratio by age | SCF / PSID | `beta`, income process |
 | Wealth-to-income ratio by education | SCF | Education-specific `mu_y` (validation) |
 | Wealth distribution at entry age (~25) | SCF | `initial_asset_distribution` |
-| **Income Dynamics** | | |
-| Consumption-income comovement | CEX / PSID | `rho_y` |
-| Earnings variance by age | PSID | `sigma_y` |
+| **Income Distribution** | | |
+| Cross-sectional variance of log earnings by age | Household survey (cross-section) | `rho_y` (slope), `sigma_y` (level) |
+| Earnings Gini or P90/P10 ratio | Household survey (cross-section) | `sigma_y` (validation) |
+| Consumption Gini or variance (if available) | Household expenditure survey | `rho_y` (validation) |
 | **Labor Market** | | |
 | Unemployment rate (aggregate) | CPS / BLS | `unemployment_rate`, `job_finding_rate` |
 | Average unemployment duration | CPS | `job_finding_rate` |
@@ -164,7 +166,7 @@ Fix `r` and `w` at empirically reasonable values. Calibrate parameters that prim
 
 | Parameter | Target |
 |-----------|--------|
-| `rho_y`, `sigma_y` | Earnings variance by age, consumption-income comovement |
+| `rho_y`, `sigma_y` | Cross-sectional variance of log earnings by age, wealth Gini |
 | `job_finding_rate` | Average unemployment duration |
 | `edu_params[type].unemployment_rate` | Unemployment rate by education |
 | `P_h` matrices | Fraction in poor health by age |
