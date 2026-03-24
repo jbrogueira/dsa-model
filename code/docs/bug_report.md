@@ -265,3 +265,212 @@ The single `nu` parameter cannot perfectly match average labor supply across all
 - Use education-type-specific `nu` (requires extending `LifecycleConfig` to accept a dict).
 - Normalize income grids so that mean labor income is comparable across education types before applying `nu`.
 - Target average hours = 1/3 per education group as a calibration moment.
+
+---
+
+## BUG-008 — Mortality and bequests use post-transition states in simulation
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+Mortality draws and accidental bequests are recorded off the updated simulation state rather than the state at which the survival decision is taken. This can distort:
+
+- death timing by health state,
+- accidental bequest amounts,
+- bequest-tax revenue,
+- bequest redistribution in the transition solver.
+
+### Root Cause
+In `_simulate_sequential()`, the simulator first advances the agent to next-period policy/state indices:
+
+```python
+i_a[i] = self.a_policy[...]
+i_y[i] = ...
+i_h[i] = ...
+```
+
+and only afterwards evaluates survival:
+
+```python
+survival_t = self.survival_probs[lifecycle_age, i_h[i]]
+if np.random.random() > survival_t:
+    bequest_sim[t_sim, i] = self.a_grid[i_a[i]]
+    alive[i] = False
+```
+
+This mixes current-period timing with next-period state indices.
+
+- If survival risk is meant to depend on the current age/health state, the code is using the wrong health state.
+- If the accidental bequest is meant to be end-of-period assets conditional on dying before next period, the timing needs to be stated and handled consistently; right now the implementation implicitly mixes "choose next assets" and "draw death" without a clean convention.
+
+### Suggested Fix
+Choose one explicit timing convention and implement it consistently. The cleanest option is usually:
+
+1. evaluate survival using the current-period state `(age t, health h_t)`,
+2. if death occurs at the end of period `t`, record the intended bequest object explicitly,
+3. only then transition the agent into next-period state storage if they survive.
+
+At minimum, the survival draw should not use `i_h[i]` after it has already been updated to `h_{t+1}`.
+
+---
+
+## BUG-009 — `transfer_floor` is not a true consumption floor
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+`LifecycleConfig.transfer_floor` is documented and labeled as a consumption floor, but the implementation only floors pre-consumption resources. As a result:
+
+- actual consumption can still fall below the configured floor,
+- the gap is larger when `tau_c > 0`,
+- transition experiments with transfers understate fiscal cost relative to the stated policy.
+
+### Root Cause
+`_compute_budget()` applies:
+
+```python
+transfer = max(0.0, self.transfer_floor - budget)
+budget += transfer
+```
+
+but the solver later computes:
+
+```python
+c = (budget - a_next) / (1 + tau_c_t)
+```
+
+So `budget >= transfer_floor` does **not** imply `c >= transfer_floor`.
+
+Economically, this is not a Huggett-style minimum-consumption guarantee. It is a resources floor before consumption tax and before the savings choice.
+
+### Suggested Fix
+If the model intends a true consumption floor, the transfer should be defined on realized consumption:
+
+```text
+T = max(0, c_floor - c_without_transfer)
+```
+
+with the budget/choice problem rewritten so that the transfer depends on the post-choice consumption object. If the current implementation is intentional, the config/docs should be renamed from "consumption floor" to "resource floor" to avoid misinterpretation.
+
+---
+
+## BUG-010 — JAX MIT-stitching cache invalidation only clears one education group
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `olg_transition.py`
+
+### Symptom
+In JAX mode with MIT-shock stitching enabled, stale pre-stitching batched policy arrays may survive for some education groups. This can make the transition simulation ignore the stitched baseline policies for old cohorts in those groups.
+
+### Root Cause
+After looping over all education groups and birth periods, the code invalidates `_jax_policy_batch` with:
+
+```python
+self._jax_policy_batch.pop(edu_type_jax, None)
+```
+
+outside the loop. Since `edu_type_jax` is the loop variable, only the **last** education type is cleared.
+
+### Suggested Fix
+Clear the cached JAX policy batch for every education type that was stitched, or simply reset the full cache:
+
+```python
+self._jax_policy_batch = {}
+```
+
+after JAX-side stitching is complete.
+
+---
+
+## BUG-011 — Population-aging weights average survival across health states
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `olg_transition.py`
+
+### Symptom
+The demographic block can produce incorrect age weights when survival probabilities differ by health state. This affects:
+
+- cross-sectional age structure,
+- aggregate capital and labor,
+- fiscal quantities that depend on cohort mass.
+
+### Root Cause
+`_build_population_weights()` computes cumulative cohort survival using:
+
+```python
+cum_surv *= np.mean(surv_sched[j, :])
+```
+
+This imposes an equal-weight average over health states at every age. That is not generally consistent with the model unless health states are uniformly distributed at all ages, which they are not.
+
+### Suggested Fix
+Use one of:
+
+- a scalar survival schedule with no health dependence in the demographic block, or
+- an explicit age-by-health distribution for each cohort and propagate it forward with the health transition matrix.
+
+Without that, the current demographic weights are only an approximation and should be documented as such.
+
+---
+
+## BUG-012 — Time-varying cohort weights can leak across transition runs
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `olg_transition.py`
+
+### Symptom
+Running one transition with time-varying cohort weights and then another transition without them can silently reuse the old `cohort_sizes_path`. This contaminates later simulations with stale demographic weights.
+
+### Root Cause
+`simulate_transition()` updates `cohort_sizes_path` when `pop_growth_path` is provided, but it does not clear previously stored `cohort_sizes_path` when a later run omits `pop_growth_path`. `_cohort_weights()` always prefers `cohort_sizes_path` when present.
+
+### Suggested Fix
+At the start of `simulate_transition()`, explicitly reset:
+
+```python
+self.cohort_sizes_path = None
+```
+
+unless the current run rebuilds it from `pop_growth_path`, `fertility_path`, or survival-improvement logic.
+
+---
+
+## ISSUE-013 — Missing explicit SOE accounting validation check
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `olg_transition.py`
+
+### Symptom
+The transition solver distinguishes household wealth `A`, domestic capital `K_domestic`, and net foreign assets `NFA`, which is appropriate for a small open economy. However, there is no explicit post-simulation check documenting and verifying the exact open-economy accounting identity the model is intended to satisfy.
+
+### Why this is not a closed-economy bug
+In a small open economy, household wealth need not equal domestic capital:
+
+```text
+A_t = K_domestic,t + NFA_t
+```
+
+so the absence of a closed-economy resource-clearing check is not itself an error.
+
+### Open modeling issue
+The code would still benefit from an explicit validation of the SOE accounting convention being used. For example, after a transition run, one could check consistency across:
+
+- private consumption `C_t`,
+- domestic investment,
+- public investment `I_g,t`,
+- government spending `G_t`,
+- output `Y_t`,
+- and the implied external balance / change in `NFA_t`.
+
+Without such a check, it is harder to diagnose whether a transition path that "runs" is also internally consistent with the intended SOE resource identity.
+
+### Suggested Fix
+Add a diagnostic routine that computes and reports the residual in the model's intended SOE accounting identity period by period, and document the exact identity in `TRANSITION_ALGORITHM.md` or a related model note.
