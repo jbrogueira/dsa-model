@@ -474,3 +474,193 @@ Without such a check, it is harder to diagnose whether a transition path that "r
 
 ### Suggested Fix
 Add a diagnostic routine that computes and reports the residual in the model's intended SOE accounting identity period by period, and document the exact identity in `TRANSITION_ALGORITHM.md` or a related model note.
+
+---
+
+## BUG-014 — Endogenous retirement is solved but not simulated
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+When `retirement_window` is enabled, the Bellman problem allows agents to choose between working and retiring inside the window, but the forward simulation still imposes retirement mechanically at `retirement_age`. As a result:
+
+- policy functions can encode early retirement,
+- simulated lifecycle paths do not implement that choice,
+- any transition aggregation that relies on simulation will mis-measure labor supply, pensions, and taxes under endogenous retirement.
+
+### Root Cause
+The solve correctly compares work vs retire in `_solve_period()`:
+
+```python
+val_work = self._solve_state_choice(..., is_retired=False, ...)
+val_ret  = self._solve_state_choice(..., is_retired=True, ...)
+```
+
+but the simulator uses:
+
+```python
+is_retired = (lifecycle_age >= self.retirement_age)
+```
+
+so the realized retirement status ignores the retirement-window decision embedded in the solved value and policy functions.
+
+### Suggested Fix
+Store an explicit retirement-choice policy during the solve, then use that policy during simulation. Without a simulated retirement-state variable, the current implementation is only valid for fixed retirement.
+
+---
+
+## ISSUE-015 — Pension formula does not use earnings history despite solver interface
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+The solver tracks `avg_earnings` in simulation and the class/docstrings refer to an earnings-history-based pension system, but actual pension benefits are computed from the last working income state `y_last` and a fixed retirement wage.
+
+### Root Cause
+Both the Bellman budget map and the simulator compute pensions as:
+
+```python
+pension = replacement_rate * w_at_retirement * y_grid[i_y_last]
+```
+
+while `avg_earnings` is only recorded for diagnostics and never enters pension determination.
+
+### Why this matters economically
+This is a materially different pension system:
+
+- it is effectively a "last earnings state" rule,
+- it ignores the moving-average earnings history suggested by `N_earnings_history`,
+- it can overstate pension sensitivity to the last employment shock before retirement.
+
+### Suggested Fix
+Either:
+
+- extend the state space so pensionable earnings history is genuinely part of the solved household problem, or
+- rename/document the current implementation as a reduced-form last-income pension rule.
+
+---
+
+## ISSUE-016 — Endogenous-retirement pension base uses mandatory retirement wage
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+When `retirement_window` is enabled, pension benefits are still anchored to:
+
+```python
+self.w_at_retirement = self.w_path[self.retirement_age - 1]
+```
+
+regardless of when the agent actually chooses to retire.
+
+### Root Cause
+The pension base wage is cached once at the mandatory retirement age during model initialization and then reused everywhere in retirement calculations.
+
+### Why this matters economically
+If retirement timing is endogenous, the pension system should be explicit about whether benefits depend on:
+
+- the wage at actual retirement,
+- the wage at statutory retirement,
+- or an earnings-history object.
+
+The current code assumes the second even when the model is otherwise allowing the first dimension of choice.
+
+### Suggested Fix
+Tie the pension base to the intended economic rule. If actual retirement timing matters, the retirement decision must update the pension base consistently.
+
+---
+
+## ISSUE-017 — `transfer_floor` is a resource floor, not a true consumption floor
+
+**Date:** 2026-03-24
+**Status:** Open
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+`transfer_floor` is described as a consumption floor, but the implementation only floors resources before the consumption-tax wedge and before the savings choice. Realized consumption can therefore remain below the configured floor.
+
+### Root Cause
+The code applies:
+
+```python
+transfer = max(0.0, self.transfer_floor - budget)
+budget += transfer
+```
+
+and later sets:
+
+```python
+c = (budget - a_next) / (1 + tau_c_t)
+```
+
+So the guarantee is on `budget`, not on `c`.
+
+### Why this matters economically
+This is not the same policy as a minimum-consumption guarantee. Fiscal cost and household insurance are both understated relative to a true Huggett-style consumption floor.
+
+### Suggested Fix
+Either implement the transfer on realized consumption or rename/document the current feature as a resource floor.
+
+---
+
+## BUG-018 — Survival draw uses next-period health state in simulation
+
+**Date:** 2026-03-24
+**Status:** Fixed (2026-03-24)
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+Mortality in forward simulation is drawn after the health state has already been advanced to `h_{t+1}`. This makes death probabilities depend on the wrong state relative to the Bellman equation.
+
+### Root Cause
+In `_simulate_sequential()`, the code transitions:
+
+```python
+i_h[i] = np.searchsorted(...)
+```
+
+and only then evaluates:
+
+```python
+survival_t = self.survival_probs[lifecycle_age, i_h[i]]
+```
+
+So the simulator uses the next-period health index with current-period age.
+
+### Suggested Fix
+Draw survival using the current state `(t, h_t)` before updating health to `h_{t+1}`.
+
+---
+
+## BUG-019 — Bequests are recorded off the updated asset index
+
+**Date:** 2026-03-24
+**Status:** Fixed (2026-03-24)
+**Files:** `lifecycle_perfect_foresight.py`
+
+### Symptom
+Accidental bequests are recorded after the asset policy index has already been updated to the chosen next-period asset position. This creates ambiguous timing and can mis-measure bequest amounts.
+
+### Root Cause
+The simulator first assigns:
+
+```python
+i_a[i] = self.a_policy[...]
+```
+
+and only afterwards, if the agent dies, records:
+
+```python
+bequest_sim[t_sim, i] = self.a_grid[i_a[i]]
+```
+
+This mixes end-of-period savings choice and death timing without an explicit convention.
+
+### Suggested Fix
+Pick an explicit timing convention and implement it cleanly. If bequests are meant to equal end-of-period assets, document that and ensure survival is drawn consistently off the current state before any next-period state variables are overwritten.

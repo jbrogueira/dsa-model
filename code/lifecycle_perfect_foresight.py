@@ -1072,6 +1072,17 @@ class LifecycleModelPerfectForesight:
                 gross_capital_income = self.r_path[lifecycle_age] * a_sim[t_sim, i]
                 tax_k_sim[t_sim, i] = self.tau_k_path[lifecycle_age] * gross_capital_income
                 
+                # --- Survival draw (current-period state) ---
+                # Must occur before state transitions so that death probability
+                # uses (age t, h_t) and bequest equals current-period assets.
+                if self.config.survival_probs is not None:
+                    survival_t = self.survival_probs[lifecycle_age, i_h[i]]
+                    if np.random.random() > survival_t:
+                        bequest_sim[t_sim, i] = self.a_grid[i_a[i]]
+                        alive[i] = False
+                        continue  # skip state transitions for dead agent
+
+                # --- State transitions to next period ---
                 if t_sim < T_sim - 1:
                     i_a[i] = self.a_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
 
@@ -1081,12 +1092,6 @@ class LifecycleModelPerfectForesight:
                         i_y[i] = np.searchsorted(np.cumsum(P_y_row), np.random.random())
 
                     i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
-
-                if self.config.survival_probs is not None:
-                    survival_t = self.survival_probs[lifecycle_age, i_h[i]]
-                    if np.random.random() > survival_t:
-                        bequest_sim[t_sim, i] = self.a_grid[i_a[i]]
-                        alive[i] = False
 
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,

@@ -678,10 +678,11 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     new_i_h = jnp.clip(new_i_h, 0, P_h.shape[2] - 1)
 
     # --- Mortality ---
-    # survival_probs is always an array here (ones if no mortality)
+    # Survival draw uses current-period state (age t, h_t), not next-period.
+    # Bequest equals current-period assets (before savings choice for next period).
     surv_t = survival_probs[lifecycle_age, i_h]
     dies = alive & (u_alive > surv_t)
-    bequest_this_period = jnp.where(dies, a_grid[new_i_a], 0.0)
+    bequest_this_period = jnp.where(dies, a_grid[i_a], 0.0)
     new_alive = alive & ~dies
 
     new_carry = (new_i_a.astype(jnp.int32), new_i_y.astype(jnp.int32),
