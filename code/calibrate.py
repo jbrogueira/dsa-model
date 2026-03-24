@@ -29,6 +29,12 @@ from scipy.optimize import minimize
 
 from lifecycle_perfect_foresight import LifecycleConfig, LifecycleModelPerfectForesight
 
+try:
+    from lifecycle_jax import LifecycleModelJAX
+    _JAX_AVAILABLE = True
+except ImportError:
+    _JAX_AVAILABLE = False
+
 
 # ---------------------------------------------------------------------------
 # 1. SimPanel — named wrapper for the 21-tuple simulation output
@@ -94,8 +100,8 @@ def compute_gini(x, weights=None):
         total_xw = cum_xw[-1]
         if total_xw == 0:
             return 0.0
-        # Weighted Gini
-        return 1.0 - 2.0 * np.sum(ws * cum_xw) / (total_w * total_xw) + 1.0 / total_w
+        # Weighted Gini (Lerman & Yitzhaki 1989)
+        return 1.0 - 2.0 * np.sum(ws * cum_xw) / (total_w * total_xw)
 
 
 def compute_earnings_variance_by_age(effective_y_sim, employed_sim, alive_sim,
@@ -291,6 +297,7 @@ class CalibrationSpec:
     r: float = 0.03
     w: float = 1.0
     age_weights: Optional[np.ndarray] = None  # (T,) stationary age distribution
+    backend: str = 'numpy'  # 'numpy' or 'jax'
 
 
 # ---------------------------------------------------------------------------
@@ -532,9 +539,14 @@ def run_model_moments(theta, spec, return_panels=False):
             r_path=np.full(config.T, spec.r),
             w_path=np.full(config.T, spec.w),
         )
-        model = LifecycleModelPerfectForesight(cfg, verbose=False)
-        model.solve(verbose=False)
-        raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
+        if spec.backend == 'jax' and _JAX_AVAILABLE:
+            model = LifecycleModelJAX(cfg, verbose=False)
+            model.solve(verbose=False)
+            raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
+        else:
+            model = LifecycleModelPerfectForesight(cfg, verbose=False)
+            model.solve(verbose=False)
+            raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
         panels[edu_type] = wrap_sim_output(raw)
 
     # Compute each target moment
@@ -802,6 +814,7 @@ def load_config(path):
         r=r,
         w=w,
         age_weights=age_weights,
+        backend=sim.get('backend', 'numpy'),
     )
     return {'spec': spec, 'config_data': raw, 'eq_prices': eq_prices,
             'age_weights': age_weights}
@@ -1144,6 +1157,9 @@ def main():
                         help='JSON file to save raw results')
     parser.add_argument('--report-dir', type=str, default='output/calibration',
                         help='Directory for markdown reports')
+    parser.add_argument('--backend', type=str, default=None,
+                        choices=['numpy', 'jax'],
+                        help='Override backend (numpy or jax)')
     args = parser.parse_args()
 
     config_data = None
@@ -1170,21 +1186,17 @@ def main():
         loaded = load_config(args.config)
         spec = loaded['spec']
         config_data = loaded['config_data']
-        # CLI overrides
+        # CLI overrides — use dataclasses.replace-style rebuild
+        overrides = {}
         if args.n_sim is not None:
-            spec = CalibrationSpec(
-                params=spec.params, moments=spec.moments,
-                education_shares=spec.education_shares,
-                base_config=spec.base_config,
-                n_sim=args.n_sim, seed=spec.seed,
-                r=spec.r, w=spec.w)
+            overrides['n_sim'] = args.n_sim
         if args.seed is not None:
-            spec = CalibrationSpec(
-                params=spec.params, moments=spec.moments,
-                education_shares=spec.education_shares,
-                base_config=spec.base_config,
-                n_sim=spec.n_sim, seed=args.seed,
-                r=spec.r, w=spec.w)
+            overrides['seed'] = args.seed
+        if args.backend is not None:
+            overrides['backend'] = args.backend
+        if overrides:
+            from dataclasses import replace
+            spec = replace(spec, **overrides)
     else:
         spec = default_spec(
             n_sim=args.n_sim or 10_000,
