@@ -5,17 +5,23 @@ Calibrates income process, labor market, and preference parameters via
 Simulated Method of Moments using standalone LifecycleModelPerfectForesight
 instances (partial equilibrium, fixed prices).
 
+Country-specific data is read from a JSON input file (see calibration_input_GR.json
+for the schema). No country-specific logic lives in this module.
+
 Usage:
-    python calibrate.py --n-sim 10000 --maxiter 500 --seed 42
-    python calibrate.py --config targets.json --output results.json
+    python calibrate.py --config calibration_input_GR.json
+    python calibrate.py --config calibration_input_GR.json --n-sim 20000
+    python calibrate.py --test  # tiny smoke test
 """
 
 import argparse
 import copy
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import NamedTuple, Optional
 
 import numpy as np
@@ -284,6 +290,7 @@ class CalibrationSpec:
     seed: int = 42
     r: float = 0.03
     w: float = 1.0
+    age_weights: Optional[np.ndarray] = None  # (T,) stationary age distribution
 
 
 # ---------------------------------------------------------------------------
@@ -293,31 +300,57 @@ class CalibrationSpec:
 # Dispatch table: compute_key -> function(panels, spec) -> float
 # panels is dict[edu_type -> SimPanel], spec is CalibrationSpec
 
-def _moment_wealth_gini(panels, spec):
-    """Wealth Gini pooled across education types."""
-    all_a, all_alive = [], []
+
+def _agent_weights(panel, spec, edu, mask=None):
+    """Per-(t,i) weights for a single education type, incorporating age weights.
+
+    *mask* is (T, n_sim) bool selecting which entries to include.
+    Returns (values_mask, weights) where values_mask indexes the flat panel and
+    weights has the same length as values_mask.sum().
+    """
+    T, n_sim = panel.a_sim.shape
+    alive = panel.alive_sim.astype(bool)
+    if mask is not None:
+        alive = alive & mask
+    share = spec.education_shares[edu]
+    # Age weights: omega(t) per period, spread equally across n_sim agents
+    if spec.age_weights is not None:
+        aw = spec.age_weights[:T]
+    else:
+        aw = np.ones(T) / T
+    # Build (T, n_sim) weight array, then mask
+    w_grid = (share * aw[:, None] / n_sim) * np.ones((1, n_sim))
+    return alive, w_grid[alive]
+
+
+def _pool_weighted(panels, spec, field, mask_fn=None):
+    """Pool a SimPanel field across education types with age + education weights.
+
+    *field*: attribute name on SimPanel (e.g. 'a_sim').
+    *mask_fn*: optional callable(panel) -> (T, n_sim) bool mask.
+    Returns (values, weights) arrays.
+    """
+    all_vals, all_w = [], []
     for edu, panel in panels.items():
-        share = spec.education_shares[edu]
-        n = panel.a_sim.shape[1]
-        w = np.full(np.sum(panel.alive_sim.astype(bool)), share / n)
-        all_a.append(panel.a_sim[panel.alive_sim.astype(bool)])
-        all_alive.append(w)
-    vals = np.concatenate(all_a)
-    weights = np.concatenate(all_alive)
+        mask = mask_fn(panel) if mask_fn else None
+        alive, w = _agent_weights(panel, spec, edu, mask)
+        all_vals.append(getattr(panel, field)[alive])
+        all_w.append(w)
+    return np.concatenate(all_vals), np.concatenate(all_w)
+
+
+def _moment_wealth_gini(panels, spec):
+    """Wealth Gini pooled across education types (age-weighted)."""
+    vals, weights = _pool_weighted(panels, spec, 'a_sim')
     return compute_gini(vals, weights)
 
 
 def _moment_zero_wealth_fraction(panels, spec):
-    """Zero-wealth fraction pooled."""
-    total, zero = 0.0, 0.0
-    for edu, panel in panels.items():
-        share = spec.education_shares[edu]
-        mask = panel.alive_sim.astype(bool)
-        n_alive = np.sum(mask)
-        n_zero = np.sum(panel.a_sim[mask] <= 0.0)
-        total += share * n_alive
-        zero += share * n_zero
-    return zero / total if total > 0 else 0.0
+    """Zero-wealth fraction pooled (age-weighted)."""
+    vals, weights = _pool_weighted(panels, spec, 'a_sim')
+    if len(vals) == 0:
+        return 0.0
+    return float(np.sum(weights[vals <= 0.0]) / np.sum(weights))
 
 
 def _moment_earnings_var_slope(panels, spec):
@@ -366,42 +399,104 @@ def _moment_earnings_var_mean(panels, spec):
 
 
 def _moment_unemployment_rate(panels, spec):
-    """Unemployment rate pooled."""
-    total, unemp = 0.0, 0.0
-    for edu, panel in panels.items():
-        share = spec.education_shares[edu]
-        mask = panel.alive_sim.astype(bool) & ~panel.retired_sim.astype(bool)
-        n = np.sum(mask)
-        n_unemp = np.sum(~panel.employed_sim[mask])
-        total += share * n
-        unemp += share * n_unemp
-    return unemp / total if total > 0 else 0.0
+    """Unemployment rate pooled (age-weighted)."""
+    def _working(p):
+        return p.alive_sim.astype(bool) & ~p.retired_sim.astype(bool)
+    # Employed among working-age alive
+    emp_vals, emp_w = _pool_weighted(panels, spec, 'employed_sim', _working)
+    if len(emp_vals) == 0:
+        return 0.0
+    return 1.0 - float(np.sum(emp_vals * emp_w) / np.sum(emp_w))
 
 
 def _moment_average_hours(panels, spec):
-    """Average hours pooled across education types."""
-    total, hours_sum = 0.0, 0.0
-    for edu, panel in panels.items():
-        share = spec.education_shares[edu]
-        mask = (panel.alive_sim.astype(bool) &
-                panel.employed_sim.astype(bool) &
-                ~panel.retired_sim.astype(bool))
-        n = np.sum(mask)
-        total += share * n
-        hours_sum += share * np.sum(panel.l_sim[mask])
-    return hours_sum / total if total > 0 else 0.0
+    """Average hours pooled (age-weighted)."""
+    def _employed(p):
+        return (p.alive_sim.astype(bool) &
+                p.employed_sim.astype(bool) &
+                ~p.retired_sim.astype(bool))
+    vals, weights = _pool_weighted(panels, spec, 'l_sim', _employed)
+    if len(vals) == 0:
+        return 0.0
+    return float(np.sum(vals * weights) / np.sum(weights))
 
 
 def _moment_consumption_gini(panels, spec):
-    """Consumption Gini pooled."""
-    all_c = []
-    for edu, panel in panels.items():
-        mask = panel.alive_sim.astype(bool)
-        all_c.append(panel.c_sim[mask])
-    vals = np.concatenate(all_c)
+    """Consumption Gini pooled (age-weighted)."""
+    vals, weights = _pool_weighted(panels, spec, 'c_sim')
     if len(vals) == 0:
         return 0.0
-    return compute_gini(vals)
+    return compute_gini(vals, weights)
+
+
+def _moment_income_gini(panels, spec):
+    """Gini of total income (earnings + pensions + UI), age-weighted."""
+    all_inc, all_w = [], []
+    for edu, panel in panels.items():
+        alive, w = _agent_weights(panel, spec, edu)
+        income = (panel.effective_y_sim[alive] +
+                  panel.pension_sim[alive] +
+                  panel.ui_sim[alive])
+        all_inc.append(income)
+        all_w.append(w)
+    return compute_gini(np.concatenate(all_inc), np.concatenate(all_w))
+
+
+def _moment_earnings_gini(panels, spec):
+    """Gini of effective earnings among employed non-retired, age-weighted."""
+    def _employed(p):
+        return (p.alive_sim.astype(bool) &
+                p.employed_sim.astype(bool) &
+                ~p.retired_sim.astype(bool))
+    vals, weights = _pool_weighted(panels, spec, 'effective_y_sim', _employed)
+    return compute_gini(vals, weights)
+
+
+def _moment_mean_assets(panels, spec):
+    """Age-weighted mean assets among alive agents."""
+    vals, weights = _pool_weighted(panels, spec, 'a_sim')
+    if len(vals) == 0:
+        return 0.0
+    return float(np.sum(vals * weights) / np.sum(weights))
+
+
+def _moment_median_wealth_to_income(panels, spec):
+    """Pooled median wealth-to-income among employed non-retired."""
+    def _employed_pos(p):
+        return (p.alive_sim.astype(bool) &
+                p.employed_sim.astype(bool) &
+                ~p.retired_sim.astype(bool) &
+                (p.effective_y_sim > 0))
+    a_vals, _ = _pool_weighted(panels, spec, 'a_sim', _employed_pos)
+    y_vals, _ = _pool_weighted(panels, spec, 'effective_y_sim', _employed_pos)
+    if len(a_vals) == 0:
+        return 0.0
+    return float(np.median(a_vals / y_vals))
+
+
+def _moment_p90_p10_income(panels, spec):
+    """P90/P10 ratio of total income among alive agents."""
+    all_inc = []
+    for edu, panel in panels.items():
+        alive = panel.alive_sim.astype(bool)
+        income = (panel.effective_y_sim[alive] +
+                  panel.pension_sim[alive] +
+                  panel.ui_sim[alive])
+        all_inc.append(income)
+    vals = np.concatenate(all_inc)
+    vals = vals[vals > 0]
+    if len(vals) < 10:
+        return 0.0
+    p90, p10 = np.percentile(vals, 90), np.percentile(vals, 10)
+    return p90 / p10 if p10 > 0 else 0.0
+
+
+def _moment_mean_consumption(panels, spec):
+    """Age-weighted mean consumption among alive agents."""
+    vals, weights = _pool_weighted(panels, spec, 'c_sim')
+    if len(vals) == 0:
+        return 0.0
+    return float(np.sum(vals * weights) / np.sum(weights))
 
 
 MOMENT_DISPATCH = {
@@ -412,13 +507,20 @@ MOMENT_DISPATCH = {
     'unemployment_rate': _moment_unemployment_rate,
     'average_hours': _moment_average_hours,
     'consumption_gini': _moment_consumption_gini,
+    'income_gini': _moment_income_gini,
+    'earnings_gini': _moment_earnings_gini,
+    'mean_assets': _moment_mean_assets,
+    'median_wealth_to_income': _moment_median_wealth_to_income,
+    'p90_p10_income': _moment_p90_p10_income,
+    'mean_consumption': _moment_mean_consumption,
 }
 
 
-def run_model_moments(theta, spec):
+def run_model_moments(theta, spec, return_panels=False):
     """Solve + simulate for each education type, compute target moments.
 
     Returns 1D array of model moments in the same order as spec.moments.
+    If *return_panels* is True, returns (m_model, panels) tuple.
     """
     config = apply_params(spec.base_config, spec.params, theta)
 
@@ -442,6 +544,8 @@ def run_model_moments(theta, spec):
         if fn is None:
             raise ValueError(f"Unknown compute_key: {mom.compute_key!r}")
         m_model[i] = fn(panels, spec)
+    if return_panels:
+        return m_model, panels
     return m_model
 
 
@@ -506,7 +610,7 @@ def calibrate(spec, maxiter=500, tol=1e-6, verbose=True):
 
     elapsed = time.time() - t0
     theta_opt = unbounded_to_theta(result.x, spec.params)
-    m_model = run_model_moments(theta_opt, spec)
+    m_model, panels = run_model_moments(theta_opt, spec, return_panels=True)
     m_data = np.array([m.value for m in spec.moments])
 
     if verbose:
@@ -522,6 +626,7 @@ def calibrate(spec, maxiter=500, tol=1e-6, verbose=True):
         'message': result.message,
         'history': history,
         'elapsed_seconds': elapsed,
+        'panels': panels,
     }
 
 
@@ -558,7 +663,439 @@ def print_calibration_results(result, spec):
 
 
 # ---------------------------------------------------------------------------
-# 8. Default calibration specification
+# 8. JSON config loader
+# ---------------------------------------------------------------------------
+
+# Maps JSON external_params keys to LifecycleConfig field names where they differ.
+_PARAM_FIELD_MAP = {
+    'tau_c': 'tau_c_default',
+    'tau_l': 'tau_l_default',
+    'tau_p': 'tau_p_default',
+    'tau_k': 'tau_k_default',
+}
+
+
+def compute_equilibrium_prices(config_data):
+    """Derive w and K/L from firm FOC given exogenous r and production params.
+
+    In SOE: r is exogenous. Firm FOC for capital pins K/L, then w follows.
+    With public capital: Y = A_tfp * K_g^eta_g * K_dom^alpha * L^(1-alpha).
+    """
+    r = config_data['prices']['r']
+    prod = config_data.get('production', {})
+    alpha = prod.get('alpha', 0.33)
+    delta = prod.get('delta', 0.07)
+    A_tfp = prod.get('A_tfp', 1.0)
+    K_g = prod.get('K_g', 0.0)
+    eta_g = prod.get('eta_g', 0.0)
+
+    K_g_factor = K_g ** eta_g if (K_g > 0 and eta_g > 0) else 1.0
+
+    # FOC for K: r + delta = alpha * A_tfp * K_g^eta_g * (K/L)^(alpha-1)
+    K_over_L = ((r + delta) / (alpha * A_tfp * K_g_factor)) ** (1.0 / (alpha - 1.0))
+    # FOC for L: w = (1-alpha) * A_tfp * K_g^eta_g * (K/L)^alpha
+    w = (1.0 - alpha) * A_tfp * K_g_factor * K_over_L ** alpha
+    Y_over_L = A_tfp * K_g_factor * K_over_L ** alpha
+
+    return {
+        'w': w,
+        'K_over_L': K_over_L,
+        'Y_over_L': Y_over_L,
+        'K_g_factor': K_g_factor,
+    }
+
+
+def compute_age_weights(T, pop_growth=0.0, survival_probs=None):
+    """Stationary cross-section age weights: omega(t) = (1+g)^{-t} * S(t).
+
+    S(t) = cumulative survival to age t. Returns normalised weights summing to 1.
+    """
+    omega = np.ones(T)
+    # Population growth discounting
+    if pop_growth != 0.0:
+        for t in range(T):
+            omega[t] = (1.0 + pop_growth) ** (-t)
+    # Cumulative survival
+    if survival_probs is not None:
+        surv = np.asarray(survival_probs).ravel()
+        cum_surv = 1.0
+        for t in range(T):
+            omega[t] *= cum_surv
+            if t < len(surv):
+                cum_surv *= surv[t]
+    # Normalise
+    omega /= omega.sum()
+    return omega
+
+
+def load_config(path):
+    """Load a calibration input JSON and build a CalibrationSpec.
+
+    Derives w from firm FOC (not from JSON). Computes stationary age weights.
+    Returns dict with 'spec', 'config_data', 'eq_prices', 'age_weights'.
+    """
+    with open(path) as f:
+        raw = json.load(f)
+
+    # --- Derive equilibrium prices ---
+    eq_prices = compute_equilibrium_prices(raw)
+    r = raw['prices']['r']
+    w = eq_prices['w']
+    raw['_derived'] = {'w': w, 'K_over_L': eq_prices['K_over_L'],
+                       'Y_over_L': eq_prices['Y_over_L']}
+
+    # --- Build edu_params dict ---
+    edu_params = {}
+    for edu_type, edu_data in raw['edu_params'].items():
+        edu_params[edu_type] = dict(edu_data)
+
+    # Inject initial values for calibrated edu_params fields
+    for p in raw['calibration']['params']:
+        parts = p['path'].split('.')
+        if parts[0] == 'edu_params':
+            field_name = parts[2]
+            if parts[1] == '*':
+                for et in edu_params:
+                    edu_params[et].setdefault(field_name, p['initial'])
+            else:
+                edu_params[parts[1]].setdefault(field_name, p['initial'])
+
+    # --- Build LifecycleConfig kwargs ---
+    kwargs = {}
+    T = raw['model']['T']
+    for k, v in raw['model'].items():
+        kwargs[k] = v
+    for k, v in raw['external_params'].items():
+        config_key = _PARAM_FIELD_MAP.get(k, k)
+        if config_key == 'pop_growth':
+            continue  # not a LifecycleConfig field
+        kwargs[config_key] = v
+    kwargs['edu_params'] = edu_params
+    kwargs['r_path'] = np.full(T, r)
+    kwargs['w_path'] = np.full(T, w)
+    kwargs['r_default'] = r
+    kwargs['w_default'] = w
+    if raw.get('survival_probs') is not None:
+        kwargs['survival_probs'] = np.array(raw['survival_probs'])
+    if raw.get('m_age_profile') is not None:
+        kwargs['m_age_profile'] = np.array(raw['m_age_profile'])
+
+    base_config = LifecycleConfig(**kwargs)
+
+    # --- Age weights ---
+    pop_growth = raw.get('external_params', {}).get('pop_growth', 0.0)
+    surv = np.array(raw['survival_probs']) if raw.get('survival_probs') else None
+    age_weights = compute_age_weights(T, pop_growth, surv)
+
+    # --- Build CalibrationSpec ---
+    params = [CalibrationParam(**p) for p in raw['calibration']['params']]
+    moments = [TargetMoment(**m) for m in raw['calibration']['targets']]
+
+    sim = raw.get('simulation', {})
+    spec = CalibrationSpec(
+        params=params,
+        moments=moments,
+        education_shares=raw['education_shares'],
+        base_config=base_config,
+        n_sim=sim.get('n_sim', 10_000),
+        seed=sim.get('seed', 42),
+        r=r,
+        w=w,
+        age_weights=age_weights,
+    )
+    return {'spec': spec, 'config_data': raw, 'eq_prices': eq_prices,
+            'age_weights': age_weights}
+
+
+# ---------------------------------------------------------------------------
+# 9. Untargeted moments & report generation
+# ---------------------------------------------------------------------------
+
+def compute_untargeted_moments(panels, spec):
+    """Compute all moments in MOMENT_DISPATCH not already targeted."""
+    targeted_keys = {m.compute_key for m in spec.moments}
+    out = {}
+    for key, fn in MOMENT_DISPATCH.items():
+        if key not in targeted_keys:
+            try:
+                out[key] = fn(panels, spec)
+            except Exception:
+                out[key] = float('nan')
+    return out
+
+
+def compute_fiscal_ratios(panels, spec, config_data):
+    """Compute government budget components as shares of Y.
+
+    Uses age-weighted aggregation from the simulation panels and
+    production function parameters from config_data.
+    """
+    T = spec.base_config.T
+    ret_age = spec.base_config.retirement_age
+    n_sim = spec.n_sim
+    r = spec.r
+    w = spec.w
+
+    # Age weights (T,) — stationary cross-section
+    aw = spec.age_weights if spec.age_weights is not None else np.ones(T) / T
+
+    # --- Aggregate per-period means across education types ---
+    # For each variable, compute age-weighted cross-sectional mean
+    agg = {k: 0.0 for k in ['labor_income', 'consumption', 'assets',
+                              'pension', 'ui', 'oop_health', 'gov_health',
+                              'tax_c', 'tax_l', 'tax_p', 'tax_k',
+                              'transfer']}
+    for edu, panel in panels.items():
+        share = spec.education_shares[edu]
+        alive = panel.alive_sim.astype(bool)
+        for t in range(T):
+            a_t = alive[t]
+            n_alive = np.sum(a_t)
+            if n_alive == 0:
+                continue
+            wt = share * aw[t]
+            # Means at age t among alive
+            agg['labor_income'] += wt * np.mean(panel.effective_y_sim[t, a_t])
+            agg['consumption'] += wt * np.mean(panel.c_sim[t, a_t])
+            agg['assets'] += wt * np.mean(panel.a_sim[t, a_t])
+            agg['pension'] += wt * np.mean(panel.pension_sim[t, a_t])
+            agg['ui'] += wt * np.mean(panel.ui_sim[t, a_t])
+            agg['oop_health'] += wt * np.mean(panel.oop_m_sim[t, a_t])
+            agg['gov_health'] += wt * np.mean(panel.gov_m_sim[t, a_t])
+            agg['tax_c'] += wt * np.mean(panel.tax_c_sim[t, a_t])
+            agg['tax_l'] += wt * np.mean(panel.tax_l_sim[t, a_t])
+            agg['tax_p'] += wt * np.mean(panel.tax_p_sim[t, a_t])
+            agg['tax_k'] += wt * np.mean(panel.tax_k_sim[t, a_t])
+
+    # --- Production side ---
+    prod = config_data.get('production', {})
+    alpha = prod.get('alpha', 0.33)
+    A_tfp = prod.get('A_tfp', 1.0)
+    K_g = prod.get('K_g', 0.0)
+    eta_g = prod.get('eta_g', 0.0)
+    K_g_factor = K_g ** eta_g if (K_g > 0 and eta_g > 0) else 1.0
+
+    # L = aggregate effective labor = labor_income / w (since w * L = total labor income)
+    L = agg['labor_income'] / w if w > 0 else 0.0
+    K_over_L = config_data.get('_derived', {}).get('K_over_L', 0.0)
+    K_domestic = K_over_L * L
+    Y = A_tfp * K_g_factor * K_domestic ** alpha * L ** (1.0 - alpha) if L > 0 else 0.0
+
+    if Y <= 0:
+        return {'error': 'Y <= 0, cannot compute ratios'}
+
+    # --- Fiscal ratios ---
+    fiscal_data = config_data.get('fiscal', {})
+    B_over_Y = fiscal_data.get('B_over_Y', 0.0)
+
+    tax_revenue = agg['tax_c'] + agg['tax_l'] + agg['tax_p'] + agg['tax_k']
+    expenditure = (agg['pension'] + agg['ui'] + agg['gov_health'] +
+                   r * B_over_Y * Y)  # interest on debt
+
+    ratios = {
+        'Y': Y,
+        'C_over_Y': agg['consumption'] / Y,
+        'K_over_Y': K_domestic / Y,
+        'L': L,
+        'w': w,
+        'tax_revenue_over_Y': tax_revenue / Y,
+        'tax_c_over_Y': agg['tax_c'] / Y,
+        'tax_l_over_Y': agg['tax_l'] / Y,
+        'tax_p_over_Y': agg['tax_p'] / Y,
+        'tax_k_over_Y': agg['tax_k'] / Y,
+        'pensions_over_Y': agg['pension'] / Y,
+        'ui_over_Y': agg['ui'] / Y,
+        'health_over_Y': agg['gov_health'] / Y,
+        'interest_over_Y': r * B_over_Y,
+        'primary_balance_over_Y': (tax_revenue - expenditure + r * B_over_Y * Y) / Y,
+        'total_balance_over_Y': (tax_revenue - expenditure) / Y,
+    }
+
+    # Compare to data if available
+    comparisons = {}
+    for key in ratios:
+        data_key = key
+        if data_key in fiscal_data:
+            comparisons[key] = {
+                'model': ratios[key],
+                'data': fiscal_data[data_key],
+            }
+    ratios['_comparisons'] = comparisons
+
+    return ratios
+
+
+def generate_report(result, spec, config_data, output_dir='output/calibration'):
+    """Write a concise calibration report as markdown. Returns the file path."""
+    os.makedirs(output_dir, exist_ok=True)
+    country = config_data.get('country', 'XX')
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = os.path.join(output_dir, f'calibration_{country}_{ts}.md')
+
+    lines = []
+
+    def _add(s=''):
+        lines.append(s)
+
+    # Header
+    _add(f'# Calibration — {country}')
+    _add(f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+    if config_data.get('description'):
+        _add(f'\n{config_data["description"]}')
+    _add()
+
+    # Summary
+    m_data = result['data_moments']
+    m_model = result['model_moments']
+    abs_pct = np.mean([abs(100 * (mv - dv) / dv) if abs(dv) > 1e-12 else 0.0
+                       for mv, dv in zip(m_model, m_data)])
+    _add('## Summary')
+    _add('| | |')
+    _add('|---|---|')
+    _add(f'| Objective (Q) | {result["objective"]:.6e} |')
+    _add(f'| Mean abs % dev (targeted) | {abs_pct:.1f}% |')
+    _add(f'| Converged | {result["convergence"]} |')
+    _add(f'| Elapsed | {result["elapsed_seconds"]:.1f}s |')
+    _add(f'| n_sim | {spec.n_sim:,} |')
+    _add(f'| Seed | {spec.seed} |')
+    _add()
+
+    # Derived prices
+    derived = config_data.get('_derived', {})
+    if derived:
+        _add('## Prices (derived from firm FOC)')
+        _add('| | |')
+        _add('|---|---|')
+        _add(f'| r (exogenous) | {spec.r:.4f} |')
+        _add(f'| w (from FOC) | {derived.get("w", spec.w):.4f} |')
+        _add(f'| K/L | {derived.get("K_over_L", 0):.4f} |')
+        _add(f'| Y/L | {derived.get("Y_over_L", 0):.4f} |')
+        _add()
+
+    # External parameters
+    _add('## External Parameters')
+    _add('| Parameter | Value |')
+    _add('|---|---|')
+    model_keys = ['T', 'retirement_age', 'n_a', 'n_y', 'beta', 'gamma']
+    for k in model_keys:
+        v = config_data['model'].get(k)
+        if v is not None:
+            _add(f'| {k} | {v} |')
+    _add(f'| r | {config_data["prices"]["r"]} |')
+    _add(f'| w (derived) | {spec.w:.4f} |')
+    for k, v in config_data['external_params'].items():
+        _add(f'| {k} | {v} |')
+    _add()
+
+    # Education params
+    edu = config_data['edu_params']
+    all_fields = sorted({f for ep in edu.values() for f in ep})
+    edu_types = sorted(edu.keys())
+    _add('### Education')
+    header = '| Field | ' + ' | '.join(edu_types) + ' |'
+    _add(header)
+    _add('|---' * (len(edu_types) + 1) + '|')
+    for f in all_fields:
+        row = f'| {f} |'
+        for et in edu_types:
+            row += f' {edu[et].get(f, "")} |'
+        _add(row)
+    _add(f'\nShares: {config_data["education_shares"]}')
+    _add()
+
+    # Calibrated parameters
+    _add('## Calibrated Parameters')
+    _add('| Parameter | Initial | Final | Lower | Upper | Near bound? |')
+    _add('|---|---|---|---|---|---|')
+    for p, v in zip(spec.params, result['theta']):
+        rng = p.upper - p.lower
+        near = ''
+        if (v - p.lower) < 0.05 * rng:
+            near = 'lower'
+        elif (p.upper - v) < 0.05 * rng:
+            near = 'upper'
+        _add(f'| {p.name} | {p.initial:.6f} | {v:.6f} | {p.lower:.4f} | '
+             f'{p.upper:.4f} | {near} |')
+    _add()
+
+    # Targeted moments
+    _add('## Targeted Moments')
+    _add('| Moment | Data | Model | % Dev | Weight |')
+    _add('|---|---|---|---|---|')
+    for m, mv, dv in zip(spec.moments, m_model, m_data):
+        pct = 100 * (mv - dv) / abs(dv) if abs(dv) > 1e-12 else 0.0
+        _add(f'| {m.name} | {m.value:.4f} | {mv:.4f} | {pct:+.1f}% | {m.weight:.2f} |')
+    _add()
+
+    # Untargeted moments
+    untargeted_model = result.get('untargeted_moments', {})
+    untargeted_data = config_data.get('untargeted', {})
+    if untargeted_model:
+        _add('## Untargeted Moments')
+        _add('| Moment | Model | Data | % Dev |')
+        _add('|---|---|---|---|')
+        for key in sorted(untargeted_model):
+            mv = untargeted_model[key]
+            dv = untargeted_data.get(key)
+            if dv is not None and abs(dv) > 1e-12:
+                pct = f'{100 * (mv - dv) / abs(dv):+.1f}%'
+                _add(f'| {key} | {mv:.4f} | {dv:.4f} | {pct} |')
+            else:
+                dv_str = '—' if dv is None else f'{dv}'
+                _add(f'| {key} | {mv:.4f} | {dv_str} | |')
+        _add()
+
+    # Fiscal ratios
+    fiscal = result.get('fiscal_ratios', {})
+    if fiscal and 'error' not in fiscal:
+        fiscal_data = config_data.get('fiscal', {})
+        _add('## Fiscal Ratios (model vs data, share of Y)')
+        _add('| Ratio | Model | Data | Dev |')
+        _add('|---|---|---|---|')
+        display_keys = [
+            'C_over_Y', 'K_over_Y', 'tax_revenue_over_Y',
+            'tax_c_over_Y', 'tax_l_over_Y', 'tax_p_over_Y', 'tax_k_over_Y',
+            'pensions_over_Y', 'ui_over_Y', 'health_over_Y',
+            'interest_over_Y', 'primary_balance_over_Y', 'total_balance_over_Y',
+        ]
+        for key in display_keys:
+            mv = fiscal.get(key)
+            if mv is None:
+                continue
+            dv = fiscal_data.get(key)
+            if dv is not None and abs(dv) > 1e-12:
+                dev = f'{mv - dv:+.3f}'
+                _add(f'| {key} | {mv:.3f} | {dv:.3f} | {dev} |')
+            else:
+                _add(f'| {key} | {mv:.3f} | — | |')
+        _add(f'\nY (model units) = {fiscal.get("Y", 0):.4f}, '
+             f'w = {fiscal.get("w", 0):.4f}')
+        _add()
+
+    # Convergence history (subsample)
+    history = result.get('history', [])
+    if history:
+        _add('## Convergence')
+        param_names = [p.name for p in spec.params]
+        header = '| Iter | Objective | ' + ' | '.join(param_names) + ' |'
+        _add(header)
+        _add('|---' * (len(param_names) + 2) + '|')
+        # Show first, every 10th, and last
+        indices = sorted(set([0] + list(range(9, len(history), 10)) +
+                             [len(history) - 1]))
+        for i in indices:
+            h = history[i]
+            vals = ' | '.join(f'{v:.6f}' for v in h['theta'])
+            _add(f'| {i + 1} | {h["objective"]:.6e} | {vals} |')
+        _add()
+
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+# ---------------------------------------------------------------------------
+# 10. Default calibration specification
 # ---------------------------------------------------------------------------
 
 def default_spec(n_sim=10_000, seed=42):
@@ -588,22 +1125,28 @@ def default_spec(n_sim=10_000, seed=42):
 
 
 # ---------------------------------------------------------------------------
-# 9. CLI
+# 11. CLI
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description='SMM calibration for OLG lifecycle model')
-    parser.add_argument('--n-sim', type=int, default=10_000)
+    parser.add_argument('--n-sim', type=int, default=None,
+                        help='Override n_sim from config')
     parser.add_argument('--maxiter', type=int, default=500)
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Override seed from config')
     parser.add_argument('--tol', type=float, default=1e-6)
     parser.add_argument('--test', action='store_true',
                         help='Use tiny model for quick smoke test')
     parser.add_argument('--config', type=str, default=None,
-                        help='JSON file with target moments and initial guesses')
+                        help='JSON calibration input file')
     parser.add_argument('--output', type=str, default=None,
-                        help='JSON file to save results')
+                        help='JSON file to save raw results')
+    parser.add_argument('--report-dir', type=str, default='output/calibration',
+                        help='Directory for markdown reports')
     args = parser.parse_args()
+
+    config_data = None
 
     if args.test:
         base_config = LifecycleConfig(
@@ -619,31 +1162,48 @@ def main():
             ],
             base_config=base_config,
             education_shares={'medium': 1.0},
-            n_sim=min(args.n_sim, 200),
-            seed=args.seed,
+            n_sim=min(args.n_sim or 200, 200),
+            seed=args.seed or 42,
         )
         args.maxiter = min(args.maxiter, 10)
     elif args.config:
-        with open(args.config) as f:
-            cfg = json.load(f)
-        params = [CalibrationParam(**p) for p in cfg['params']]
-        moments = [TargetMoment(**m) for m in cfg['moments']]
-        base_kwargs = cfg.get('base_config', {})
-        base_config = LifecycleConfig(**base_kwargs)
-        spec = CalibrationSpec(
-            params=params,
-            moments=moments,
-            base_config=base_config,
-            education_shares=cfg.get('education_shares',
-                                     {'low': 0.3, 'medium': 0.5, 'high': 0.2}),
-            n_sim=args.n_sim,
-            seed=args.seed,
-        )
+        loaded = load_config(args.config)
+        spec = loaded['spec']
+        config_data = loaded['config_data']
+        # CLI overrides
+        if args.n_sim is not None:
+            spec = CalibrationSpec(
+                params=spec.params, moments=spec.moments,
+                education_shares=spec.education_shares,
+                base_config=spec.base_config,
+                n_sim=args.n_sim, seed=spec.seed,
+                r=spec.r, w=spec.w)
+        if args.seed is not None:
+            spec = CalibrationSpec(
+                params=spec.params, moments=spec.moments,
+                education_shares=spec.education_shares,
+                base_config=spec.base_config,
+                n_sim=spec.n_sim, seed=args.seed,
+                r=spec.r, w=spec.w)
     else:
-        spec = default_spec(n_sim=args.n_sim, seed=args.seed)
+        spec = default_spec(
+            n_sim=args.n_sim or 10_000,
+            seed=args.seed or 42)
 
     result = calibrate(spec, maxiter=args.maxiter, tol=args.tol)
     print_calibration_results(result, spec)
+
+    # Compute untargeted moments and fiscal ratios
+    panels = result.get('panels', {})
+    if panels:
+        result['untargeted_moments'] = compute_untargeted_moments(panels, spec)
+        if config_data is not None:
+            result['fiscal_ratios'] = compute_fiscal_ratios(
+                panels, spec, config_data)
+
+    if config_data is not None:
+        report_path = generate_report(result, spec, config_data, args.report_dir)
+        print(f"\nReport: {report_path}")
 
     if args.output:
         out = {
@@ -661,9 +1221,11 @@ def main():
                           'compute_key': m.compute_key}
                          for m in spec.moments],
         }
+        if 'untargeted_moments' in result:
+            out['untargeted_moments'] = result['untargeted_moments']
         with open(args.output, 'w') as f:
             json.dump(out, f, indent=2)
-        print(f"\nResults saved to {args.output}")
+        print(f"Results saved to {args.output}")
 
 
 if __name__ == '__main__':

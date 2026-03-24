@@ -1,0 +1,103 @@
+{
+  "country": "GR",
+  "description": "Greece — provisional (income process from IT/ES proxies, LIS pending)",
+
+  "model": {
+    "T": 60,
+    "retirement_age": 39,
+    "n_a": 100,
+    "n_y": 5,
+    "n_h": 1,
+    "a_min": 0.0,
+    "a_max": 100.0,
+    "beta": 0.96,
+    "gamma": 2.0,
+    "labor_supply": false,
+    "tax_progressive": false
+  },
+
+  "prices": {
+    "r": 0.04
+  },
+
+  "production": {
+    "alpha": 0.33,
+    "delta": 0.07,
+    "A_tfp": 1.0,
+    "K_g": 0.0,
+    "eta_g": 0.0,
+    "delta_g": 0.0
+  },
+
+  "external_params": {
+    "tau_c": 0.1818,
+    "tau_l": 0.4058,
+    "tau_p": 0.3834,
+    "tau_k": 0.2236,
+    "pension_replacement_default": 0.76275,
+    "pension_min_floor": 0.0,
+    "ui_replacement_rate": 0.0945,
+    "transfer_floor": 0.0,
+    "kappa": 0.662,
+    "m_good": 0.05,
+    "job_finding_rate": 0.50,
+    "max_job_separation_rate": 0.10,
+    "pop_growth": -0.00573
+  },
+
+  "edu_params": {
+    "low":    {"mu_y": -0.23, "unemployment_rate": 0.1645},
+    "medium": {"mu_y":  0.00, "unemployment_rate": 0.1580},
+    "high":   {"mu_y":  0.34, "unemployment_rate": 0.1005}
+  },
+
+  "education_shares": {
+    "low": 0.2343,
+    "medium": 0.4705,
+    "high": 0.2952
+  },
+
+  "survival_probs": null,
+  "m_age_profile": null,
+
+  "fiscal": {
+    "B_over_Y": 1.70,
+    "G_over_Y": 0.13,
+    "I_g_over_Y": 0.03,
+    "defense_over_Y": 0.03,
+    "pensions_over_Y": 0.16,
+    "ui_over_Y": 0.01,
+    "health_over_Y": 0.05,
+    "transfers_over_Y": 0.02,
+    "tax_revenue_over_Y": 0.40,
+    "interest_over_Y": 0.03
+  },
+
+  "calibration": {
+    "params": [
+      {"name": "rho_y",   "path": "edu_params.*.rho_y",   "lower": 0.80, "upper": 0.995, "initial": 0.95},
+      {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.13}
+    ],
+    "targets": [
+      {"name": "wealth_gini",  "value": 0.58,  "weight": 1.0, "compute_key": "wealth_gini"},
+      {"name": "income_gini",  "value": 0.318, "weight": 1.0, "compute_key": "income_gini"}
+    ]
+  },
+
+  "untargeted": {
+    "zero_wealth_fraction": 0.011,
+    "unemployment_rate": 0.14,
+    "p90_p10_income": 3.9,
+    "earnings_var_mean": null,
+    "earnings_var_slope": null,
+    "consumption_gini": null,
+    "average_hours": null,
+    "mean_assets": null,
+    "median_wealth_to_income": null
+  },
+
+  "simulation": {
+    "n_sim": 10000,
+    "seed": 42
+  }
+}
