@@ -3,7 +3,7 @@
 Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps between the DSA-LSA paper's theoretical model and the current code. Two features (#12 tax application, #13 capital income tax) are skipped because the code's current implementation is more general than the paper's. Features are organized into 7 phases ordered by dependency, complexity, and risk.
 
 **Key architectural constraints:**
-- State space is currently `(T, n_a, n_y, n_h, n_y_last)` — no phase adds new state variables
+- State space is currently `(T, n_a, n_y, n_y_last)` with `n_h=1` — no phase adds new state variables
 - Both NumPy (`lifecycle_perfect_foresight.py`) and JAX (`lifecycle_jax.py`) backends must be updated in lockstep
 - `OLGTransition` aggregation logic must be updated for any new output fields
 - Tests must be added/updated for each feature; JAX cross-validation tests must continue to pass
@@ -23,7 +23,7 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 7 | #18, #19 | **Done** |
 
 **Skipped:** #12 (tax application — keep code version), #13 (capital income tax — keep code version)
-**Merged:** #3 (human capital) absorbed into #5 (age/health-dependent productivity) — no new state variable
+**Merged:** #3 (human capital) absorbed into #5 (age-dependent productivity) — no new state variable
 
 ---
 
@@ -77,20 +77,19 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
 - [x] Test (JAX cross-validation)
 
 **Paper:** `m^need(j, s)` depends on age `j` and health `s`.
-**Current:** `m_grid[i_h]` depends on health only.
+**Current:** With `n_h=1`, medical expenditure is a deterministic age-dependent level.
 
 **Changes:**
-- `LifecycleConfig`: Replace `m_good`, `m_moderate`, `m_poor` (scalars) with `m_grid_by_age` (array of shape `(T, n_h)`). Keep scalar params as convenience that broadcast to all ages.
-- Add age-profile parameters: `m_age_profile` (array of length T, default all ones) that multiplies the base medical costs. So `m(j, h) = m_age_profile[j] * m_grid[h]`.
-- Modify `_compute_budget()` to accept age-indexed medical costs.
-- Modify `_solve_period()` to pass age-specific medical costs.
+- `LifecycleConfig`: `m_good` (base level), `m_age_profile` (array of length T, default all ones), `kappa` (government coverage share). Medical cost at age j: `m(j) = m_age_profile[j] * m_good`.
+- Health states are shut down (`n_h=1`): no `P_h` transitions, no health-dependent productivity. `m_moderate`, `m_poor`, `h_moderate`, `h_poor` are unused.
+- Modify `_compute_budget()` to use age-indexed medical costs.
 - Files: `lifecycle_perfect_foresight.py`, `lifecycle_jax.py`
 
 ---
 
 ## Phase 2: Unified Productivity Process (Features #3 + #5)
 
-### Features #3 & #5 — Age/health-dependent productivity transitions (replaces separate human capital state)
+### Features #3 & #5 — Age-dependent productivity transitions (replaces separate human capital state)
 
 - [x] Implement config parameters
 - [x] Implement `_income_process()` age/health variant
@@ -104,11 +103,10 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
 **Paper (Feature #3):** Continuous human capital state `h` with `log h_{j+1} = log h_j + g_j + ε_j`.
 **Current:** `P_y` is `(n_y, n_y)` — constant across ages and health states.
 
-**Approach:** Instead of adding a separate human capital state variable (which would add a grid dimension), combine human capital dynamics and stochastic productivity into a single "labor market productivity" state with age-dependent and health-dependent transition matrices. The `y_grid` already represents productivity states; by making `P_y` vary by age and health, we capture:
+**Approach:** Instead of adding a separate human capital state variable (which would add a grid dimension), combine human capital dynamics and stochastic productivity into a single "labor market productivity" state with age-dependent transition matrices. The `y_grid` already represents productivity states; by making `P_y` vary by age, we capture:
 - **Human capital accumulation:** Age-dependent mean/persistence (young workers have higher expected growth)
-- **Health effects on productivity dynamics:** Health-dependent transitions (poor health → higher probability of downward productivity transitions)
 
-**No new state variable** — state space stays `(T, n_a, n_y, n_h, n_y_last)`.
+**No new state variable** — state space stays `(T, n_a, n_y, n_y_last)` with `n_h=1`.
 
 **Changes:**
 
@@ -116,31 +114,29 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
    - `rho_y_by_age`: dict mapping age groups to persistence values (e.g., `{'young': 0.95, 'middle': 0.97, 'old': 0.99}`)
    - `sigma_y_by_age`: dict mapping age groups to shock variances
    - `mu_y_by_age`: dict mapping age groups to mean growth (captures human capital accumulation)
-   - `health_productivity_adjustment`: array `(n_h,)` of multiplicative adjustments to transition probabilities by health state (e.g., poor health shifts probability mass toward lower states)
-   - OR: direct specification via `P_y_by_age_health` of shape `(T, n_h, n_y, n_y)` for full flexibility
+   - Direct specification via `P_y_by_age_health` of shape `(T, 1, n_y, n_y)` for full flexibility (health dimension trivial with `n_h=1`)
    - Default: `None` (fall back to constant `P_y` for backward compatibility)
 
 2. **`_income_process()` in `lifecycle_perfect_foresight.py`:**
-   - When age/health-dependent params provided: construct `P_y` of shape `(T, n_h, n_y, n_y)` using age-group Tauchen discretizations with health adjustments
-   - Use 3 age groups (young < 40, middle 40-60, old 60+) matching existing health transition pattern
+   - When age-dependent params provided: construct `P_y` of shape `(T, 1, n_y, n_y)` using age-group Tauchen discretizations
+   - Use 3 age groups (young < 40, middle 40-60, old 60+)
    - The `y_grid` stays the same (shared grid for all ages/health states) — only transition probabilities change
-   - Store as `self.P_y` with shape `(T, n_h, n_y, n_y)` when age-dependent, `(n_y, n_y)` when constant
+   - Store as `self.P_y` with shape `(T, 1, n_y, n_y)` when age-dependent, `(n_y, n_y)` when constant
 
 3. **`_solve_period()` in `lifecycle_perfect_foresight.py` (line ~583):**
    - Change: `self.P_y[i_y, i_y_next]` → `self.P_y[t, i_h, i_y, i_y_next]` (when 4D)
    - Already inside `i_h` loop, `t` is the period parameter — trivial indexing change
 
 4. **`solve_period_jax()` in `lifecycle_jax.py` (line ~189):**
-   - Change einsum from `'ij, iabj->iab'` (P_y is `(n_y, n_y)`) to `'bij, iabj->iab'` (P_y_t is `(n_h, n_y, n_y)`)
-   - `P_y_t` is the per-period slice, passed alongside `P_h_t` in the scan loop
-   - The `b` (health) dimension in P_y_t aligns with the `b` (health) dimension in EV_h_t — correct contraction
+   - `P_y_t` is the per-period slice, passed in the scan loop
+   - With `n_h=1`, the health dimension is trivial
 
 5. **`_simulate_sequential()` (line ~811) and `_agent_step_jax()` (line ~468):**
    - Change: `P_y[i_y, :]` → `P_y[t, i_h, i_y, :]`
    - Both `t` (lifecycle_age) and `i_h` are known at the sampling point
 
 6. **`_simulate_sequential()` initial distribution (line ~706):**
-   - Compute stationary distribution from `P_y[0, i_h_initial, :, :]` (age 0, initial health state) instead of constant `P_y`
+   - Compute stationary distribution from `P_y[0, 0, :, :]` (age 0) instead of constant `P_y`
 
 7. **OLG batched calls in `olg_transition.py`:**
    - `P_y` shape change flows through — still shared across cohorts within education type, just larger array
@@ -155,15 +151,15 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
 - [x] Test (NumPy)
 - [x] Test (JAX cross-validation)
 
-**Paper:** `β · π(j, s) · E[V_{j+1}]` with age/health-dependent survival probabilities.
+**Paper:** `β · π(j) · E[V_{j+1}]` with age-dependent survival probabilities.
 **Current:** Deterministic survival (all agents live T periods).
 
 **Changes:**
-- `LifecycleConfig`: Add `survival_probs` — array of shape `(T, n_h)` with `π(j, s) ∈ [0, 1]`. Default: all 1.0 (deterministic survival, backwards compatible).
-- Modify backward induction: multiply continuation value by `π(j, s)`. In terminal period, unchanged.
+- `LifecycleConfig`: Add `survival_probs` — array of shape `(T,)` or `(T, 1)` with `π(j) ∈ [0, 1]`. Default: all 1.0 (deterministic survival, backwards compatible).
+- Modify backward induction: multiply continuation value by `π(j)`. In terminal period, unchanged.
 - Modify simulation: at each period, draw survival shock. Dead agents exit the simulation. Track accidental bequests (assets of deceased).
 - Modify aggregation in `OLGTransition`: account for age-varying cohort sizes due to mortality. Weight agents by survival probability in cross-sectional aggregation.
-- **Important:** This changes the effective discount factor from `β` to `β · π(j, s)`, which will affect calibrated `β`.
+- **Important:** This changes the effective discount factor from `β` to `β · π(j)`, which will affect calibrated `β`.
 - Files: `lifecycle_perfect_foresight.py`, `lifecycle_jax.py`, `olg_transition.py`
 
 ### Feature #16 — Bequest taxation
@@ -236,7 +232,7 @@ This is the largest single feature. It changes the utility function, the solve a
 - **Approach — FOC-based:** Given separable utility, the FOC for labor is `ν · ℓ^φ = λ · w · h · z · (1-τ_l-τ_p)`, where `λ = c^{-σ}`. For each candidate `(c, a')`, solve for optimal `ℓ` analytically: `ℓ* = max(0, (c^{-σ} · w·h·z·(1-τ_l-τ_p) / ν)^{1/φ})`. Only non-negativity constraint (no upper bound). This avoids adding a grid dimension.
 - Modify `_solve_period()`: for each `(a, y, h)` state and each candidate `a'`, compute optimal `ℓ*` from FOC, then compute `c` from budget constraint with `ℓ*`, evaluate utility `u(c, ℓ*)`.
 - Modify simulation to record labor hours.
-- **State space impact:** No new state dimension if using FOC approach. Policy arrays gain a labor dimension in output: `l_policy(T, n_a, n_y, n_h, n_y_last)`.
+- **State space impact:** No new state dimension if using FOC approach. Policy arrays gain a labor dimension in output: `l_policy(T, n_a, n_y, 1, n_y_last)` (with `n_h=1`).
 - Files: `lifecycle_perfect_foresight.py`, `lifecycle_jax.py`, `olg_transition.py` (aggregate labor supply)
 
 ### Feature #6 — Wage income structure
@@ -287,7 +283,7 @@ This is the largest single feature. It changes the utility function, the solve a
 - This is a budget constraint modification — no new state variables.
 - Files: `lifecycle_perfect_foresight.py`, `lifecycle_jax.py`
 
-**Note:** Feature #3 (human capital) is absorbed into Phase 2 via age/health-dependent productivity transitions. The initial human capital level `h_0 = A_0 · e_s^γ` from education expenditure can be captured by education-type-specific initial productivity distributions (already supported via `edu_params`).
+**Note:** Feature #3 (human capital) is absorbed into Phase 2 via age-dependent productivity transitions. The initial human capital level `h_0 = A_0 · e_s^γ` from education expenditure can be captured by education-type-specific initial productivity distributions (already supported via `edu_params`).
 
 ---
 
@@ -373,7 +369,7 @@ This is the largest single feature. It changes the utility function, the solve a
 | Phase | Features | Key Changes | Risk |
 |-------|----------|-------------|------|
 | 1 | #11, #17, #20 | Pension floor, govt spending, age-dependent medical | Low |
-| 2 | #3+#5, #2, #16 | Age/health-dependent productivity (unified), survival risk, bequest tax | Medium |
+| 2 | #3+#5, #2, #16 | Age-dependent productivity (unified), survival risk, bequest tax | Medium |
 | 3 | #14, #15 | Progressive taxation, means-tested transfers | Low-Medium |
 | 4 | #1, #6, #7 | Labor supply (FOC-based), wage structure, endo retirement | High |
 | 5 | #4 | Schooling phase and children | Low-Medium |
@@ -404,7 +400,7 @@ Each phase follows the same testing protocol:
    - Consumption and wealth profiles by age
 
 5. **Feature-specific validation:** Compare model moments against known benchmarks:
-   - Phase 2: Health-conditional income distributions, mortality-adjusted wealth profiles
+   - Phase 2: Mortality-adjusted wealth profiles
    - Phase 3: Tax revenue under progressive schedule, transfer spending
    - Phase 4: Labor supply elasticity, hours profile by age
    - Phase 6: K/Y ratio with public capital, SOE current account
@@ -412,7 +408,7 @@ Each phase follows the same testing protocol:
 ## JAX Backend Strategy
 
 - **Phase 1-3:** Straightforward — same state space, just different computations. Update both backends in lockstep.
-- **Phase 2 (unified productivity):** `P_y` shape changes from `(n_y, n_y)` to `(T, n_h, n_y, n_y)`. JAX einsum change is minimal (`'ij,...' → 'bij,...'`). P_y slices passed per-period in the `lax.scan` loop, same pattern as P_h.
+- **Phase 2 (unified productivity):** `P_y` shape changes from `(n_y, n_y)` to `(T, 1, n_y, n_y)` (health dimension trivial with `n_h=1`). P_y slices passed per-period in the `lax.scan` loop.
 - **Phase 4 (labor supply):** FOC-based approach avoids new grid dimension, keeping JAX compatibility simple. The FOC computation is element-wise and fully vectorizable.
 - **Phase 5 (schooling):** Budget constraint change only — no state space impact.
 - **Phase 6:** Changes are in `olg_transition.py` (NumPy/Numba), not in the lifecycle backends.

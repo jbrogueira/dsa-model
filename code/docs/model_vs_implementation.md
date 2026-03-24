@@ -16,12 +16,12 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 ### 2. Survival risk — `Done`
 
 **Paper:** Stochastic survival `π(j,s)` depending on age and health. Enters the Bellman as `β·π_j(s)·E[V_{j+1}]`. Deceased agents' assets are taxed and redistributed.
-**Code:** Survival probs `(T, n_h)` affect backward induction in both NumPy and JAX solves. Config: `LifecycleConfig.survival_probs`. Simulation mortality draws are performed in `_simulate_sequential()` via Uniform draws against `π(t, i_h)`; dead agents' rows are frozen and tracked via `alive_sim (T, n_sim)` and `bequest_sim (n_sim,)` in the 21-tuple output. OLG aggregation uses mortality-weighted cohort sizes via `_build_population_weights()` and `_cohort_survival_schedule()` in `OLGTransition`.
+**Code:** Survival probs `(T,)` (with `n_h=1`) affect backward induction in both NumPy and JAX solves. Config: `LifecycleConfig.survival_probs`. Simulation mortality draws are performed in `_simulate_sequential()` via Uniform draws against `π(t)`; dead agents' rows are frozen and tracked via `alive_sim (T, n_sim)` and `bequest_sim (n_sim,)` in the 21-tuple output. OLG aggregation uses mortality-weighted cohort sizes via `_build_population_weights()` and `_cohort_survival_schedule()` in `OLGTransition`.
 
 ### 3. Human capital — `Done` (merged into #5)
 
 **Paper:** Continuous human capital state `h` with `log h_{j+1} = log h_j + g_j + ε_j`.
-**Code:** Absorbed into age/health-dependent productivity transitions (Feature #5). No separate state variable — human capital dynamics captured via age-varying `P_y` persistence and mean growth. Config: `LifecycleConfig.P_y_by_age_health`.
+**Code:** Absorbed into age-dependent productivity transitions (Feature #5). No separate state variable — human capital dynamics captured via age-varying `P_y` persistence and mean growth. Config: `LifecycleConfig.P_y_by_age_health`.
 
 ### 4. Schooling phase and children — `Done`
 
@@ -31,7 +31,7 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 ### 5. Income process conditioning — `Done`
 
 **Paper:** Productivity transition `P_z(z'|z,j,s)` depends on current productivity, age, and health state.
-**Code:** `P_y` can be `(n_y, n_y)` (constant) or `(T, n_h, n_y, n_y)` (age/health-dependent). Config: `LifecycleConfig.P_y_by_age_health`. Both NumPy and JAX backends support 4D transitions.
+**Code:** `P_y` can be `(n_y, n_y)` (constant) or `(T, 1, n_y, n_y)` (age-dependent, with `n_h=1`). Config: `LifecycleConfig.P_y_by_age_health`. Both NumPy and JAX backends support 4D transitions. With `n_h=1`, the health dimension is trivial.
 
 ### 6. Wage income structure — `Done` (part of #1)
 
@@ -118,7 +118,7 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 ### 20. Medical expenditure age-dependence — `Done`
 
 **Paper:** `m^need(j,s)` depends on age and health. Coverage `κ^health_t(j,s)` varies by age/health/time.
-**Code:** `m(j, h) = m_age_profile[j] * m_grid[h]`. Config: `LifecycleConfig.m_age_profile` (array of length T, default ones).
+**Code:** With `n_h=1`, medical expenditure is a deterministic age-dependent level: `m(j) = m_age_profile[j] * m_good`. Government covers `κ`; household pays `(1 − κ)`. Config: `LifecycleConfig.m_age_profile` (array of length T, default ones), `m_good`, `kappa`.
 
 ---
 

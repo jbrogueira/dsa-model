@@ -5,13 +5,13 @@
 This is an **Overlapping Generations (OLG) model with heterogeneous agents** featuring:
 
 1. **Lifecycle structure**: Agents live for `T` periods, with mandatory retirement at `retirement_age` or endogenous retirement within a window `retirement_window`
-2. **Idiosyncratic risk**: Stochastic income (`n_y` states), health (`n_h` states), employment shocks, and stochastic mortality
+2. **Idiosyncratic risk**: Stochastic income (`n_y` states), employment shocks, and stochastic mortality
 3. **Education heterogeneity**: Multiple education types (`low`, `medium`, `high`) with different income profiles
 4. **Perfect foresight over aggregates**: Agents know the full path of interest rates and wages
 5. **Government sector**: Consumption/labor/payroll/capital taxes (flat or HSV progressive), unemployment insurance, pensions (with minimum floor), means-tested transfers, bequest taxation, health spending, public capital, defense spending
 6. **Demographics**: Time-varying population growth and cohort-specific survival schedules allowing aging experiments
 7. **Endogenous labor supply**: FOC-based hours choice when `labor_supply=True`; agents are employed, unemployed, or retired — with hours endogenous in the working state
-8. **Age/health-dependent productivity**: Optional `P_y_by_age_health` of shape `(T, n_h, n_y, n_y)` replaces constant transition matrix
+8. **Health expenditure**: Deterministic age-dependent medical cost level, split between government (`kappa`) and household (`1 − kappa`); no stochastic health states (`n_h=1`)
 9. **Schooling phase and child costs**: Optional child consumption costs during first `schooling_years` periods
 10. **Small open economy or closed economy**: `economy_type` selects whether `r` is exogenous (`soe`) or determined by market clearing (`closed`)
 
@@ -54,16 +54,12 @@ These parameters are set directly from data or existing literature estimates.
 | `ui_replacement_rate` | UI wage replacement | Statutory UI rules | 0.20–0.60 |
 | `transfer_floor` | Means-tested consumption floor | Program rules / poverty line | 0.0–0.10 |
 | **Health Expenditure** | | | |
-| `kappa` | Govt coverage of medical costs | MEPS / CMS data | 0.50–0.90 |
-| `m_good` | Medical cost in good health (share of income) | MEPS | 0.02–0.10 |
-| `m_moderate` | Medical cost in moderate health | MEPS | 0.30–0.60 |
-| `m_poor` | Medical cost in poor health | MEPS | 0.70–1.00 |
-| `m_age_profile` | Age multiplier on base medical costs | MEPS age profiles | Array of length T; all 1.0 = flat |
-| `h_good` | Productivity in good health | Normalized | 1.0 |
-| `h_moderate` | Productivity in moderate health | MEPS / HRS | 0.5–0.8 |
-| `h_poor` | Productivity in poor health | MEPS / HRS | 0.1–0.4 |
+| `n_h` | Number of health states | Fixed at 1 (no health process) | 1 |
+| `kappa` | Govt coverage of medical costs | Health expenditure by financing scheme (Eurostat `hlth_sha11_hf`) | 0.50–0.90 |
+| `m_good` | Base medical expenditure level | Aggregate health spending / GDP × mean income | Country-specific |
+| `m_age_profile` | Age multiplier on base medical costs | Health spending by age (national health accounts) | Array of length T; normalized so mean = 1.0 |
 | **Mortality** | | | |
-| `survival_probs` | Age/health-dependent survival π(j, s) | Life tables (HMD, SSA actuarial) | Shape `(T, n_h)` |
+| `survival_probs` | Age-dependent survival π(j) | Life tables (Eurostat `demo_mlifetable`) | Shape `(T,)` or `(T, 1)` |
 | `survival_improvement_rate` | Annual longevity improvement rate | Demographic projections | 0.0–0.01 |
 | **Education** | | | |
 | `education_shares` | Population shares by education | Census / ACS | Country-specific |
@@ -82,7 +78,7 @@ These parameters are set directly from data or existing literature estimates.
 - Payroll tax (`tau_p`) applies to wages only, not to pensions or UI benefits.
 - Pensions are computed as `max(pension_replacement * w_at_retirement * y_grid[i_y_last], pension_min_floor)`, where `i_y_last` is the last working-period income state. This is not an average-earnings formula.
 - Tax rates support time-varying paths (`tau_c_path`, etc.) for transition experiments.
-- Medical costs now support age-dependent profiles: `m(j, h) = m_age_profile[j] * m_base[h]`. Set `m_age_profile = None` (default) for flat costs.
+- Health states are shut down (`n_h=1`). Medical expenditure is a deterministic age-dependent level: `m(j) = m_age_profile[j] * m_good`. Government covers fraction `kappa`; household pays `(1 - kappa) * m(j)` out of pocket. Calibrate `m_good` so that aggregate health spending matches the GDP share from national accounts, and `m_age_profile` from age-specific spending data.
 - `beta` is not calibrated via moment matching. Instead it is set to be consistent with the exogenous interest rate: a standard choice is `beta = 1/(1 + r*(1-tau_k))`, which ensures that an agent with median wealth and no idiosyncratic shocks would be approximately indifferent between saving and consuming in steady state. Alternatively, `beta = 0.96` (implying a 4% annual subjective discount rate) is a widely-used benchmark. When `survival_probs < 1`, the effective discount factor is `beta * pi(j,s)`, which is already lower than `beta`; to preserve a consistent implied discount rate across specifications, slightly raise `beta` (e.g., by `1/pi_bar` where `pi_bar` is the average working-age survival probability).
 - `survival_probs` are taken from life tables, not calibrated.
 - `phi` (inverse Frisch elasticity) is set externally from micro estimates. Chetty (2012) meta-analysis puts the micro Frisch elasticity at ~0.5, implying `phi ≈ 2`. `nu` (labor disutility weight) is calibrated internally to match average hours.
@@ -100,7 +96,6 @@ These parameters are calibrated via moment matching (Simulated Method of Moments
 | `edu_params[type].sigma_y` | Income shock variance (per education) | Cross-sectional variance of log earnings by age (level), wealth Gini | Can calibrate jointly (same for all types) or separately |
 | `job_finding_rate` | Probability of exiting unemployment | Unemployment duration | Single parameter, shared across education types |
 | `max_job_separation_rate` | Cap on separation rate | Unemployment rate by age | Actual separation rate is derived: `min(u/(1-u) * jfr, max_sep_rate)` |
-| `P_h_young`, `P_h_middle`, `P_h_old` | Health transition matrices by age group | Health status distribution by age | 3 matrices × `n_h²` entries; highly parametric; reduce by imposing structure |
 | `nu` | Labor disutility weight | Average annual hours worked | Only relevant when `labor_supply=True`; scales hours to match data level |
 | `initial_asset_distribution` | Initial wealth distribution at entry | Wealth distribution at youngest cohort | Array of samples drawn at simulation start; use when entry-age wealth dispersion is non-trivial |
 
@@ -109,7 +104,7 @@ These parameters are calibrated via moment matching (Simulated Method of Moments
 - `rho_y` and `sigma_y` are identified from the cross-sectional variance of log earnings by age, computed from a single household survey. Under an AR(1) process, `Var(y_j) = sigma_eps^2 * (1 - rho^{2j}) / (1 - rho^2)`: the slope of this age profile identifies `rho_y`, the level identifies `sigma_y`. No panel data or consumption-income comovement is required. Wealth distribution moments (Gini, zero-wealth fraction, wealth-to-income by age) provide additional identification because `rho_y` and `sigma_y` affect wealth dispersion differently: persistent shocks generate wide wealth dispersion at older ages; transitory shocks generate precautionary saving but less dispersion.
 - `job_separation_rate` is not a free parameter — it's computed from `unemployment_rate` and `job_finding_rate`. The free parameters are `job_finding_rate`, `max_job_separation_rate`, and `edu_params[type].unemployment_rate`.
 - `initial_asset_distribution` is now implemented — pass an array of samples to `LifecycleConfig`. When the entry-age wealth distribution is well-measured (e.g., from SCF for 25-year-olds), this is preferable to a scalar `initial_assets`.
-- When `P_y_by_age_health` is used instead of the Tauchen-based `rho_y`/`sigma_y`, the transition matrices themselves are constructed from data (e.g., PSID earnings transitions by age group and health status). In this case, `rho_y`/`sigma_y` are no longer free calibration parameters for those dimensions.
+- With `n_h=1`, health transition matrices and health-dependent productivity are inactive. Medical expenditure is set externally (Step 1) and does not require moment matching.
 
 ---
 
@@ -139,9 +134,9 @@ These are the empirical moments used to identify the internally calibrated param
 | Unemployment rate by education | CPS | `edu_params[type].unemployment_rate` |
 | Average annual hours worked | CPS / ATUS | `nu` (when `labor_supply=True`) |
 | Hours profile by age | CPS / ATUS | `nu`, `phi` (validation) |
-| **Health** | | |
-| Fraction in poor health by age | MEPS / HRS | Health transition matrices |
-| Medical spending by age | MEPS | `m_good`, `m_moderate`, `m_poor`, `m_age_profile`, `kappa` (validation) |
+| **Health Expenditure** | | |
+| Health spending / GDP | National health accounts (Eurostat `hlth_sha11_hf`) | `m_good` (validation) |
+| Government share of health spending | National health accounts | `kappa` (validation) |
 | **Fiscal** | | |
 | Government spending / GDP | NIPA | Pension/health generosity (validation) |
 | Tax revenue / GDP | NIPA | Tax rates (validation) |
@@ -169,7 +164,6 @@ Fix `r` and `w` at empirically reasonable values. Calibrate parameters that prim
 | `rho_y`, `sigma_y` | Cross-sectional variance of log earnings by age, wealth Gini |
 | `job_finding_rate` | Average unemployment duration |
 | `edu_params[type].unemployment_rate` | Unemployment rate by education |
-| `P_h` matrices | Fraction in poor health by age |
 | `nu` | Average annual hours worked (when `labor_supply=True`) |
 
 ### 4.2 SMM Objective Function
@@ -216,6 +210,6 @@ The JAX backend (`backend='jax'`) significantly accelerates the solve (cohort so
 2. If using `survival_probs` from life tables, load these before calibration (they affect value function computation but not the PE moments targeted in the calibration stage)
 3. Run the calibration stage with fixed prices; include `nu` if `labor_supply=True`
 4. Set `r_default` and `beta` from data/literature (Step 1). Verify that the implied `w` from the production function is consistent with observed wages; adjust `A` if needed.
-5. Run the single-stage calibration targeting income dynamics, unemployment, health distributions, and (if applicable) hours.
+5. Run the single-stage calibration targeting income dynamics, unemployment, and (if applicable) hours.
 6. Validate: check that the simulated K/Y, tax revenue/GDP, and pension spending/GDP are within plausible ranges as untargeted predictions.
 7. Sensitivity analysis: vary `gamma`, `a_min`, `phi`, `beta`, `r` to check robustness.

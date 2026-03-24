@@ -85,12 +85,10 @@ pethon olg_equilibrium_jax.py
 - **Income shocks**: Stochastic labor productivity with unemployment
   - Discretized using Tauchen method
   - Persistent AR(1) process
-- **Health shocks**: Three health states (good, moderate, poor)
-  - Age-dependent transition probabilities
-  - Health affects labor productivity multiplicatively
-  - Young (age < 40): mostly good health
-  - Middle age (40 ≤ age < 60): health deteriorates
-  - Old (age ≥ 60): high probability of poor health
+- **Health expenditure**: Deterministic age-dependent medical cost
+  - No stochastic health states (`n_h=1`)
+  - Government covers fraction `κ`; household pays `(1 − κ)`
+  - Age profile from national health accounts (`m_age_profile`)
 
 #### Labor Market
 - **Unemployment insurance**: Replacement rate based on last period's wage
@@ -103,15 +101,11 @@ pethon olg_equilibrium_jax.py
   - Target unemployment rate: 6%
 
 #### Health Expenditures
-- **Out-of-pocket costs**: Households pay (1-κ) × m(h)
-  - κ = 0.7 (government covers 70%)
-- **Government coverage**: Government covers κ × m(h)
-- **Age-dependent health**: Worse health in old age
-- **Expenditure by health state**:
-  - Good health: m = 0.05 (5% of income)
-  - Moderate health: m = 0.15 (15% of income)
-  - Poor health: m = 0.30 (30% of income)
-- **Budget impact**: Health expenditure enters budget constraint
+- **Out-of-pocket costs**: Households pay (1-κ) × m(j)
+  - κ calibrated from national health accounts (government coverage share)
+- **Government coverage**: Government covers κ × m(j)
+- **Age-dependent level**: `m(j) = m_age_profile[j] × m_good`, rising with age
+- **Budget impact**: Health expenditure enters budget constraint as a deterministic cost
 
 #### Taxes and Government Policy
 - **Consumption tax** (τ_c): Ad-valorem tax on consumption
@@ -144,19 +138,18 @@ where:
 #### Financial Markets
 - **Incomplete markets**: Borrowing constraint (a ≥ a_min)
   - Default: a_min = -2.0 (limited borrowing)
-- **Self-insurance**: Precautionary savings against income and health shocks
+- **Self-insurance**: Precautionary savings against income shocks
 
 #### Solution Method
 - **Backward induction**: Value function iteration from terminal period
-- **State space**: (t, a, y, h, y_last)
+- **State space**: (t, a, y, y_last)
   - t: age/period
   - a: assets
   - y: current income state
-  - h: health state
   - y_last: last period's income (for UI calculation)
 - **Grid search**: Optimize over discrete asset choice
 - **Non-linear asset grid**: More points near borrowing constraint
-- **Expected continuation value**: Integrate over future income and health shocks
+- **Expected continuation value**: Integrate over future income shocks
 - **Parallel solving**: Education types solved simultaneously (multiprocessing)
 - **Monte Carlo simulation**: Large-scale simulations for aggregation (10,000 paths)
 
@@ -285,7 +278,7 @@ This uses CPU-only JAX. The Metal backend line is commented out to ensure compat
 - **Time** (t): 40 periods (age 20-60)
 - **Assets** (a): 100 points (production), 30 points (test)
 - **Income** (y): 4 states including unemployment (production), 3 (test)
-- **Health** (h): 3 states (good, moderate, poor)
+- **Health** (h): 1 state (no stochastic health process)
 - **Last income** (y_last): 4 states (for UI calculation)
 
 ### Numerical Methods

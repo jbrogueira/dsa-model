@@ -73,9 +73,9 @@ python run_fiscal_figures.py --shock both
 
 - `_compute_budget()`: Computes after-tax income and budget for any state (retirement/working). Handles pension floor, progressive tax, child costs, transfer floor, age-dependent medical.
 - `_solve_period()`: Solves a single period. Handles retirement window (discrete choice between working/retired).
-- `_solve_state_choice()`: Core solver for a single state — survival risk, labor supply FOC, age/health-dependent P_y.
+- `_solve_state_choice()`: Core solver for a single state — survival risk, labor supply FOC, age-dependent P_y.
 - `_simulate_sequential()`: Monte Carlo forward simulation of agent paths.
-- `_get_P_y()` / `_get_P_y_row()`: Index into 2D or 4D P_y (age/health-dependent transitions).
+- `_get_P_y()` / `_get_P_y_row()`: Index into 2D or 4D P_y (age-dependent transitions).
 - `_survival_prob()`: Returns survival probability π(j,s), or 1.0 if no survival risk.
 - `_solve_labor_hours()`: FOC-based optimal labor hours given consumption and wages.
 - `_print_income_diagnostics()`: Verbose income process diagnostics (called from `__init__` when `verbose=True`).
@@ -88,7 +88,7 @@ python run_fiscal_figures.py --shock both
 
 - Perfect foresight over price paths (r, w)
 - Income risk (Tauchen discretization)
-- Health shocks affecting productivity
+- Age-dependent health expenditure with government/household split (`n_h=1`, `kappa`, `m_good`, `m_age_profile`)
 - Retirement with pensions (based on last working income)
 - Minimum pension floor (`pension_min_floor`)
 - UI benefits for unemployed
@@ -97,7 +97,7 @@ python run_fiscal_figures.py --shock both
 - Means-tested transfers / consumption floor (`transfer_floor`)
 - Survival risk / stochastic mortality (`survival_probs`)
 - Age-dependent medical expenditure (`m_age_profile`)
-- Age/health-dependent productivity transitions (`P_y_by_age_health`)
+- Age-dependent productivity transitions (`P_y_by_age_health`)
 - Endogenous labor supply via FOC (`labor_supply`, `nu`, `phi`)
 - Endogenous retirement window (`retirement_window`)
 - Schooling phase with child costs (`schooling_years`, `child_cost_profile`)
@@ -121,8 +121,8 @@ python run_fiscal_figures.py --shock both
 
 - Policies indexed by `lifecycle_age` (not simulation time)
 - Policy array shape: `(T, n_a, n_y, n_h, n_y_last)` — last dimension is previous income state (for pension calculation), not earnings history
-- `m_grid` is `(T, n_h)` — age-dependent medical costs (was 1D `(n_h,)` before age-dependence)
-- `P_y` is `(n_y, n_y)` when constant, or `(T, n_h, n_y, n_y)` when age/health-dependent; `P_y_2d` always holds a 2D version
+- `m_grid` is `(T, 1)` — age-dependent medical costs; with `n_h=1`, effectively a `(T,)` age profile scaled by `m_good`
+- `P_y` is `(n_y, n_y)` when constant, or `(T, n_h, n_y, n_y)` when age-dependent; `P_y_2d` always holds a 2D version
 - Pensions use `i_y_last` state (last working period income state)
 - Payroll tax applies to wages only, not pensions/UI
 - `w_at_retirement` is cached in `__init__` (not recomputed per period)
@@ -135,7 +135,7 @@ python run_fiscal_figures.py --shock both
 ## JAX Backend
 
 - `lifecycle_jax.py` provides `LifecycleModelJAX` — same interface as `LifecycleModelPerfectForesight`
-- Solve: vectorized grid search over all `(n_a, n_y, n_h, n_y_last)` states per period, backward induction via `jax.lax.scan`
+- Solve: vectorized grid search over all `(n_a, n_y, n_y_last)` states per period (with `n_h=1`), backward induction via `jax.lax.scan`
 - Simulate: `jax.vmap` over agents, `jax.lax.scan` over time steps
 - Uses `jax_enable_x64=True` for float64 precision (matches NumPy reference within ~1e-14)
 - Different PRNG (ThreeFry vs MT19937): simulation paths differ individually but match distributionally

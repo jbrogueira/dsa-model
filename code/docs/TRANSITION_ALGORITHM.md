@@ -115,19 +115,18 @@ computed by grid search over the asset grid, maximising:
 u(c, l) + β · π(t,h) · E[ V_{t+1}(a', y', h') ]
 ```
 
-where `π(t, h)` is the survival probability, `y'` and `h'` are next-period
-income and health states drawn from their transition matrices.
+where `π(t)` is the survival probability and `y'` is the next-period
+income state drawn from its transition matrix. With `n_h=1`, there is no health state transition.
 
-State space per period: `n_a × n_y × n_h × n_y_last`
-(asset grid × current income × health × last working income for pension).
+State space per period: `n_a × n_y × n_y_last`
+(asset grid × current income × last working income for pension).
 
 ---
 
 ## Step 4 — Simulate each cohort (Monte Carlo)
 
 After solving, `n_sim` agents per cohort are simulated **forward** from age 0
-using the computed policy functions. Random draws for income shocks, health
-shocks, and mortality are pre-generated. All cohorts, including old ones, are
+using the computed policy functions. Random draws for income shocks and mortality are pre-generated. All cohorts, including old ones, are
 simulated forward from age 0 with a=0 as described in Step 2.
 
 ---
@@ -173,7 +172,7 @@ previous one), but it can still be compiled efficiently.
 - `f(carry, x)` returns `(new_carry, output)` for a single step.
 
 **In the backward induction solve**, `carry = V_next` (the value function at
-age `t+1`) and `xs` are the period parameters (prices, taxes, health matrices…)
+age `t+1`) and `xs` are the period parameters (prices, taxes, …)
 stacked for ages `T-2` down to `0`. `lax.scan` runs the grid search for one
 age at a time, passing `V_t` as the carry into the next (earlier) age.
 
@@ -192,5 +191,5 @@ The critical difference from a Python loop:
 
 JAX traces `scan_fn` once, then XLA compiles the repeated application into a
 single efficient kernel. For the grid in this model
-(`n_a × n_y × n_h × n_y_last ≈ 7500` states, `T` periods),
+(`n_a × n_y × n_y_last` states, `T` periods),
 this avoids `T` separate Python-dispatched kernel launches.

@@ -13,12 +13,11 @@ At each calendar period `t`, for each education group `e` and lifecycle age `a`,
 individual states:
 - assets grid index `i_a` (or asset level)
 - income shock index `i_y`
-- health index `i_h`
 - employment / UI state (if applicable)
 - any other discrete states (retirement status can be inferred from age)
 
 Denote this distribution as:
-`mu[t, e, a, i_a, i_y, i_h, ...]`.
+`mu[t, e, a, i_a, i_y, ...]`.
 
 Given policy functions (consumption/asset choice, labor, transition probabilities for shocks), update:
 
@@ -28,8 +27,8 @@ Given policy functions (consumption/asset choice, labor, transition probabilitie
 
 2. **Aging / survival / transitions**:
    - for ages `a=0..T-2`, push mass to `a+1` at `t+1` using:
-     - the endogenous savings choice `a' = a_policy[a, i_a, i_y, i_h, ...]` (mapping indices)
-     - exogenous Markov transitions for income and health: `P_y`, `P_h`
+     - the endogenous savings choice `a' = a_policy[a, i_a, i_y, ...]` (mapping indices)
+     - exogenous Markov transitions for income: `P_y`
      - employment transitions (if modeled)
    - retirement happens deterministically with age.
 
@@ -47,7 +46,7 @@ Compute aggregates directly from `mu[t, ...]`:
 - Exact aggregation on grids.
 
 ## Required refactor / API changes
-- Expose discrete transition matrices used in simulation (income/health/employment) in a reusable form.
+- Expose discrete transition matrices used in simulation (income/employment) in a reusable form.
 - Ensure `a_policy` is an index mapping into the asset grid (already seems to be the case).
 - Add a function that advances one period of the distribution:
   `mu_next = advance_distribution(mu, policies, transitions, t, e, a)`
