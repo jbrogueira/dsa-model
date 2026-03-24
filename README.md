@@ -137,7 +137,7 @@ where:
 
 #### Financial Markets
 - **Incomplete markets**: Borrowing constraint (a ≥ a_min)
-  - Default: a_min = -2.0 (limited borrowing)
+  - Default: a_min = 0.0 (no borrowing)
 - **Self-insurance**: Precautionary savings against income shocks
 
 #### Solution Method

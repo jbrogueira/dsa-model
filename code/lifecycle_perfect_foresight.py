@@ -67,7 +67,7 @@ class LifecycleConfig:
     ui_replacement_rate: float = 0.3
     
     # === Health process parameters ===
-    n_h: int = 3
+    n_h: int = 1
     h_good: float = 1.0
     h_moderate: float = 0.7
     h_poor: float = 0.3
