@@ -1732,8 +1732,12 @@ class TestLaborSupply:
         assert len(result) == 21, f"Expected 21-tuple, got {len(result)}-tuple"
         l_sim = result[18]
         assert l_sim.shape == result[0].shape, "l_sim shape should match a_sim shape"
-        # With labor_supply=False, l_sim should be all 1.0
-        assert np.allclose(l_sim, 1.0), "l_sim should be all 1.0 when labor_supply=False"
+        # With labor_supply=False, l_sim = 1.0 for working ages, 0.0 for retired
+        retired_sim = result[17]
+        assert np.allclose(l_sim[~retired_sim.astype(bool)], 1.0), \
+            "l_sim should be 1.0 for non-retired when labor_supply=False"
+        assert np.allclose(l_sim[retired_sim.astype(bool)], 0.0), \
+            "l_sim should be 0.0 for retired agents"
         # alive_sim: all True when no survival_probs
         alive_sim = result[19]
         assert alive_sim.shape == result[0].shape
