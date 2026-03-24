@@ -361,7 +361,7 @@ with the budget/choice problem rewritten so that the transfer depends on the pos
 ## BUG-010 — JAX MIT-stitching cache invalidation only clears one education group
 
 **Date:** 2026-03-24
-**Status:** Open
+**Status:** Fixed (2026-03-24)
 **Files:** `olg_transition.py`
 
 ### Symptom
