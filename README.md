@@ -64,12 +64,29 @@ python lifecycle_perfect_foresight.py --help
 - `--parallel/--no-parallel`: Enable/disable parallel solving across education types
 
 **Default Settings:**
-- Test mode: `n_a=30`, `n_y=3`, `n_sim=1000` (~5-10x faster)
-- Production mode: `n_a=100`, `n_y=4`, `n_sim=10000` (full resolution)
+- Test mode (`--test`): `n_a=100`, `n_y=2`, `n_sim=100`
+- Full simulation (no flags): `n_a=100`, `n_y=2`, `n_sim=5000`
+- Config mode (`--config <file>`): dimensions set in the JSON file; `LifecycleConfig` default is `n_a=100`, `n_y=5`
 
-### OLG Equilibrium Model
+### OLG Transition Model
 ```bash
-pethon olg_equilibrium_jax.py
+python olg_transition.py --test                                    # fast test (hardcoded params)
+python olg_transition.py --config calibration_input_GR.json        # from JSON config
+python olg_transition.py --config calibration_input_GR.json --backend jax --n-sim 5000
+```
+
+### Fiscal Experiments
+```bash
+python run_fiscal_figures.py --shock G                             # fast test (hardcoded params)
+python run_fiscal_figures.py --config calibration_input_GR.json --shock G
+python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax
+```
+
+### SMM Calibration
+```bash
+python calibrate.py --config calibration_input_GR.json --backend jax
+python calibrate.py --config calibration_input_GR.json --n-sim 20000 --maxiter 500
+python calibrate.py --test                                         # smoke test
 ```
 
 ## Model Features
@@ -275,11 +292,11 @@ This uses CPU-only JAX. The Metal backend line is commented out to ensure compat
 ## Technical Details
 
 ### State Space Dimensions
-- **Time** (t): 40 periods (age 20-60)
-- **Assets** (a): 100 points (production), 30 points (test)
-- **Income** (y): 4 states including unemployment (production), 3 (test)
-- **Health** (h): 1 state (no stochastic health process)
-- **Last income** (y_last): 4 states (for UI calculation)
+- **Time** (t): `T` periods (default 45; test mode 20, full simulation 60)
+- **Assets** (a): `n_a` grid points (default 100)
+- **Income** (y): `n_y` states including unemployment (default 5; built-in demos use 2)
+- **Health** (h): `n_h` states (default 1 — no stochastic health process)
+- **Last income** (y_last): `n_y` states (for pension/UI calculation)
 
 ### Numerical Methods
 - **Tauchen discretization**: Income process

@@ -16,8 +16,8 @@ Pre-computed calibration values for Greece. Single row.
 |-------|-------|---------|----------|
 | Effective retirement age | 58.6 | `retirement_age` | Step 1 (external) |
 | Consumption tax (effective) | 18.18% | `tau_c` | Step 1 |
-| Labour income tax (effective) | 40.58% | `tau_l` | Step 1 |
-| SSC effective rate | 38.34% | `tau_p` | Step 1 |
+| Labour income tax (EC ITR, incl. SSC) | 40.58% | **Do not use directly** — see decomposition below | Step 1 |
+| SSC effective rate | 38.34% | **Component of ITR** — see decomposition below | Step 1 |
 | Capital income tax (effective) | 22.36% | `tau_k` | Step 1 |
 | Pension replacement rate | 76.275% | `pension_replacement_default` | Step 1 |
 | UI wage replacement rate | 9.45% | `ui_replacement_rate` | Step 1 |
@@ -38,6 +38,7 @@ Pre-computed calibration values for Greece. Single row.
 **Notes:**
 - Capital share (0.503) and depreciation (0.285) are unusually high. Verify source; may need adjustment (standard macro: alpha ~ 0.33, delta ~ 0.05-0.10).
 - `mu_y` values are in EUR levels. Need to convert to log income or normalise relative to mean.
+- **Tax decomposition**: the EC ITR on labour (40.58%) **includes SSC**. The model applies `tau_l` (PIT) and `tau_p` (SSC) separately, so using both raw values double-counts. Correct decomposition for the model: `tau_l ≈ 0.10` (PIT only), `tau_p ≈ 0.34` (SSC on wages), total wedge = `tau_p + tau_l·(1−tau_p) = 0.406`. See section 3 "Obtained" for details.
 
 ### 1.2 DATA sheet
 

@@ -38,7 +38,7 @@ These parameters are set directly from data or existing literature estimates.
 | `delta` | Depreciation rate | Investment/capital ratio | 0.05–0.10 |
 | `r_default` | Steady-state interest rate | World real interest rate / country risk premium | 0.03–0.05 |
 | `beta` | Discount factor | Set consistent with `r`: `beta ≈ 1/(1 + r·(1-tau_k))`; standard macro value | 0.95–0.98 |
-| `A` | TFP level | Normalize to target wage level = 1.0, or set `A=1` | 1.0 |
+| `A` | TFP level | Set `A=1` (normalisation); `w` is then derived from firm FOC | 1.0 |
 | **Tax Rates** | | | |
 | `tau_c` | Consumption tax | Effective rate from fiscal data | 0.05–0.25 |
 | `tau_l` | Labor income tax | Effective rate from fiscal data | 0.10–0.30 |

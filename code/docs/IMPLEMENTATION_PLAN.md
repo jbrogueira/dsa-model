@@ -40,13 +40,14 @@ Low-risk, independent changes to the budget constraint and fiscal accounting. No
 **Paper:** `PENS = max{ρ·ȳ, b_min}` with minimum pension floor `b_min`.
 **Current:** `pension = replacement_rate × w_at_retirement × y_grid[i_y_last]`, no floor.
 
-**Decision:** Keep the current `i_y_last`-based pension formula. Only add a minimum pension floor.
+**Decision:** Keep the current `i_y_last`-based pension formula. Add minimum pension floor and career-average blending.
 
 **Changes:**
-- `LifecycleConfig`: Add `pension_min_floor` (float, default 0.0).
-- Modify `_compute_budget()`: pension becomes `max(replacement_rate * w_ret * y_grid[i_y_last], pension_min_floor)`.
-- Apply the same floor in both solve and simulation.
-- Files: `lifecycle_perfect_foresight.py` (_compute_budget), `lifecycle_jax.py` (equivalent), `olg_transition.py` (pass-through)
+- `LifecycleConfig`: Add `pension_min_floor` (float, default 0.0), `pension_avg_weight` (float, default 1.0).
+- Modify `_compute_budget()`: pension base = `λ·κ(ret)·y_grid[i_y_last] + (1−λ)·mean_κ·mean_y_employed`, where `λ = pension_avg_weight`. Pension = `max(replacement · w_ret · pension_base, pension_min_floor)`. With `λ=1.0` (default), recovers the original last-state formula.
+- `pension_avg_weight` is derived from `(1 − ρ^N)/(N·(1−ρ))` — the regression coefficient of career average on last state for an AR(1) with persistence ρ over N working periods.
+- Apply the same formula in both solve and simulation, both NumPy and JAX backends.
+- Files: `lifecycle_perfect_foresight.py`, `lifecycle_jax.py`, `calibrate.py` (auto-computes λ in `load_config`)
 
 ### ~~Feature #12 — Tax application~~ SKIPPED
 

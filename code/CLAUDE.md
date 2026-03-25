@@ -58,7 +58,24 @@ pytest test_olg_transition.py -v
 python run_fiscal_figures.py --shock G
 python run_fiscal_figures.py --shock Ig
 python run_fiscal_figures.py --shock both
+
+# Config-based workflow (reads all parameters from JSON)
+python calibrate.py --config calibration_input_GR.json --backend jax
+python olg_transition.py --config calibration_input_GR.json --backend jax
+python run_fiscal_figures.py --config calibration_input_GR.json --shock G --backend jax
 ```
+
+## Config System
+
+Country-specific parameters live in a JSON file (e.g., `calibration_input_GR.json`). The same file drives calibration, OLG transitions, and fiscal experiments. Key functions in `calibrate.py`:
+
+- `load_config(path)` — loads JSON, derives `w` from firm FOC, computes age weights, builds `CalibrationSpec`
+- `build_lifecycle_config(raw, w)` — constructs `LifecycleConfig` from parsed JSON dict
+- `build_olg_transition(config_data, backend)` — constructs `OLGTransition` + transition paths from JSON
+- `compute_equilibrium_prices(config_data)` — derives `w`, `K/L`, `Y/L` from `{r, alpha, delta, A_tfp, K_g}`
+
+In `olg_transition.py`:
+- `run_from_config(config_path, backend, recompute_bequests, n_sim)` — runs a transition from JSON
 
 ## Key Classes
 
@@ -99,6 +116,8 @@ python run_fiscal_figures.py --shock both
 - Age-dependent medical expenditure (`m_age_profile`)
 - Age-dependent productivity transitions (`P_y_by_age_health`)
 - Endogenous labor supply via FOC (`labor_supply`, `nu`, `phi`)
+- Wage age profile (`wage_age_profile` in LifecycleConfig) — age-dependent wage multiplier κ(j), effective wage = w · κ(j) · y
+- Career-average pension (`pension_avg_weight`, `mean_kappa_working`, `mean_y_employed` in LifecycleConfig) — pension base blends last income state with career average; `pension_avg_weight=1.0` recovers last-state-only pension
 - Endogenous retirement window (`retirement_window`)
 - Schooling phase with child costs (`schooling_years`, `child_cost_profile`)
 - Government spending on goods (`govt_spending_path` in OLGTransition)
