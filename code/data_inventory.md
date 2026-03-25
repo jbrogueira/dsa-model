@@ -2,8 +2,6 @@
 
 Source file: `data/DATA_GR.xlsx` (11 sheets).
 
-Other data in `data/`: `IDF20222023_a.xlsx` is the Portuguese Household Budget Survey (INE, *Inquérito às Despesas das Famílias* 2022/2023). It contains pre-tabulated aggregate tables (means by demographic group), not microdata. Country is Portugal, not Greece. It provides mean annual expenditure by COICOP category cross-tabulated by age group, education, income quintile, employment status, and household composition — but no household-level observations and no distributional moments (variance, Gini, percentiles). Useful as a reference for expenditure structure comparisons, but not directly usable for Greek calibration targets.
-
 ---
 
 ## 1. Available Data
@@ -148,7 +146,7 @@ Eurostat (`hlth_sha11_hf`): health care expenditure by financing scheme, Greece,
 
 **What's required:** Cross-sectional variance of log earnings by age, from a household survey. Under AR(1): `Var(log y_j) = sigma_eps^2 * (1 - rho^{2j}) / (1 - rho^2)`. The slope identifies `rho`, the level identifies `sigma`.
 
-**What we have:** Mean income by education (Eurostat `ilc_di08`). No distributional moments (variance, percentiles) and no age breakdown. The IDF (`data/IDF20222023_a.xlsx`) is Portuguese aggregate tables — not usable.
+**What we have:** Mean income by education (Eurostat `ilc_di08`). No distributional moments (variance, percentiles) and no age breakdown.
 
 #### Literature estimates (no direct Greece estimates exist)
 
@@ -341,7 +339,7 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 
 **Needed for:** Validation of `rho_y`. Consumption Gini or variance of log consumption.
 
-**What we have:** Nothing for Greece. The IDF in `data/` is Portuguese aggregate tables — not usable.
+**What we have:** Nothing for Greece.
 
 **Where to get it:** Same microdata sources as 2.1 (LIS or EU-SILC). HFCS has limited consumption data (food expenditure and rough total, not full COICOP breakdown). For a consumption Gini, the best path is EU-SILC via LIS.
 

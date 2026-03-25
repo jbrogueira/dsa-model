@@ -20,7 +20,7 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import NamedTuple, Optional
 
@@ -539,14 +539,10 @@ def run_model_moments(theta, spec, return_panels=False):
             r_path=np.full(config.T, spec.r),
             w_path=np.full(config.T, spec.w),
         )
-        if spec.backend == 'jax' and _JAX_AVAILABLE:
-            model = LifecycleModelJAX(cfg, verbose=False)
-            model.solve(verbose=False)
-            raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
-        else:
-            model = LifecycleModelPerfectForesight(cfg, verbose=False)
-            model.solve(verbose=False)
-            raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
+        cls = LifecycleModelJAX if (spec.backend == 'jax' and _JAX_AVAILABLE) else LifecycleModelPerfectForesight
+        model = cls(cfg, verbose=False)
+        model.solve(verbose=False)
+        raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
         panels[edu_type] = wrap_sim_output(raw)
 
     # Compute each target moment
@@ -1282,7 +1278,6 @@ def main():
         if args.backend is not None:
             overrides['backend'] = args.backend
         if overrides:
-            from dataclasses import replace
             spec = replace(spec, **overrides)
     else:
         spec = default_spec(

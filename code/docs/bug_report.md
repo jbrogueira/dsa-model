@@ -664,3 +664,147 @@ This mixes end-of-period savings choice and death timing without an explicit con
 
 ### Suggested Fix
 Pick an explicit timing convention and implement it cleanly. If bequests are meant to equal end-of-period assets, document that and ensure survival is drawn consistently off the current state before any next-period state variables are overwritten.
+
+---
+
+## ISSUE-020 — `run_fiscal_figures.py` uses economically fragile demo calibration
+
+**Date:** 2026-03-25
+**Status:** Open
+**Files:** `run_fiscal_figures.py`
+
+### Symptom
+The hardcoded demo script uses a fast-test calibration that is convenient for producing figures, but not robust as a quantitative fiscal benchmark.
+
+### Root Cause
+The hardcoded branch enables endogenous labor supply with:
+
+```python
+labor_supply = True,
+nu           = 1.0,
+phi          = 2.0,
+```
+
+which is a parameterization already known to be fragile in this codebase. Fiscal figures produced from this setup can therefore inherit distorted labor responses and tax bases.
+
+### Suggested Fix
+Either:
+
+- switch the demo script to a more stable/calibrated parameterization, or
+- label the default figures explicitly as qualitative smoke-test outputs rather than calibrated fiscal results.
+
+---
+
+## ISSUE-021 — Baseline `G` calibration targets mean output, not a `G/Y` path
+
+**Date:** 2026-03-25
+**Status:** Open
+**Files:** `run_fiscal_figures.py`
+
+### Symptom
+The script reports that it is calibrating baseline government spending from a target `G/Y` ratio, but it actually sets a constant level of `G` equal to the ratio times **mean** output over the calibration run.
+
+### Root Cause
+In both config modes, the code computes:
+
+```python
+G_path = np.full(T_TR, target_ratio * Y_path.mean())
+```
+
+This makes `G_t` constant even when `Y_t` is not, so the implied `G_t / Y_t` ratio varies across the transition.
+
+### Why this matters economically
+If the intended baseline is “government spending equals a constant share of GDP,” the current script does not implement that. Instead it creates a flat spending level that only matches the target ratio on average.
+
+### Suggested Fix
+If the intended calibration is a constant `G/Y` ratio, set:
+
+```python
+G_path = target_ratio * Y_path
+```
+
+or state clearly that the script uses a constant-`G` baseline calibrated from average output.
+
+---
+
+## ISSUE-022 — `G` and `I_g` shocks are not structurally symmetric despite equal flow normalization
+
+**Date:** 2026-03-25
+**Status:** Open
+**Files:** `run_fiscal_figures.py`
+
+### Symptom
+The script presents `G` shocks and `I_g` shocks side by side and normalizes both to the same flow size:
+
+```python
+0.02 * mean(Y)
+```
+
+This can invite direct comparison of their “multipliers” as if the two experiments were like-for-like.
+
+### Root Cause
+The two shocks are normalized the same way in units of current expenditure flow, but they are different economic objects:
+
+- `G` is a pure flow expenditure,
+- `I_g` accumulates into the public capital stock and changes future production.
+
+### Why this matters economically
+A larger or more persistent response under `I_g` is not purely an empirical ranking of fiscal effectiveness; it is partly mechanical because one shock builds a productive stock while the other does not.
+
+### Suggested Fix
+Document the comparison more carefully in the script output and figure labels, or adopt a normalization designed for the specific comparison being made.
+
+---
+
+## BUG-023 — `run_fiscal_figures.py` executes at import time
+
+**Date:** 2026-03-25
+**Status:** Open
+**Files:** `run_fiscal_figures.py`
+
+### Symptom
+Importing the module from another script or test triggers argument parsing and experiment execution immediately.
+
+### Root Cause
+The script performs:
+
+- CLI parsing,
+- model construction,
+- scenario execution,
+- and figure generation
+
+at top level, without a `main()` wrapper or `if __name__ == "__main__":` guard.
+
+### Suggested Fix
+Refactor the script into:
+
+- reusable helper functions,
+- a `main()` function,
+- and a standard `if __name__ == "__main__": main()` entry point.
+
+This would make the script easier to test and safer to import.
+
+---
+
+## ISSUE-024 — No dedicated tests for `run_fiscal_figures.py` script wiring
+
+**Date:** 2026-03-25
+**Status:** Open
+**Files:** `run_fiscal_figures.py`
+
+### Symptom
+The fiscal framework is tested, but the top-level figure script itself is not directly covered by tests.
+
+### Root Cause
+`test_fiscal_experiments.py` focuses on the framework in `fiscal_experiments.py`, not on:
+
+- CLI argument handling in `run_fiscal_figures.py`,
+- baseline path calibration choices,
+- output-directory and figure-generation wiring,
+- or script-specific scenario assembly.
+
+### Why this matters
+The script can drift away from the tested framework behavior without being caught by the existing test suite.
+
+### Suggested Fix
+Add lightweight integration tests for the script-level wiring, ideally after refactoring it behind a `main()` function and reusable helpers.
