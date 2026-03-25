@@ -123,5 +123,19 @@
   "simulation": {
     "n_sim": 10000,
     "seed": 42
+  },
+
+  "transition": {
+    "T_transition": 60,
+    "birth_year": 1960,
+    "current_year": 2020,
+    "r_initial": 0.04,
+    "r_final": 0.04,
+    "r_decay": 5,
+    "G_over_Y": 0.13,
+    "I_g_over_Y": 0.03,
+    "B_over_Y": 1.70,
+    "n_sim": 2000,
+    "recompute_bequests": false
   }
 }

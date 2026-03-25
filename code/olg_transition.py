@@ -387,6 +387,8 @@ class OLGTransition:
                 ref.survival_probs, P_y_4d_arg,
                 ref.labor_supply, ref.nu, ref.phi,
                 bequest_lumpsums,
+                ref.wage_age_profile,
+                ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
             )
 
             # Cache batched JAX policy arrays to avoid round-trip in _simulate_cohorts_jax_batched
@@ -587,6 +589,8 @@ class OLGTransition:
                     ref.tax_kappa_hsv, ref.tax_eta,
                     ref.P_y_age_health, P_y_4d_sim,
                     ref.survival_probs,
+                    ref.wage_age_profile,
+                    ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
                 )
 
                 # Store only actual (non-padded) cohorts
@@ -2523,15 +2527,66 @@ def _parse_backend():
     return 'numpy'
 
 
+def run_from_config(config_path, backend='numpy', recompute_bequests=False, n_sim=None):
+    """Run OLG transition from a JSON config file.
+
+    Uses build_olg_transition from calibrate.py to construct the economy
+    and transition paths from the same JSON used for calibration.
+    """
+    import json
+    from calibrate import build_olg_transition
+
+    with open(config_path) as f:
+        config_data = json.load(f)
+
+    economy, paths, T_tr = build_olg_transition(config_data, backend=backend)
+    sim_n = n_sim or config_data.get('transition', {}).get('n_sim', 2000)
+
+    # Run baseline simulation to get Y for scaling G and I_g
+    results = economy.simulate_transition(
+        T_transition=T_tr,
+        r_path=paths['r_path'],
+        tau_c_path=paths['tau_c_path'],
+        tau_l_path=paths['tau_l_path'],
+        tau_p_path=paths['tau_p_path'],
+        tau_k_path=paths['tau_k_path'],
+        pension_replacement_path=paths['pension_replacement_path'],
+        n_sim=sim_n,
+        recompute_bequests=recompute_bequests,
+    )
+
+    print(f"\nTransition from {config_path}: T_transition={T_tr}, n_sim={sim_n}")
+    print(f"  Y[0]={results['Y'][0]:.4f}, Y[-1]={results['Y'][-1]:.4f}")
+    print(f"  K[0]={results['K'][0]:.4f}, L[0]={results['L'][0]:.4f}")
+
+    return economy, results
+
+
 def main():
     """
-    Main entry point. Check for --test flag and run accordingly.
+    Main entry point. Check for --test, --config flags and run accordingly.
     """
     backend = _parse_backend()
     if backend != 'numpy':
         print(f"Using backend: {backend}")
 
-    if '--test' in sys.argv:
+    # Check for --config
+    config_path = None
+    for i, arg in enumerate(sys.argv):
+        if arg == '--config' and i + 1 < len(sys.argv):
+            config_path = sys.argv[i + 1]
+            break
+
+    if config_path:
+        recompute_bequests = '--recompute-bequests' in sys.argv
+        n_sim = None
+        for i, arg in enumerate(sys.argv):
+            if arg == '--n-sim' and i + 1 < len(sys.argv):
+                n_sim = int(sys.argv[i + 1])
+        economy, results = run_from_config(
+            config_path, backend=backend,
+            recompute_bequests=recompute_bequests, n_sim=n_sim)
+    elif '--test' in sys.argv:
         recompute_bequests = '--recompute-bequests' in sys.argv
         economy, results = run_fast_test(backend=backend, recompute_bequests=recompute_bequests)
     else:

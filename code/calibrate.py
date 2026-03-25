@@ -749,74 +749,19 @@ def load_config(path):
     with open(path) as f:
         raw = json.load(f)
 
-    # --- Derive equilibrium prices ---
-    eq_prices = compute_equilibrium_prices(raw)
+    base_config, eq_prices = build_lifecycle_config(raw)
     r = raw['prices']['r']
     w = eq_prices['w']
-    raw['_derived'] = {'w': w, 'K_over_L': eq_prices['K_over_L'],
-                       'Y_over_L': eq_prices['Y_over_L']}
+    raw['_derived'] = {'w': w, 'K_over_L': eq_prices.get('K_over_L', 0),
+                       'Y_over_L': eq_prices.get('Y_over_L', 0)}
 
-    # --- Build edu_params dict ---
-    edu_params = {}
-    for edu_type, edu_data in raw['edu_params'].items():
-        edu_params[edu_type] = dict(edu_data)
-
-    # Inject initial values for calibrated edu_params fields
-    for p in raw['calibration']['params']:
-        parts = p['path'].split('.')
-        if parts[0] == 'edu_params':
-            field_name = parts[2]
-            if parts[1] == '*':
-                for et in edu_params:
-                    edu_params[et].setdefault(field_name, p['initial'])
-            else:
-                edu_params[parts[1]].setdefault(field_name, p['initial'])
-
-    # --- Build LifecycleConfig kwargs ---
-    kwargs = {}
+    # Age weights
     T = raw['model']['T']
-    for k, v in raw['model'].items():
-        kwargs[k] = v
-    for k, v in raw['external_params'].items():
-        config_key = _PARAM_FIELD_MAP.get(k, k)
-        if config_key == 'pop_growth':
-            continue  # not a LifecycleConfig field
-        kwargs[config_key] = v
-    kwargs['edu_params'] = edu_params
-    kwargs['r_path'] = np.full(T, r)
-    kwargs['w_path'] = np.full(T, w)
-    kwargs['r_default'] = r
-    kwargs['w_default'] = w
-    if raw.get('survival_probs') is not None:
-        kwargs['survival_probs'] = np.array(raw['survival_probs'])
-    if raw.get('m_age_profile') is not None:
-        kwargs['m_age_profile'] = np.array(raw['m_age_profile'])
-    if raw.get('wage_age_profile') is not None:
-        kwargs['wage_age_profile'] = np.array(raw['wage_age_profile'])
-    # Auto-compute pension_avg_weight from rho and retirement_age if not given
-    paw = raw.get('pension_avg_weight')
-    if paw is not None:
-        kwargs['pension_avg_weight'] = paw
-    else:
-        # Default: compute from initial rho_y and retirement_age
-        ret_age = raw['model'].get('retirement_age', 40)
-        # Find rho_y initial value from calibration params or edu_params
-        rho_init = 0.95  # fallback
-        for p in raw['calibration']['params']:
-            if p['name'] == 'rho_y':
-                rho_init = p['initial']
-                break
-        lam = (1 - rho_init ** ret_age) / (ret_age * (1 - rho_init))
-        kwargs['pension_avg_weight'] = lam
-
-    base_config = LifecycleConfig(**kwargs)
-
-    # --- Age weights ---
     pop_growth = raw.get('external_params', {}).get('pop_growth', 0.0)
     surv = np.array(raw['survival_probs']) if raw.get('survival_probs') else None
     age_weights = compute_age_weights(T, pop_growth, surv)
 
-    # --- Build CalibrationSpec ---
+    # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]
     moments = [TargetMoment(**m) for m in raw['calibration']['targets']]
 
@@ -835,6 +780,131 @@ def load_config(path):
     )
     return {'spec': spec, 'config_data': raw, 'eq_prices': eq_prices,
             'age_weights': age_weights}
+
+
+def build_lifecycle_config(raw, w=None):
+    """Build a LifecycleConfig from parsed JSON dict.
+
+    If *w* is None, derives it from firm FOC. Returns (config, eq_prices).
+    """
+    if w is None:
+        eq_prices = compute_equilibrium_prices(raw)
+        w = eq_prices['w']
+    else:
+        eq_prices = {'w': w}
+    r = raw['prices']['r']
+
+    # Edu params with defaults for calibrated fields
+    edu_params = {}
+    for edu_type, edu_data in raw['edu_params'].items():
+        edu_params[edu_type] = dict(edu_data)
+    for p in raw.get('calibration', {}).get('params', []):
+        parts = p['path'].split('.')
+        if parts[0] == 'edu_params':
+            field_name = parts[2]
+            if parts[1] == '*':
+                for et in edu_params:
+                    edu_params[et].setdefault(field_name, p['initial'])
+            else:
+                edu_params[parts[1]].setdefault(field_name, p['initial'])
+    # Ensure rho_y and sigma_y have defaults even without calibration section
+    for et in edu_params:
+        edu_params[et].setdefault('rho_y', 0.95)
+        edu_params[et].setdefault('sigma_y', 0.10)
+
+    kwargs = {}
+    T = raw['model']['T']
+    for k, v in raw['model'].items():
+        kwargs[k] = v
+    for k, v in raw['external_params'].items():
+        config_key = _PARAM_FIELD_MAP.get(k, k)
+        if config_key == 'pop_growth':
+            continue
+        kwargs[config_key] = v
+    kwargs['edu_params'] = edu_params
+    kwargs['r_path'] = np.full(T, r)
+    kwargs['w_path'] = np.full(T, w)
+    kwargs['r_default'] = r
+    kwargs['w_default'] = w
+    if raw.get('survival_probs') is not None:
+        kwargs['survival_probs'] = np.array(raw['survival_probs'])
+    if raw.get('m_age_profile') is not None:
+        kwargs['m_age_profile'] = np.array(raw['m_age_profile'])
+    if raw.get('wage_age_profile') is not None:
+        kwargs['wage_age_profile'] = np.array(raw['wage_age_profile'])
+    # Pension avg weight
+    paw = raw.get('pension_avg_weight')
+    if paw is not None:
+        kwargs['pension_avg_weight'] = paw
+    else:
+        ret_age = raw['model'].get('retirement_age', 40)
+        rho_init = 0.95
+        for p in raw.get('calibration', {}).get('params', []):
+            if p['name'] == 'rho_y':
+                rho_init = p['initial']
+                break
+        kwargs['pension_avg_weight'] = (1 - rho_init ** ret_age) / (ret_age * (1 - rho_init))
+
+    return LifecycleConfig(**kwargs), eq_prices
+
+
+def build_olg_transition(config_data, backend='numpy'):
+    """Build an OLGTransition and transition paths from parsed JSON dict.
+
+    Returns (economy, paths) where paths is a dict with r_path, tau paths,
+    pension_replacement_path, G_path, I_g_path, B_path, etc.
+    """
+    from olg_transition import OLGTransition
+
+    lifecycle_config, eq_prices = build_lifecycle_config(config_data)
+    w = eq_prices['w']
+    r = config_data['prices']['r']
+    prod = config_data.get('production', {})
+    trans = config_data.get('transition', {})
+    ext = config_data.get('external_params', {})
+    T_tr = trans.get('T_transition', 60)
+
+    # Build OLGTransition
+    economy = OLGTransition(
+        lifecycle_config=lifecycle_config,
+        alpha=prod.get('alpha', 0.33),
+        delta=prod.get('delta', 0.07),
+        A=prod.get('A_tfp', 1.0),
+        eta_g=prod.get('eta_g', 0.0),
+        K_g_initial=prod.get('K_g', 0.0),
+        delta_g=prod.get('delta_g', 0.05),
+        economy_type='soe',
+        r_star=r,
+        pop_growth=ext.get('pop_growth', 0.0),
+        birth_year=trans.get('birth_year', 1960),
+        current_year=trans.get('current_year', 2020),
+        education_shares=config_data.get('education_shares'),
+        backend=backend,
+    )
+
+    # Build transition paths
+    r_i = trans.get('r_initial', r)
+    r_f = trans.get('r_final', r)
+    r_decay = trans.get('r_decay', 5)
+    t = np.arange(T_tr)
+    r_path = r_f + (r_i - r_f) * np.exp(-t / r_decay) if r_i != r_f else np.full(T_tr, r_i)
+
+    paths = {
+        'r_path': r_path,
+        'tau_c_path': np.full(T_tr, ext.get('tau_c', 0.20)),
+        'tau_l_path': np.full(T_tr, ext.get('tau_l', 0.10)),
+        'tau_p_path': np.full(T_tr, ext.get('tau_p', 0.20)),
+        'tau_k_path': np.full(T_tr, ext.get('tau_k', 0.20)),
+        'pension_replacement_path': np.full(T_tr, ext.get('pension_replacement_default', 0.50)),
+    }
+
+    # G and I_g paths (constant at data ratios × steady-state Y, will be rescaled after first sim)
+    fiscal = config_data.get('fiscal', {})
+    paths['G_over_Y'] = fiscal.get('G_over_Y', 0.13)
+    paths['I_g_over_Y'] = fiscal.get('I_g_over_Y', 0.03)
+    paths['B_over_Y'] = fiscal.get('B_over_Y', 0.0)
+
+    return economy, paths, T_tr
 
 
 # ---------------------------------------------------------------------------

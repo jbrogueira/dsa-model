@@ -38,75 +38,105 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--backend', choices=['numpy', 'jax'], default='numpy')
 parser.add_argument('--shock', choices=['G', 'Ig', 'both'], default='G',
                     help='Fiscal shock type: G (govt spending), Ig (public investment), or both')
+parser.add_argument('--config', type=str, default=None,
+                    help='JSON config file (same format as calibration input)')
+parser.add_argument('--n-sim', type=int, default=None,
+                    help='Override simulation size')
 args = parser.parse_args()
 
 OUTPUT_DIR = 'output/fiscal_test'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# 1. Build OLG model  (fast-test parameters: T=20, n_a=60, n_sim=4000)
+# 1. Build OLG model
 # ---------------------------------------------------------------------------
 
-T_LC  = 20   # lifecycle periods
-N_H   = 1
-N_SIM = 2000
+if args.config:
+    # Build from JSON config file
+    import json
+    from calibrate import build_olg_transition
 
-config = LifecycleConfig(
-    T              = T_LC,
-    beta           = 0.96,
-    gamma          = 2.0,
-    n_a            = 50,
-    n_y            = 4,
-    n_h            = N_H,
-    retirement_age = 15,
-    education_type = 'medium',
-    labor_supply   = True,
-    nu             = 1.0,
-    phi            = 2.0,
-    survival_probs = np.linspace(0.995, 0.90, T_LC).reshape(T_LC, N_H),
-)
+    with open(args.config) as f:
+        config_data = json.load(f)
 
-economy = OLGTransition(
-    lifecycle_config  = config,
-    alpha             = 0.33,
-    delta             = 0.05,
-    A                 = 1.0,
-    pop_growth        = 0.02,
-    birth_year        = 2005,
-    current_year      = 2020,
-    education_shares  = {'medium': 1.0},
-    eta_g             = 0.10,
-    K_g_initial       = 1.0,
-    backend           = args.backend,
-    output_dir        = OUTPUT_DIR,
-)
+    economy, paths, T_TR = build_olg_transition(config_data, backend=args.backend)
+    economy.output_dir = OUTPUT_DIR
+    N_SIM = args.n_sim or config_data.get('transition', {}).get('n_sim', 2000)
 
-# ---------------------------------------------------------------------------
-# 2. Calibrate baseline G = 30% of Y
-#    K_g is held constant: I_g = delta_g * K_g_initial = 0.05 * 1.0 = 0.05
-#    Run one cheap preliminary simulation to read off Y, then set G_path.
-# ---------------------------------------------------------------------------
+    r_path = paths['r_path']
+    tax_paths = {k: paths[k] for k in
+                 ['tau_c_path', 'tau_l_path', 'tau_p_path', 'tau_k_path',
+                  'pension_replacement_path']}
 
-T_TR = 40   # transition periods
+    # Compute I_g from data ratio
+    prod = config_data.get('production', {})
+    I_g_path = np.full(T_TR, prod.get('delta_g', 0.05) * prod.get('K_g', 0.0))
 
-r_path   = np.full(T_TR, 0.04)          # constant 4 %
-I_g_path = np.full(T_TR, 0.05 * 1.0)   # delta_g * K_g_initial → K_g constant
+    # Calibrate G from data ratio
+    print("Calibrating baseline G …")
+    _calib = economy.simulate_transition(
+        r_path=r_path, I_g_path=I_g_path, n_sim=50, verbose=False, **tax_paths
+    )
+    Y_path = np.asarray(_calib['Y'])
+    G_over_Y = paths.get('G_over_Y', 0.13)
+    G_path = np.full(T_TR, G_over_Y * Y_path.mean())
+    print(f"  mean(Y) = {Y_path.mean():.4f},  G/Y = {G_over_Y},  mean(G) = {G_path.mean():.4f}")
 
-tax_paths = dict(
-    tau_l_path               = np.full(T_TR, 0.15),
-    tau_c_path               = np.full(T_TR, 0.18),
-    tau_p_path               = np.full(T_TR, 0.20),
-    tau_k_path               = np.full(T_TR, 0.20),
-    pension_replacement_path = np.full(T_TR, 0.60),
-)
+else:
+    # Hardcoded fast-test parameters (backward compatible)
+    T_LC  = 20
+    N_H   = 1
+    N_SIM = args.n_sim or 2000
 
-print("Calibrating baseline G (30 %% of Y) …")
-_calib = economy.simulate_transition(
-    r_path=r_path, I_g_path=I_g_path, n_sim=50, verbose=False, **tax_paths
-)
-Y_path = np.asarray(_calib['Y'])
-G_path = np.full(T_TR, 0.30 * Y_path.mean())  # constant level, calibrated to 30% of SS output
-print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
+    config = LifecycleConfig(
+        T              = T_LC,
+        beta           = 0.96,
+        gamma          = 2.0,
+        n_a            = 50,
+        n_y            = 4,
+        n_h            = N_H,
+        retirement_age = 15,
+        education_type = 'medium',
+        labor_supply   = True,
+        nu             = 1.0,
+        phi            = 2.0,
+        survival_probs = np.linspace(0.995, 0.90, T_LC).reshape(T_LC, N_H),
+    )
+
+    economy = OLGTransition(
+        lifecycle_config  = config,
+        alpha             = 0.33,
+        delta             = 0.05,
+        A                 = 1.0,
+        pop_growth        = 0.02,
+        birth_year        = 2005,
+        current_year      = 2020,
+        education_shares  = {'medium': 1.0},
+        eta_g             = 0.10,
+        K_g_initial       = 1.0,
+        backend           = args.backend,
+        output_dir        = OUTPUT_DIR,
+    )
+
+    T_TR = 40
+    r_path   = np.full(T_TR, 0.04)
+    I_g_path = np.full(T_TR, 0.05 * 1.0)
+
+    tax_paths = dict(
+        tau_l_path               = np.full(T_TR, 0.15),
+        tau_c_path               = np.full(T_TR, 0.18),
+        tau_p_path               = np.full(T_TR, 0.20),
+        tau_k_path               = np.full(T_TR, 0.20),
+        pension_replacement_path = np.full(T_TR, 0.60),
+    )
+
+    print("Calibrating baseline G (30 %% of Y) …")
+    _calib = economy.simulate_transition(
+        r_path=r_path, I_g_path=I_g_path, n_sim=50, verbose=False, **tax_paths
+    )
+    Y_path = np.asarray(_calib['Y'])
+    G_path = np.full(T_TR, 0.30 * Y_path.mean())
+    print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
 
