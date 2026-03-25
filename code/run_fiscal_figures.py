@@ -49,6 +49,12 @@ parser.add_argument('--n-sim', type=int, default=None,
                     help='Override simulation size')
 args = parser.parse_args()
 
+if args.backend == 'jax':
+    import jax
+    devices = jax.devices()
+    dev_type = devices[0].platform.upper() if devices else 'UNKNOWN'
+    print(f"JAX backend: {dev_type} ({len(devices)} device(s): {devices})")
+
 OUTPUT_DIR = 'output/fiscal_test'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
