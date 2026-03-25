@@ -395,10 +395,13 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 | Parameter / Moment | Status | Values |
 |-------------------|--------|--------|
 | `rho_y`, `sigma_y` | **Provisional** (literature proxies; LIS pending) | rho≈0.95, σ_eta≈0.13 (Italy/Spain). Eurostat: Gini=31.8, P90/P10=3.9 |
-| Wealth Gini, zero-wealth fraction | **Obtained** (HFCS Wave 4) | Gini=0.58, negative NW=1.1%, median=€84.6k, by-age profile available |
+| Wealth Gini, zero-wealth fraction | **Obtained** (HFCS Wave 4) | Net wealth Gini=0.58 (includes housing), negative NW=1.1%. **Caveat**: model has no housing; financial-only Gini needed — see "Still missing". |
 | `job_finding_rate` | **Obtained** (Eurostat `lfsa_ugad`) | jfr≈0.50/year (2024); by education: 0.505-0.522 |
 | `m_age_profile` | **Obtained** (EU Ageing Report 2024) | EU14 aggregate profile; normalised 5-year group values available |
-| Earnings P90/P10 | **Obtained** (Eurostat `ilc_di01`) | P90/P10=3.9 (2024) |
+| `wage_age_profile` | **Obtained** (Eurostat `ilc_di03`) | Quadratic fit to mean income by age group; rises from 0.85 (age 20) to 1.07 (age 54); normalised working-age mean = 1.0 |
+| Earnings P90/P10 | **Obtained** (Eurostat `ilc_di01`) | P90/P10=3.9 (2024, equivalised disposable income — not directly comparable to model) |
+| Income Gini | **Obtained** (Eurostat `ilc_di12`) | 31.8 (2024). **Caveat**: this is equivalised household disposable income, not individual gross income. Model income Gini is not directly comparable. |
+| Tax decomposition | **Clarified** | EC ITR on labour (40.58%) includes SSC. Correct split: tau_l≈0.10 (PIT), tau_p≈0.34 (SSC), total wedge = 40.6% |
 
 ### Still missing
 
