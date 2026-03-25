@@ -370,26 +370,55 @@ class OLGTransition:
             P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
             bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
                                           for b in birth_periods])
-            V_batch, a_pol_batch, c_pol_batch, l_pol_batch = _solve_lifecycle_jax_batched(
-                ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
-                ref.P_y_2d, ref.P_h,
-                w_at_rets,
-                r_paths, w_paths,
-                tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
-                pension_paths,
-                ref.ui_replacement_rate, ref.kappa,
-                ref.beta, ref.gamma,
-                ref.T, ref.retirement_age,
-                ref.pension_min_floor, ref.tax_progressive,
-                ref.tax_kappa_hsv, ref.tax_eta,
-                ref.transfer_floor, ref.education_subsidy_rate,
-                ref.child_cost_profile, ref.schooling_years,
-                ref.survival_probs, P_y_4d_arg,
-                ref.labor_supply, ref.nu, ref.phi,
-                bequest_lumpsums,
-                ref.wage_age_profile,
-                ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
-            )
+            n_cohorts = len(model_list)
+            chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
+
+            def _solve_chunk(w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c):
+                return _solve_lifecycle_jax_batched(
+                    ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                    ref.P_y_2d, ref.P_h,
+                    w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
+                    ref.ui_replacement_rate, ref.kappa,
+                    ref.beta, ref.gamma,
+                    ref.T, ref.retirement_age,
+                    ref.pension_min_floor, ref.tax_progressive,
+                    ref.tax_kappa_hsv, ref.tax_eta,
+                    ref.transfer_floor, ref.education_subsidy_rate,
+                    ref.child_cost_profile, ref.schooling_years,
+                    ref.survival_probs, P_y_4d_arg,
+                    ref.labor_supply, ref.nu, ref.phi,
+                    beq_c,
+                    ref.wage_age_profile,
+                    ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
+                )
+
+            batched_arrays = (w_at_rets, r_paths, w_paths,
+                              tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
+                              pension_paths, bequest_lumpsums)
+
+            if chunk_size >= n_cohorts:
+                V_batch, a_pol_batch, c_pol_batch, l_pol_batch = _solve_chunk(*batched_arrays)
+            else:
+                V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
+                for start in range(0, n_cohorts, chunk_size):
+                    end = min(start + chunk_size, n_cohorts)
+                    actual = end - start
+                    pad = chunk_size - actual
+                    sliced = tuple(arr[start:end] for arr in batched_arrays)
+                    if pad > 0:
+                        sliced = tuple(
+                            jnp.concatenate([s, jnp.repeat(s[-1:], pad, axis=0)])
+                            for s in sliced
+                        )
+                    V_b, a_b, c_b, l_b = _solve_chunk(*sliced)
+                    V_chunks.append(V_b[:actual])
+                    a_chunks.append(a_b[:actual])
+                    c_chunks.append(c_b[:actual])
+                    l_chunks.append(l_b[:actual])
+                V_batch = jnp.concatenate(V_chunks)
+                a_pol_batch = jnp.concatenate(a_chunks)
+                c_pol_batch = jnp.concatenate(c_chunks)
+                l_pol_batch = jnp.concatenate(l_chunks)
 
             # Cache batched JAX policy arrays to avoid round-trip in _simulate_cohorts_jax_batched
             if not hasattr(self, '_jax_policy_batch'):
