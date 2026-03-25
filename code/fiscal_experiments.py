@@ -791,7 +791,13 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
         base_paths['I_g_path'] = olg.I_g_path
 
     # ── Run (or retrieve) baseline ───────────────────────────────────────────
-    pre_tp = _build_pre_transition_paths(olg, base_paths)
+    # Reuse pre_transition_paths if already in base_paths (avoids cache invalidation
+    # across scenarios sharing the same baseline).
+    if '_pre_transition_paths' in base_paths:
+        pre_tp = base_paths['_pre_transition_paths']
+    else:
+        pre_tp = _build_pre_transition_paths(olg, base_paths)
+        base_paths['_pre_transition_paths'] = pre_tp
 
     if 'base_macro' in base_paths and 'base_budget' in base_paths:
         base_macro  = base_paths['base_macro']
