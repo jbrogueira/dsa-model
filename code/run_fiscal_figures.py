@@ -14,6 +14,7 @@ Run:
 
 import argparse
 import functools
+import json
 import os
 import sys
 os.environ.setdefault('JAX_PLATFORMS', 'cpu')
@@ -22,6 +23,8 @@ import time
 # Force unbuffered print so progress is visible over SSH / pipes
 print = functools.partial(print, flush=True)
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend — no display required
 import matplotlib.pyplot as plt
 
 from lifecycle_perfect_foresight import LifecycleConfig
@@ -299,7 +302,7 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
         output_dir = OUTPUT_DIR,
         filename   = f'{p}macro_overview.png',
     )
-    plt.show()
+    plt.close('all')
 
     compare_scenarios(res_base, res_debt, res_taul,
         variables  = PRICE_VARS,
@@ -308,7 +311,7 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
         output_dir = OUTPUT_DIR,
         filename   = f'{p}prices_sanity.png',
     )
-    plt.show()
+    plt.close('all')
 
     compare_scenarios(res_base, res_debt, res_taul,
         variables  = FISCAL_VARS,
@@ -317,12 +320,56 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
         output_dir = OUTPUT_DIR,
         filename   = f'{p}fiscal_decomp.png',
     )
-    plt.show()
+    plt.close('all')
 
     debt_fan_chart(SCENARIOS_, SCN_LABELS_,
         output_dir = OUTPUT_DIR,
         filename   = f'{p}debt_fan_chart.png',
     )
-    plt.show()
+    plt.close('all')
+
+# ---------------------------------------------------------------------------
+# 8. Save numerical results to JSON for remote inspection
+# ---------------------------------------------------------------------------
+
+def _result_to_dict(res):
+    """Convert a FiscalScenarioResult to a JSON-serializable dict."""
+    d = {
+        'converged': bool(res.converged) if res.converged is not None else None,
+        'adjustment_scalar': float(res.adjustment_scalar) if res.adjustment_scalar else None,
+        'B_gdp_path': [float(x) for x in res.B_gdp_path],
+    }
+    for label, macro in [('baseline', res.base_macro), ('counterfactual', res.cf_macro)]:
+        d[label] = {}
+        for k, v in macro.items():
+            try:
+                d[label][k] = [float(x) for x in np.asarray(v)]
+            except (TypeError, ValueError):
+                pass
+    for label, budget in [('base_budget', res.base_budget), ('cf_budget', res.cf_budget)]:
+        d[label] = {}
+        for k, v in budget.items():
+            try:
+                d[label][k] = [float(x) for x in np.asarray(v)]
+            except (TypeError, ValueError):
+                pass
+    return d
+
+results_out = {}
+for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in experiment_results.items():
+    shock_var = 'govt_spending' if shock_type == 'G' else 'public_investment'
+    mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var)
+    results_out[shock_type] = {
+        'baseline': _result_to_dict(res_base),
+        'debt_financed': _result_to_dict(res_debt),
+        'tax_financed': _result_to_dict(res_taul),
+        'fiscal_multiplier_mean': float(np.nanmean(mult)),
+        'fiscal_multiplier_path': [float(x) for x in mult],
+    }
+
+results_path = os.path.join(OUTPUT_DIR, 'fiscal_results.json')
+with open(results_path, 'w') as f:
+    json.dump(results_out, f, indent=2)
 
 print(f"\nFigures saved to {OUTPUT_DIR}/")
+print(f"Numerical results saved to {results_path}")
