@@ -17,7 +17,9 @@ import functools
 import json
 import os
 import sys
-os.environ.setdefault('JAX_PLATFORMS', 'cpu')
+import platform
+if platform.system() == 'Darwin':
+    os.environ.setdefault('JAX_PLATFORMS', 'cpu')  # avoid Metal backend on macOS
 import time
 
 # Force unbuffered print so progress is visible over SSH / pipes
