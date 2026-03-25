@@ -2542,9 +2542,8 @@ def run_from_config(config_path, backend='numpy', recompute_bequests=False, n_si
     economy, paths, T_tr = build_olg_transition(config_data, backend=backend)
     sim_n = n_sim or config_data.get('transition', {}).get('n_sim', 2000)
 
-    # Run baseline simulation to get Y for scaling G and I_g
+    # Run baseline simulation (T_transition determined by len(r_path))
     results = economy.simulate_transition(
-        T_transition=T_tr,
         r_path=paths['r_path'],
         tau_c_path=paths['tau_c_path'],
         tau_l_path=paths['tau_l_path'],
