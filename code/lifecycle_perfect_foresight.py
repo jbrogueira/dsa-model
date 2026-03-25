@@ -154,6 +154,10 @@ class LifecycleConfig:
     child_cost_profile: Optional[np.ndarray] = None  # Array of length T, default zeros
     education_subsidy_rate: float = 0.0  # Subsidy rate reducing child costs
 
+    # === Age-earnings profile ===
+    wage_age_profile: Optional[np.ndarray] = None  # Shape (T,), deterministic age multiplier on wages. Default: all ones.
+    pension_avg_weight: float = 1.0  # Weight on last income state in pension base; 1.0 = current (last state only), <1 = shrink toward mean
+
     # === Age/health-dependent productivity (Features #3+#5) ===
     P_y_by_age_health: Optional[np.ndarray] = None  # Shape (T, n_h, n_y, n_y), overrides P_y if provided
 
@@ -176,6 +180,14 @@ class LifecycleConfig:
             self.m_age_profile = np.asarray(self.m_age_profile, dtype=float)
             assert self.m_age_profile.shape == (self.T,), \
                 f"m_age_profile must have shape ({self.T},), got {self.m_age_profile.shape}"
+
+        # Validate/default wage_age_profile
+        if self.wage_age_profile is None:
+            self.wage_age_profile = np.ones(self.T)
+        else:
+            self.wage_age_profile = np.asarray(self.wage_age_profile, dtype=float)
+            assert self.wage_age_profile.shape == (self.T,), \
+                f"wage_age_profile must have shape ({self.T},), got {self.wage_age_profile.shape}"
 
         # Validate/default survival probabilities
         if self.survival_probs is not None:
@@ -299,9 +311,17 @@ class LifecycleModelPerfectForesight:
         # Cache wage at retirement (used repeatedly in budget computations)
         self.w_at_retirement = self.w_path[self.retirement_age - 1] if self.retirement_age > 0 else self.w_path[0]
 
+        # Wage age profile
+        self.wage_age_profile = config.wage_age_profile
+
         # Create grids and processes
         self.a_grid = self._create_asset_grid()
         self.y_grid, self.P_y = self._income_process()
+
+        # Pension averaging: precompute mean of employed y_grid for career-average approximation
+        self.pension_avg_weight = config.pension_avg_weight
+        self.mean_y_employed = np.mean(self.y_grid[1:]) if self.n_y > 1 else 1.0
+        self.mean_kappa_working = np.mean(self.wage_age_profile[:self.retirement_age])
 
         # Feature #3+#5: age/health-dependent productivity transitions
         if config.P_y_by_age_health is not None:
@@ -601,8 +621,12 @@ class LifecycleModelPerfectForesight:
         Returns (after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget).
         """
         if is_retired:
-            pension = (self.pension_replacement_path[t]
-                       * self.w_at_retirement * self.y_grid[i_y_last])
+            # Pension base: career-average approximation via pension_avg_weight
+            # lambda=1 → last state only (old behavior); lambda<1 → shrink toward mean
+            lam = self.pension_avg_weight
+            pension_base = (lam * self.wage_age_profile[self.retirement_age - 1] * self.y_grid[i_y_last]
+                            + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
+            pension = self.pension_replacement_path[t] * self.w_at_retirement * pension_base
             # Feature #11: minimum pension floor
             pension = max(pension, self.pension_min_floor)
             if self.tax_progressive:
@@ -613,11 +637,12 @@ class LifecycleModelPerfectForesight:
                 income_tax = tau_l_t * pension
             after_tax_labor_income = pension - income_tax
         else:
+            kappa_t = self.wage_age_profile[t]
             if i_y == 0:
-                ui_benefit = self.ui_replacement_rate * w_t * self.y_grid[i_y_last]
+                ui_benefit = self.ui_replacement_rate * w_t * kappa_t * self.y_grid[i_y_last]
             else:
                 ui_benefit = 0.0
-            gross_wage_income = w_t * y * h * labor_hours
+            gross_wage_income = w_t * kappa_t * y * h * labor_hours
             gross_labor_income = gross_wage_income + ui_benefit
             payroll_tax = tau_p_t * gross_wage_income
             taxable_income = gross_labor_income - payroll_tax
@@ -1014,9 +1039,12 @@ class LifecycleModelPerfectForesight:
                     l_sim[t_sim, i] = self.l_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
 
                 if is_retired:
-                    # PENSION based on last working income state (y_last)
+                    # PENSION: career-average approximation
                     pension_replacement = self.pension_replacement_path[lifecycle_age]
-                    pension_val = pension_replacement * self.w_at_retirement * self.y_grid[i_y_last[i]]
+                    lam = self.pension_avg_weight
+                    pension_base = (lam * self.wage_age_profile[self.retirement_age - 1] * self.y_grid[i_y_last[i]]
+                                    + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
+                    pension_val = pension_replacement * self.w_at_retirement * pension_base
                     # Feature #11: minimum pension floor
                     pension_val = max(pension_val, self.pension_min_floor)
                     pension_sim[t_sim, i] = pension_val
@@ -1031,13 +1059,14 @@ class LifecycleModelPerfectForesight:
                     y_sim[t_sim, i] = self.y_grid[i_y[i]]
                     employed_sim[t_sim, i] = (i_y[i] > 0)
                     pension_sim[t_sim, i] = 0.0
+                    kappa_t = self.wage_age_profile[lifecycle_age]
 
                     if i_y[i] == 0:
-                        ui_sim[t_sim, i] = self.ui_replacement_rate * self.w_path[lifecycle_age] * self.y_grid[i_y_last[i]]
+                        ui_sim[t_sim, i] = self.ui_replacement_rate * self.w_path[lifecycle_age] * kappa_t * self.y_grid[i_y_last[i]]
                     else:
                         ui_sim[t_sim, i] = 0.0
 
-                    gross_labor_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
+                    gross_labor_income = self.w_path[lifecycle_age] * kappa_t * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
                     n_earnings_years[i] += 1
                     avg_earnings[i] = (avg_earnings[i] * (n_earnings_years[i] - 1) + gross_labor_income) / n_earnings_years[i]
 
@@ -1047,7 +1076,7 @@ class LifecycleModelPerfectForesight:
                 gov_m_sim[t_sim, i] = self.kappa * m_sim[t_sim, i]
 
                 # Effective labor income (wages + UI, used for aggregation)
-                wage_income = self.w_path[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
+                wage_income = self.w_path[lifecycle_age] * self.wage_age_profile[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
                 effective_y_sim[t_sim, i] = wage_income + ui_sim[t_sim, i]
 
                 # Tax calculations

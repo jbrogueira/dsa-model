@@ -261,6 +261,8 @@ Source: `ecb.europa.eu/home/pdf/research/hfcn/HFCS_Statistical_Tables_Wave_2021_
 - The 55-64 age group has the highest median wealth (€336.8k) — strong lifecycle hump.
 - Very low negative-wealth share (1.1%) compared to Northern Europe, consistent with limited mortgage/consumer debt markets.
 
+**Missing: financial wealth excluding housing.** The model has no housing asset, so net wealth targets should exclude real estate. The HFCS reports gross/net financial wealth separately from real assets. The published statistical tables (Table A3/A4) may have this breakdown; if not, HFCS microdata is needed. The financial wealth Gini will be substantially higher than net wealth Gini (0.58) because housing is the great equaliser in Greece (72% homeownership). Zero-financial-wealth fraction will also be much higher than 1.1%, making the model's 4.5% more plausible.
+
 ### 2.3 Unemployment duration — Medium
 
 **Needed for:** `job_finding_rate` (Step 2). Average unemployment duration identifies `job_finding_rate` directly: `jfr ≈ 1 / avg_duration_in_years`.
@@ -403,6 +405,8 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 | Parameter / Moment | Required data | Priority | Path to resolution |
 |-------------------|--------------|----------|--------------------|
 | `rho_y`, `sigma_y` (Greece-specific) | Var(log earnings) by age | **Critical** | LIS application pending (2026-03-24) |
+| Financial wealth Gini (excl. housing) | HFCS gross/net financial assets | **High** | HFCS published tables (check Table A3/A4) or microdata. Model has no housing — net wealth targets overstate asset equality. |
+| Zero-financial-wealth fraction | HFCS financial assets = 0 | **High** | Same source. Expected to be much higher than 1.1% net-wealth figure. |
 | Consumption Gini | Consumption microdata | **Low** | LIS (when approved) |
 
 ---

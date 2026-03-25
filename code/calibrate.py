@@ -791,6 +791,23 @@ def load_config(path):
         kwargs['survival_probs'] = np.array(raw['survival_probs'])
     if raw.get('m_age_profile') is not None:
         kwargs['m_age_profile'] = np.array(raw['m_age_profile'])
+    if raw.get('wage_age_profile') is not None:
+        kwargs['wage_age_profile'] = np.array(raw['wage_age_profile'])
+    # Auto-compute pension_avg_weight from rho and retirement_age if not given
+    paw = raw.get('pension_avg_weight')
+    if paw is not None:
+        kwargs['pension_avg_weight'] = paw
+    else:
+        # Default: compute from initial rho_y and retirement_age
+        ret_age = raw['model'].get('retirement_age', 40)
+        # Find rho_y initial value from calibration params or edu_params
+        rho_init = 0.95  # fallback
+        for p in raw['calibration']['params']:
+            if p['name'] == 'rho_y':
+                rho_init = p['initial']
+                break
+        lam = (1 - rho_init ** ret_age) / (ret_age * (1 - rho_init))
+        kwargs['pension_avg_weight'] = lam
 
     base_config = LifecycleConfig(**kwargs)
 

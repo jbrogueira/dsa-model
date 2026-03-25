@@ -87,6 +87,10 @@ def compute_budget_jax(
     in_schooling=False,
     labor_hours=1.0,
     bequest_lumpsum=0.0,
+    kappa_wage_t=1.0,
+    pension_avg_weight=1.0,
+    mean_kappa_working=1.0,
+    mean_y_employed=1.0,
 ):
     """
     Vectorised budget for ALL (n_a, n_y, n_h, n_y_last) states.
@@ -107,7 +111,11 @@ def compute_budget_jax(
     m = m_grid[None, None, :, None]           # (1,1,n_h,1)  — already age-indexed slice
 
     # --- Retired branch ---
-    pension = pension_replacement_t * w_at_retirement * y_last       # (1,1,1,n_y)
+    # Career-average pension approximation
+    lam = pension_avg_weight
+    kappa_ret = kappa_wage_t  # wage_age_profile at retirement_age - 1 (passed as current-period value for retired)
+    pension_base = lam * kappa_ret * y_last + (1 - lam) * mean_kappa_working * mean_y_employed
+    pension = pension_replacement_t * w_at_retirement * pension_base  # (1,1,1,n_y)
     # Feature #11: minimum pension floor
     pension = jnp.maximum(pension, pension_min_floor)
     # Feature #14: progressive or flat tax
@@ -119,10 +127,10 @@ def compute_budget_jax(
     retired_after_tax_labor = pension - retired_income_tax            # (1,1,1,n_y)
 
     # --- Working branch ---
-    ui_benefit = ui_replacement_rate * w_t * y_last                   # (1,1,1,n_y)
+    ui_benefit = ui_replacement_rate * w_t * kappa_wage_t * y_last    # (1,1,1,n_y)
     is_unemployed = (y == 0.0)                                        # (1,n_y,1,1)
 
-    gross_wage_income = w_t * y * h * labor_hours                      # (1,n_y,n_h,1)
+    gross_wage_income = w_t * kappa_wage_t * y * h * labor_hours       # (1,n_y,n_h,1)
     ui_term = jnp.where(is_unemployed, ui_benefit, 0.0)              # broadcast → (1,n_y,n_h,n_y)
     gross_labor_income = gross_wage_income + ui_term                  # (1,n_y,n_h,n_y)
     payroll_tax = tau_p_t * gross_wage_income                         # on wages only
@@ -176,13 +184,14 @@ def solve_period_jax(V_next, period_params, model_params):
     period_params : dict-like tuple
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t, pension_replacement_t,
          P_h_t, P_y_t, is_retired, survival_t, child_cost_t, in_schooling_t,
-         bequest_lumpsum_t)
+         bequest_lumpsum_t, kappa_wage_t)
     model_params : dict-like tuple
         (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
          ui_replacement_rate, kappa, beta, gamma,
          pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
          transfer_floor, education_subsidy_rate, P_y_age_health,
-         labor_supply, nu, phi)
+         labor_supply, nu, phi,
+         pension_avg_weight, mean_kappa_working, mean_y_employed)
 
     Returns
     -------
@@ -191,13 +200,14 @@ def solve_period_jax(V_next, period_params, model_params):
     (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
      pension_replacement_t, P_h_t, P_y_t, is_retired,
      survival_t, child_cost_t, in_schooling_t,
-     bequest_lumpsum_t) = period_params
+     bequest_lumpsum_t, kappa_wage_t) = period_params
 
     (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
      ui_replacement_rate, kappa, beta, gamma,
      pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
      transfer_floor, education_subsidy_rate, P_y_age_health,
-     labor_supply, nu, phi) = model_params
+     labor_supply, nu, phi,
+     pension_avg_weight, mean_kappa_working, mean_y_employed) = model_params
 
     n_a = a_grid.shape[0]
     n_y = y_grid.shape[0]
@@ -221,6 +231,10 @@ def solve_period_jax(V_next, period_params, model_params):
         education_subsidy_rate=education_subsidy_rate,
         in_schooling=in_schooling_t,
         bequest_lumpsum=bequest_lumpsum_t,
+        kappa_wage_t=kappa_wage_t,
+        pension_avg_weight=pension_avg_weight,
+        mean_kappa_working=mean_kappa_working,
+        mean_y_employed=mean_y_employed,
     )
 
     # 2. Consumption candidates: (n_a, n_y, n_h, n_y, n_a_next)
@@ -232,7 +246,7 @@ def solve_period_jax(V_next, period_params, model_params):
     # y: (1, n_y, 1, 1), h: (1, 1, n_h, 1)
     y_5d = y_grid[None, :, None, None, None]       # (1, n_y, 1, 1, 1)
     h_5d = h_grid[None, None, :, None, None]       # (1, 1, n_h, 1, 1)
-    effective_wage = w_t * y_5d * h_5d              # (1, n_y, n_h, 1, 1)
+    effective_wage = w_t * kappa_wage_t * y_5d * h_5d  # (1, n_y, n_h, 1, 1)
     tau_eff = jnp.where(tax_progressive, tau_p_t, tau_l_t + tau_p_t)
     net_wage_5d = effective_wage * (1.0 - tau_eff)  # (1, n_y, n_h, 1, 1)
 
@@ -317,6 +331,10 @@ def _solve_terminal_period_jax(
     labor_supply=False,
     nu=1.0,
     phi=2.0,
+    kappa_wage_T=1.0,
+    pension_avg_weight=1.0,
+    mean_kappa_working=1.0,
+    mean_y_employed=1.0,
 ):
     """Solve terminal period: consume everything, a'=0."""
     budget = compute_budget_jax(
@@ -335,6 +353,10 @@ def _solve_terminal_period_jax(
         child_cost_t=child_cost_T,
         education_subsidy_rate=education_subsidy_rate,
         in_schooling=in_schooling_T,
+        kappa_wage_t=kappa_wage_T,
+        pension_avg_weight=pension_avg_weight,
+        mean_kappa_working=mean_kappa_working,
+        mean_y_employed=mean_y_employed,
     )
     c = jnp.maximum(budget / (1.0 + tau_c_T), 1e-10)
 
@@ -343,7 +365,7 @@ def _solve_terminal_period_jax(
     n_h = h_grid.shape[0]
     y_4d = y_grid[None, :, None, None]       # (1, n_y, 1, 1)
     h_4d = h_grid[None, None, :, None]       # (1, 1, n_h, 1)
-    effective_wage = w_T * y_4d * h_4d
+    effective_wage = w_T * kappa_wage_T * y_4d * h_4d
     tau_eff = jnp.where(tax_progressive, tau_p_T, tau_l_T + tau_p_T)
     net_wage_4d = effective_wage * (1.0 - tau_eff)
 
@@ -388,6 +410,10 @@ def solve_lifecycle_jax(
     nu=1.0,
     phi=2.0,
     bequest_lumpsum=0.0,
+    wage_age_profile=None,
+    pension_avg_weight=1.0,
+    mean_kappa_working=1.0,
+    mean_y_employed=1.0,
 ):
     """
     Full backward induction using jax.lax.scan.
@@ -402,6 +428,10 @@ def solve_lifecycle_jax(
     n_a = a_grid.shape[0]
     n_y = y_grid.shape[0]
     n_h = h_grid.shape[0]
+
+    # Default wage_age_profile to ones
+    if wage_age_profile is None:
+        wage_age_profile = jnp.ones(T)
 
     P_y_age_health = P_y_by_age_health is not None
 
@@ -435,7 +465,8 @@ def solve_lifecycle_jax(
                     ui_replacement_rate, kappa, beta, gamma,
                     pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
                     transfer_floor, education_subsidy_rate, P_y_age_health,
-                    labor_supply, nu, phi)
+                    labor_supply, nu, phi,
+                    pension_avg_weight, mean_kappa_working, mean_y_employed)
 
     # Terminal period
     is_retired_T = (T - 1) >= retirement_age
@@ -458,6 +489,10 @@ def solve_lifecycle_jax(
         labor_supply=labor_supply,
         nu=nu,
         phi=phi,
+        kappa_wage_T=wage_age_profile[T - 1],
+        pension_avg_weight=pension_avg_weight,
+        mean_kappa_working=mean_kappa_working,
+        mean_y_employed=mean_y_employed,
     )
 
     # Stack period params for t = T-2 ... 0 (reversed)
@@ -482,13 +517,14 @@ def solve_lifecycle_jax(
         (ts < schooling_years),
         m_grid_path[ts],
         bequest_at_age,
+        wage_age_profile[ts],
     )
 
     def scan_fn(V_next, period_params_slice):
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t,
-         bequest_t) = period_params_slice
+         bequest_t, kappa_wage_t) = period_params_slice
 
         model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:]
 
@@ -496,7 +532,7 @@ def solve_lifecycle_jax(
             V_next,
             (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
              pension_replacement_t, P_h_t, P_y_t, is_retired,
-             survival_t, child_cost_t, in_schooling_t, bequest_t),
+             survival_t, child_cost_t, in_schooling_t, bequest_t, kappa_wage_t),
             model_params_t,
         )
         return V_t, (V_t, a_pol_t, c_pol_t, l_pol_t)
@@ -547,6 +583,8 @@ _solve_lifecycle_jax_batched = jax.jit(
         None, None,              # survival_probs, P_y_by_age_health
         None, None, None,        # labor_supply, nu, phi
         0,                       # bequest_lumpsum (per-cohort scalar)
+        None,                    # wage_age_profile (shared)
+        None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
     )),
     static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
                      'labor_supply'),
@@ -571,7 +609,11 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     tax_eta=0.15,
                     P_y_age_health=False,
                     P_y_4d=None,
-                    survival_probs=None):
+                    survival_probs=None,
+                    wage_age_profile=None,
+                    pension_avg_weight=1.0,
+                    mean_kappa_working=1.0,
+                    mean_y_employed=1.0):
     """
     Single time-step for one agent.
 
@@ -596,16 +638,22 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     h_val = h_grid[i_h]
     y_last_val = y_grid[i_y_last]
 
-    # Pension with floor
+    # Wage age profile
+    kappa_wage_t = wage_age_profile[lifecycle_age]
+
+    # Pension with career-average approximation
     pension_replacement = pension_replacement_path[lifecycle_age]
-    pension_raw = pension_replacement * w_at_retirement * y_last_val
+    kappa_wage_ret = wage_age_profile[retirement_age - 1]
+    pension_base = (pension_avg_weight * kappa_wage_ret * y_last_val
+                    + (1 - pension_avg_weight) * mean_kappa_working * mean_y_employed)
+    pension_raw = pension_replacement * w_at_retirement * pension_base
     pension_with_floor = jnp.maximum(pension_raw, pension_min_floor)
     pension = jnp.where(is_retired, pension_with_floor, 0.0)
 
     # UI
     ui = jnp.where(
         (~is_retired) & (i_y == 0),
-        ui_replacement_rate * w_path[lifecycle_age] * y_last_val,
+        ui_replacement_rate * w_path[lifecycle_age] * kappa_wage_t * y_last_val,
         0.0,
     )
 
@@ -613,7 +661,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     employed = (~is_retired) & (i_y > 0)
 
     # Effective income
-    wage_income = w_path[lifecycle_age] * y_val * h_val * l_pol_val
+    wage_income = w_path[lifecycle_age] * kappa_wage_t * y_val * h_val * l_pol_val
     effective_y = jnp.where(is_retired, 0.0, wage_income + ui)
 
     # Health expenditure — m_grid is (T, n_h) now
@@ -736,6 +784,10 @@ def simulate_lifecycle_jax(
     P_y_age_health=False,
     P_y_4d=None,
     survival_probs=None,
+    wage_age_profile=None,
+    pension_avg_weight=1.0,
+    mean_kappa_working=1.0,
+    mean_y_employed=1.0,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
@@ -750,6 +802,10 @@ def simulate_lifecycle_jax(
     u_h_all = jax.random.uniform(key2, shape=(T_sim, n_sim))
     u_alive_all = jax.random.uniform(key3, shape=(T_sim, n_sim))
     t_indices = jnp.arange(T_sim)
+
+    # Default wage_age_profile to ones
+    if wage_age_profile is None:
+        wage_age_profile = jnp.ones(T)
 
     # Dummy P_y_4d if not provided (for JAX tracing)
     if P_y_4d is None:
@@ -782,6 +838,10 @@ def simulate_lifecycle_jax(
         P_y_age_health=P_y_age_health,
         P_y_4d=P_y_4d,
         survival_probs=survival_probs_arr,
+        wage_age_profile=wage_age_profile,
+        pension_avg_weight=pension_avg_weight,
+        mean_kappa_working=mean_kappa_working,
+        mean_y_employed=mean_y_employed,
     )
 
     initial_alive = jnp.ones(n_sim, dtype=jnp.bool_)
@@ -834,6 +894,8 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None, None,              # tax_kappa_hsv, tax_eta
         None, None,              # P_y_age_health, P_y_4d
         None,                    # survival_probs (shared across cohorts)
+        None,                    # wage_age_profile (shared)
+        None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
     )),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
@@ -896,6 +958,10 @@ class LifecycleModelJAX:
         self.education_subsidy_rate = float(config.education_subsidy_rate)
         self.schooling_years = int(config.schooling_years)
         self.child_cost_profile = jnp.array(config.child_cost_profile)
+        self.wage_age_profile = jnp.array(self._np_model.wage_age_profile)
+        self.pension_avg_weight = float(self._np_model.pension_avg_weight)
+        self.mean_kappa_working = float(self._np_model.mean_kappa_working)
+        self.mean_y_employed = float(self._np_model.mean_y_employed)
         self.P_y_age_health = self._np_model.P_y_age_health
 
         # Survival probabilities
@@ -958,6 +1024,10 @@ class LifecycleModelJAX:
             labor_supply=self.labor_supply,
             nu=self.nu,
             phi=self.phi,
+            wage_age_profile=self.wage_age_profile,
+            pension_avg_weight=self.pension_avg_weight,
+            mean_kappa_working=self.mean_kappa_working,
+            mean_y_employed=self.mean_y_employed,
         )
 
         # Store as numpy for compatibility with downstream code
@@ -1055,6 +1125,10 @@ class LifecycleModelJAX:
             P_y_age_health=self.P_y_age_health,
             P_y_4d=P_y_4d_sim,
             survival_probs=self.survival_probs,
+            wage_age_profile=self.wage_age_profile,
+            pension_avg_weight=self.pension_avg_weight,
+            mean_kappa_working=self.mean_kappa_working,
+            mean_y_employed=self.mean_y_employed,
         )
 
         # Convert all outputs to numpy arrays
