@@ -941,6 +941,7 @@ class OLGTransition:
 
         # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
+        _mit_baseline_to_solve = {}  # {edu_type: {bp: model}} — JAX batch-solve deferred
 
         if verbose: print("\n  Solving for unique birth cohorts...")
 
@@ -1065,13 +1066,19 @@ class OLGTransition:
                             bequest_lumpsum=bequest_ls,
                             **base_feature_kwargs,
                         )
-                        base_model = LifecycleModelPerfectForesight(base_config, verbose=False)
-                        base_model.solve(verbose=False)
-                        self._mit_baseline_cache[bcs_key] = base_model
-                    else:
-                        base_model = self._mit_baseline_cache[bcs_key]
+                        if self.backend == 'jax':
+                            # Defer to JAX batch-solve (collected, solved after the loop)
+                            base_model = self._lifecycle_model_class(base_config, verbose=False)
+                            _mit_baseline_to_solve.setdefault(edu_type, {})[birth_period] = base_model
+                        else:
+                            base_model = LifecycleModelPerfectForesight(base_config, verbose=False)
+                            base_model.solve(verbose=False)
+                            self._mit_baseline_cache[bcs_key] = base_model
                     # Stitch: overwrite pre-transition ages with baseline policy arrays.
-                    if self.backend != 'jax':
+                    # (JAX stitching happens post batch-solve at lines below;
+                    #  NumPy stitching happens here immediately.)
+                    if self.backend != 'jax' and bcs_key in self._mit_baseline_cache:
+                        base_model = self._mit_baseline_cache[bcs_key]
                         for attr in ('a_policy', 'c_policy', 'l_policy'):
                             base_arr = getattr(base_model, attr, None)
                             cf_arr   = getattr(model, attr, None)
@@ -1107,6 +1114,16 @@ class OLGTransition:
                         print(f"       ⚠️  WARNING: Near-zero savings for this cohort!")
 
                 birth_cohort_solutions[edu_type][birth_period] = model
+
+        # JAX batched solve: MIT baseline models (deferred from the loop above)
+        if self.backend == 'jax' and _mit_baseline_to_solve:
+            if verbose:
+                _n_mit = sum(len(d) for d in _mit_baseline_to_solve.values())
+                print(f"  JAX batched solve: {_n_mit} MIT baseline models...")
+            self._solve_cohorts_jax_batched(_mit_baseline_to_solve, verbose=False)
+            for edu_mit, models_mit in _mit_baseline_to_solve.items():
+                for bp_mit, model_mit in models_mit.items():
+                    self._mit_baseline_cache[(edu_mit, bp_mit)] = model_mit
 
         # JAX batched solve: all cohorts in one vmapped XLA call per education type
         if self.backend == 'jax':

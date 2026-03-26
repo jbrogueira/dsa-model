@@ -395,7 +395,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     """
     T = int(olg.T_transition)
     r_path = np.asarray(base_paths['r_path'], dtype=float)
-    pre_tp = _build_pre_transition_paths(olg, base_paths)
+    pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
     cf = _apply_shock(scenario, base_paths, T, instrument_delta=0.0, shock_scale=1.0)
     cf_macro, cf_budget = _run_one_simulation(
@@ -465,7 +465,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     psi = _get_psi(scenario, T)
     cond = scenario.balance_condition
     residual_history = []
-    pre_tp = _build_pre_transition_paths(olg, base_paths)
+    pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
     def _simulate_and_residual(Delta):
         cf = _apply_shock(scenario, base_paths, T,
@@ -614,7 +614,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     T = int(olg.T_transition)
     r_path = np.asarray(base_paths['r_path'], dtype=float)
     residual_history = []
-    pre_tp = _build_pre_transition_paths(olg, base_paths)
+    pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
     # ── Step 1: Debt-financed, full shock ────────────────────────────────────
     full_debt_result = run_debt_financed(
