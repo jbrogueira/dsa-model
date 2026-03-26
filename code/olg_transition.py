@@ -397,9 +397,12 @@ class OLGTransition:
                               pension_paths, bequest_lumpsums)
 
             if chunk_size >= n_cohorts:
-                V_batch, a_pol_batch, c_pol_batch, l_pol_batch = _solve_chunk(*batched_arrays)
-                # Move V to CPU immediately — only needed for inspection, not simulation
-                V_batch = np.asarray(V_batch)
+                V_b, a_b, c_b, l_b = _solve_chunk(*batched_arrays)
+                # Move everything to CPU to free GPU memory
+                V_batch = np.asarray(V_b)
+                a_pol_batch = np.asarray(a_b)
+                c_pol_batch = np.asarray(c_b)
+                l_pol_batch = np.asarray(l_b)
             else:
                 V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
                 for start in range(0, n_cohorts, chunk_size):
@@ -413,23 +416,21 @@ class OLGTransition:
                             for s in sliced
                         )
                     V_b, a_b, c_b, l_b = _solve_chunk(*sliced)
-                    # Move V to CPU immediately to free GPU memory
+                    # Move everything to CPU immediately to free GPU memory
                     V_chunks.append(np.asarray(V_b[:actual]))
-                    a_chunks.append(a_b[:actual])
-                    c_chunks.append(c_b[:actual])
-                    l_chunks.append(l_b[:actual])
+                    a_chunks.append(np.asarray(a_b[:actual]))
+                    c_chunks.append(np.asarray(c_b[:actual]))
+                    l_chunks.append(np.asarray(l_b[:actual]))
                 V_batch = np.concatenate(V_chunks)
-                a_pol_batch = jnp.concatenate(a_chunks)
-                c_pol_batch = jnp.concatenate(c_chunks)
-                l_pol_batch = jnp.concatenate(l_chunks)
+                a_pol_batch = np.concatenate(a_chunks)
+                c_pol_batch = np.concatenate(c_chunks)
+                l_pol_batch = np.concatenate(l_chunks)
 
-            # Cache batched JAX policy arrays to avoid round-trip in _simulate_cohorts_jax_batched
-            if not hasattr(self, '_jax_policy_batch'):
-                self._jax_policy_batch = {}
-            self._jax_policy_batch[edu_type] = (a_pol_batch, c_pol_batch, l_pol_batch)
+            # Don't cache policy arrays on GPU — with limited VRAM, the simulation
+            # will re-upload per chunk from CPU-resident model objects.
+            self._jax_policy_batch = {}
 
-            # Inject results back into individual model objects
-            # (needed for NumPy backend + external inspection)
+            # Inject results into individual model objects (CPU arrays)
             for ci, b in enumerate(birth_periods):
                 model = models_dict[b]
                 model.V = np.asarray(V_batch[ci])
@@ -476,14 +477,11 @@ class OLGTransition:
                     self._stationary_dist_cache[edu_type] = jnp.array(stationary_dist)
             stationary = self._stationary_dist_cache[edu_type]
 
-            # Stack per-cohort policies — reuse JAX arrays cached by _solve_cohorts_jax_batched
-            # if available to avoid a device→host→device round-trip.
-            if hasattr(self, '_jax_policy_batch') and edu_type in self._jax_policy_batch:
-                a_policies, c_policies, l_policies = self._jax_policy_batch[edu_type]
-            else:
-                a_policies = jnp.stack([jnp.array(m.a_policy) for m in model_list])
-                c_policies = jnp.stack([jnp.array(m.c_policy) for m in model_list])
-                l_policies = jnp.stack([jnp.array(m.l_policy) for m in model_list])
+            # Stack per-cohort policies on CPU; upload per chunk during simulation
+            # to avoid holding all 119 cohorts' policies on GPU simultaneously.
+            a_policies = np.stack([np.asarray(m.a_policy) for m in model_list])
+            c_policies = np.stack([np.asarray(m.c_policy) for m in model_list])
+            l_policies = np.stack([np.asarray(m.l_policy) for m in model_list])
             w_paths = jnp.stack([m.w_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
             r_paths = jnp.stack([m.r_path for m in model_list])
