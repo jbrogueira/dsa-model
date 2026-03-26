@@ -810,15 +810,30 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
             FiscalScenario(name='_baseline'),  # zero shock
             base_paths, T, instrument_delta=0.0, shock_scale=0.0,
         )
+        # Baseline simulation: no shock, so MIT stitching is a no-op (counterfactual
+        # paths = baseline paths). Skip pre_transition_paths to avoid 177 redundant
+        # NumPy baseline solves. The solved models are then cached for counterfactual runs.
         base_macro, base_budget = _run_one_simulation(
             olg, base_paths, base_cf, n_sim=n_sim, verbose=verbose,
             recompute_bequests=scenario.recompute_bequests,
-            pre_transition_paths=pre_tp,
+            pre_transition_paths=None,
         )
         # Capture baseline wage path so that MIT-shock stitching in counterfactual
         # runs uses the correct (baseline) wages, not the counterfactual ones.
         # Critical when I_g shocks change K_g → w.
         base_paths['w_path'] = np.array(olg.w_path)
+
+        # Pre-populate the MIT baseline cache from the baseline run's solutions.
+        # Counterfactual runs need baseline policy functions for stitching
+        # pre-transition ages. The baseline run just solved these exact models —
+        # reuse them instead of re-solving 177 NumPy models sequentially.
+        if olg.birth_cohort_solutions is not None:
+            for edu_type, models_dict in olg.birth_cohort_solutions.items():
+                for bp, model in models_dict.items():
+                    if bp < 0:
+                        olg._mit_baseline_cache[(edu_type, bp)] = model
+            # Set the pre_tp id so the cache is not invalidated
+            olg._mit_pre_tp_id = id(pre_tp)
 
     # ── Dispatch ─────────────────────────────────────────────────────────────
     kwargs = dict(n_sim=n_sim, verbose=verbose)
