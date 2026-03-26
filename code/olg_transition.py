@@ -398,6 +398,8 @@ class OLGTransition:
 
             if chunk_size >= n_cohorts:
                 V_batch, a_pol_batch, c_pol_batch, l_pol_batch = _solve_chunk(*batched_arrays)
+                # Move V to CPU immediately — only needed for inspection, not simulation
+                V_batch = np.asarray(V_batch)
             else:
                 V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
                 for start in range(0, n_cohorts, chunk_size):
@@ -411,11 +413,12 @@ class OLGTransition:
                             for s in sliced
                         )
                     V_b, a_b, c_b, l_b = _solve_chunk(*sliced)
-                    V_chunks.append(V_b[:actual])
+                    # Move V to CPU immediately to free GPU memory
+                    V_chunks.append(np.asarray(V_b[:actual]))
                     a_chunks.append(a_b[:actual])
                     c_chunks.append(c_b[:actual])
                     l_chunks.append(l_b[:actual])
-                V_batch = jnp.concatenate(V_chunks)
+                V_batch = np.concatenate(V_chunks)
                 a_pol_batch = jnp.concatenate(a_chunks)
                 c_pol_batch = jnp.concatenate(c_chunks)
                 l_pol_batch = jnp.concatenate(l_chunks)

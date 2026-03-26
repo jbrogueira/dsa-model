@@ -876,7 +876,7 @@ def build_olg_transition(config_data, backend='numpy'):
         current_year=trans.get('current_year', 2020),
         education_shares=config_data.get('education_shares'),
         backend=backend,
-        jax_sim_chunk_size=trans.get('jax_chunk_size', 20) if backend == 'jax' else None,
+        jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,
     )
 
     # Build transition paths
