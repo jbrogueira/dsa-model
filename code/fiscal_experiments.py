@@ -88,12 +88,16 @@ class FiscalScenario:
     adjustment_profile: Optional[np.ndarray] = None
 
     # ── Budget balance condition ─────────────────────────────────────────────
-    # 'terminal_debt_gdp' : B_T / Y_T = target_debt_gdp
-    # 'pv_balance'        : Σ_t δ^t * PrimaryDeficit_t = 0
-    # 'period_balance'    : minimise max_t |PrimaryDeficit_t| (bounded scalar min)
+    # 'terminal_debt_gdp'    : B_T / Y_T = target_debt_gdp
+    # 'terminal_flow_balance': PD[T-1]/Y[T-1] = (pop_growth - r_terminal) * target_debt_gdp
+    #                          Ensures the terminal period is a fiscal rest point.
+    #                          For r > g and target = 0: PD[T-1] ≈ 0.
+    # 'pv_balance'           : Σ_t δ^t * PrimaryDeficit_t = 0
+    # 'period_balance'       : minimise max_t |PrimaryDeficit_t| (bounded scalar min)
     balance_condition: str = 'terminal_debt_gdp'
     target_debt_gdp: float = 0.0
     discount_rate: float = 0.04        # used only by 'pv_balance'
+    pop_growth: float = 0.0            # used by 'terminal_flow_balance'
 
     # ── Initial debt ─────────────────────────────────────────────────────────
     B_initial: float = 0.0
@@ -136,6 +140,12 @@ class FiscalScenarioResult:
     converged:        bool
     n_iterations:     int
     residual_history: list
+
+    # Terminal convergence diagnostics
+    # drift: relative period-on-period change for each stock at t = T-1
+    # terminal_converged: True if all drifts < convergence tolerance
+    terminal_drift:      dict = field(default_factory=dict)
+    terminal_converged:  bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -198,13 +208,19 @@ def compute_debt_path(primary_deficit_path: np.ndarray,
 def _balance_residual(budget_path: dict,
                       Y_path: np.ndarray,
                       B_path: np.ndarray,
-                      scenario: FiscalScenario) -> float:
+                      scenario: FiscalScenario,
+                      r_terminal: float = 0.04) -> float:
     """Compute the scalar balance residual for the chosen balance_condition.
 
     Returns a value whose *sign* tells bisection which direction to adjust:
       > 0  → too much deficit  (raise taxes / cut spending more)
       < 0  → surplus           (cut taxes / raise spending)
     For 'period_balance' returns max_t |PD_t| (always >= 0, use minimization).
+
+    Parameters
+    ----------
+    r_terminal : float
+        Terminal interest rate; used only by 'terminal_flow_balance'.
     """
     PD = budget_path['primary_deficit']
     T = len(PD)
@@ -217,6 +233,16 @@ def _balance_residual(budget_path: dict,
         residual = B_T / Y_T - scenario.target_debt_gdp
         return float(residual)
 
+    elif cond == 'terminal_flow_balance':
+        # Fiscal rest-point condition: PD[T-1]/Y[T-1] = (g - r) * target_debt_gdp
+        # For r > g and target = 0 this simplifies to PD[T-1] ≈ 0.
+        # Ensures debt is stable at target_debt_gdp after the horizon.
+        g   = float(scenario.pop_growth)
+        PD_T = float(PD[-1])
+        Y_T  = float(Y_path[-1])
+        stability_rhs = (g - r_terminal) * scenario.target_debt_gdp
+        return PD_T / Y_T - stability_rhs
+
     elif cond == 'pv_balance':
         delta = scenario.discount_rate
         t_arr = np.arange(T)
@@ -228,6 +254,95 @@ def _balance_residual(budget_path: dict,
 
     else:
         raise ValueError(f"Unknown balance_condition: {scenario.balance_condition!r}")
+
+
+def _check_terminal_convergence(cf_macro: dict,
+                                cf_budget: dict,
+                                olg,
+                                tol: float = 0.005) -> tuple:
+    """Check that key stocks have stopped moving in the last period.
+
+    Computes relative period-on-period change |x[T-1] - x[T-2]| / |x[T-2]|
+    for macro stocks (K, K_g, L, Y, C, A) and fiscal flows
+    (total_revenue, total_spending, S_pens).
+
+    NFA is excluded: in an SOE it equals A - K - B, so it drifts whenever B
+    is still accumulating even if real variables have converged.
+    primary_deficit is excluded: it can be near zero, making relative changes
+    numerically meaningless.
+
+    NFA and S_pens are tracked separately with a looser threshold (tol_slow)
+    because pension funds and the external position converge slowly.
+
+    Also checks whether K_g has reached its new steady state:
+    K_g_ss = I_g_terminal / delta_g.  A large K_g_ss_gap means T_transition
+    is too short for the public-capital block to have converged.
+
+    Parameters
+    ----------
+    cf_macro  : counterfactual macro dict
+    cf_budget : counterfactual budget dict
+    olg       : OLGTransition instance (for delta_g, _active_I_g_path)
+    tol       : relative-change threshold for core variables (default 0.5%)
+
+    Returns
+    -------
+    drift : dict mapping variable name → relative change at terminal period
+    all_converged : bool, True if every drift < its threshold
+    """
+    tol_slow = 4 * tol   # looser tolerance for slow-converging stocks (NFA, S_pens)
+    drift = {}
+    thresholds = {}
+
+    # ── Core macro stocks ─────────────────────────────────────────────────────
+    for key in ['K', 'K_g', 'L', 'Y', 'C', 'A']:
+        arr = cf_macro.get(key)
+        if arr is not None:
+            arr = np.asarray(arr, dtype=float)
+            if len(arr) >= 2:
+                drift[key] = float(abs(arr[-1] - arr[-2]) / (abs(arr[-2]) + 1e-10))
+                thresholds[key] = tol
+
+    # ── NFA: tracked but with looser tolerance ─────────────────────────────────
+    nfa = cf_macro.get('NFA')
+    if nfa is not None:
+        nfa = np.asarray(nfa, dtype=float)
+        if len(nfa) >= 2:
+            drift['NFA'] = float(abs(nfa[-1] - nfa[-2]) / (abs(nfa[-2]) + 1e-10))
+            thresholds['NFA'] = tol_slow
+
+    # ── Fiscal flows (revenue and spending, not deficit) ──────────────────────
+    for key in ['total_revenue', 'total_spending']:
+        arr = cf_budget.get(key)
+        if arr is not None:
+            arr = np.asarray(arr, dtype=float)
+            if len(arr) >= 2:
+                drift[key] = float(abs(arr[-1] - arr[-2]) / (abs(arr[-2]) + 1e-10))
+                thresholds[key] = tol
+
+    # ── Pension fund: slow-converging ──────────────────────────────────────────
+    S = cf_budget.get('S_pens')
+    if S is not None:
+        S = np.asarray(S, dtype=float)
+        if len(S) >= 2:
+            drift['S_pens'] = float(abs(S[-1] - S[-2]) / (abs(S[-2]) + 1e-10))
+            thresholds['S_pens'] = tol_slow
+
+    # ── K_g steady-state gap: |K_g[T-1] - I_g_terminal/delta_g| / K_g_ss ────
+    K_g = cf_macro.get('K_g')
+    if K_g is not None and olg is not None:
+        delta_g  = float(getattr(olg, 'delta_g', 0.0))
+        I_g_path = getattr(olg, '_active_I_g_path', None)
+        if delta_g > 0 and I_g_path is not None:
+            I_g_T  = float(np.asarray(I_g_path)[-1])
+            K_g_ss = I_g_T / delta_g
+            if K_g_ss > 0:
+                K_g_T = float(np.asarray(K_g)[-1])
+                drift['K_g_ss_gap'] = float(abs(K_g_T - K_g_ss) / K_g_ss)
+                thresholds['K_g_ss_gap'] = tol
+
+    all_converged = all(drift[k] < thresholds[k] for k in drift)
+    return drift, all_converged
 
 
 def _get_psi(scenario: FiscalScenario, T: int) -> np.ndarray:
@@ -416,6 +531,8 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
         cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T]
     NFA, CA = _nfa_ca_paths(cf_macro)
 
+    t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
+
     return FiscalScenarioResult(
         scenario=scenario,
         base_macro=base_macro,
@@ -432,6 +549,8 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
         converged=True,
         n_iterations=1,
         residual_history=[],
+        terminal_drift=t_drift,
+        terminal_converged=t_conv,
     )
 
 
@@ -467,6 +586,8 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
+    r_terminal = float(r_path[-1])
+
     def _simulate_and_residual(Delta):
         cf = _apply_shock(scenario, base_paths, T,
                           instrument_delta=Delta, shock_scale=1.0)
@@ -479,7 +600,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         Y = np.asarray(olg.Y_path, dtype=float)
         B = compute_debt_path(budget['primary_deficit'], r_path,
                                B_initial=scenario.B_initial)
-        return _balance_residual(budget, Y, B, scenario), budget, B, Y
+        return _balance_residual(budget, Y, B, scenario, r_terminal), budget, B, Y
 
     # Mutable container to hold the last evaluated (budget, B, Y) tuple
     _last_result = [None]  # [0] = (budget, B, Y) or None
@@ -576,6 +697,8 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     NFA, CA = _nfa_ca_paths(cf_macro)
     adj_path = Delta_star * psi
 
+    t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
+
     return FiscalScenarioResult(
         scenario=scenario,
         base_macro=base_macro,
@@ -592,6 +715,8 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         converged=converged,
         n_iterations=n_iters,
         residual_history=residual_history,
+        terminal_drift=t_drift,
+        terminal_converged=t_conv,
     )
 
 
@@ -729,6 +854,8 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         cf_macro_star['NFA'] = np.asarray(cf_macro_star['NFA']) - B_path[:T]
     NFA, CA = _nfa_ca_paths(cf_macro_star)
 
+    t_drift, t_conv = _check_terminal_convergence(cf_macro_star, cf_budget_star, olg)
+
     return FiscalScenarioResult(
         scenario=scenario,
         base_macro=base_macro,
@@ -745,6 +872,8 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         converged=converged,
         n_iterations=len(residual_history),
         residual_history=residual_history,
+        terminal_drift=t_drift,
+        terminal_converged=t_conv,
     )
 
 

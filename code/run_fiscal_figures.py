@@ -180,9 +180,10 @@ scn_g_taul = FiscalScenario(
     name              = 'G_shock_tau_l',
     delta_G_path      = delta_G,
     financing         = 'tau_l',
-    balance_condition = 'terminal_debt_gdp',
+    balance_condition = 'terminal_flow_balance',
     target_debt_gdp   = 0.0,
     B_initial         = B_initial,
+    pop_growth        = float(economy.pop_growth),
 )
 
 # --- I_g shock: same absolute size as G shock ---
@@ -199,9 +200,10 @@ scn_ig_taul = FiscalScenario(
     name              = 'Ig_shock_tau_l',
     delta_I_g_path    = delta_Ig,
     financing         = 'tau_l',
-    balance_condition = 'terminal_debt_gdp',
+    balance_condition = 'terminal_flow_balance',
     target_debt_gdp   = 0.0,
     B_initial         = B_initial,
+    pop_growth        = float(economy.pop_growth),
 )
 
 # ---------------------------------------------------------------------------
@@ -353,6 +355,9 @@ def _result_to_dict(res):
     """Convert a FiscalScenarioResult to a JSON-serializable dict."""
     d = {
         'converged': bool(res.converged) if res.converged is not None else None,
+        'terminal_converged': bool(res.terminal_converged),
+        'terminal_drift': {k: float(v) for k, v in res.terminal_drift.items()},
+        'balance_condition': res.scenario.balance_condition,
         'adjustment_scalar': float(res.adjustment_scalar) if res.adjustment_scalar else None,
         'B_gdp_path': [float(x) for x in res.B_gdp_path],
     }

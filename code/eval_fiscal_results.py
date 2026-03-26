@@ -74,6 +74,29 @@ def _arr(d, key):
 # Individual checks
 # ---------------------------------------------------------------------------
 
+def chk_terminal_converged(exp_data, scenario):
+    # WARN tier: terminal convergence is a model quality diagnostic, not an
+    # accounting identity.  Short T_transition will naturally show drift.
+    if not exp_data.get('terminal_converged', True):
+        drift = exp_data.get('terminal_drift', {})
+        bad = {k: v for k, v in drift.items() if v >= 0.005}
+        return _fail('terminal_converged', scenario, 'WARN',
+                     max(bad.values()) if bad else 1.0,
+                     f"Not converged at T: { {k: f'{v:.1%}' for k, v in bad.items()} }")
+    return _pass('terminal_converged', scenario, 'WARN')
+
+
+def chk_kg_ss_gap(exp_data, params, scenario):
+    drift = exp_data.get('terminal_drift', {})
+    gap = drift.get('K_g_ss_gap')
+    if gap is None:
+        return _skip('kg_ss_gap', scenario, 'WARN', 'no K_g or delta_g=0')
+    if gap > 0.05:
+        return _fail('kg_ss_gap', scenario, 'WARN', gap,
+                     f"|K_g[T] - K_g*| / K_g* = {gap:.1%}  — T_transition too short for K_g convergence")
+    return _pass('kg_ss_gap', scenario, 'WARN')
+
+
 def chk_no_nan_inf(macro, budget, scenario):
     bad = []
     for src in (macro, budget):
@@ -417,9 +440,31 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type):
         results.append(chk_shock_g_path(base_bud, cf_bud, delta_G, label))
 
     # Bisection target (tax-financed only)
-    if scenario_key == 'tax_financed' and len(B_gdp) > 0:
-        target = params.get('target_debt_gdp', 0.0)
-        results.append(chk_bisection_target(B_gdp, target, label))
+    # terminal_debt_gdp: check B[T]/Y[T] == target (stock condition)
+    # terminal_flow_balance: check PD[T-1]/Y[T-1] ≈ (g-r)*target (flow condition)
+    balance_cond = exp_data.get('balance_condition', 'terminal_debt_gdp')
+    if scenario_key == 'tax_financed':
+        if balance_cond == 'terminal_flow_balance':
+            # Verify the flow condition held: PD[T-1]/Y[T-1] should be near zero
+            # (or near (g-r)*target if target != 0).  We check |PD/Y| < BISECT_TOL.
+            PD = _arr(cf_bud, 'primary_deficit')
+            Y_arr = np.asarray(Y, dtype=float) if len(Y) > 0 else None
+            if PD is not None and Y_arr is not None and len(Y_arr) > 0:
+                pd_over_y = float(abs(PD[-1])) / (float(abs(Y_arr[-1])) + 1e-8)
+                if pd_over_y > BISECT_TOL:
+                    results.append(_fail('bisection_flow_target', label, 'FAIL', pd_over_y,
+                                         f"|PD[T]/Y[T]| = {pd_over_y:.4f} > {BISECT_TOL} "
+                                         f"(terminal_flow_balance not satisfied)"))
+                else:
+                    results.append(_pass('bisection_flow_target', label, 'FAIL'))
+        elif len(B_gdp) > 0:
+            target = params.get('target_debt_gdp', 0.0)
+            results.append(chk_bisection_target(B_gdp, target, label))
+
+    # Terminal convergence
+    if scenario_key != 'baseline':
+        results.append(chk_terminal_converged(exp_data, label))
+        results.append(chk_kg_ss_gap(exp_data, params, label))
 
     # --- WARN tier ---
     results += chk_firm_foc(cf_mac, params, label)
