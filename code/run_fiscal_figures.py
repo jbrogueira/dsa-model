@@ -91,7 +91,10 @@ if args.config:
     Y_path = np.asarray(_calib['Y'])
     G_over_Y = paths.get('G_over_Y', 0.13)
     G_path = np.full(T_TR, G_over_Y * Y_path.mean())
+    B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
+    B_initial = B_over_Y * Y_path.mean()
     print(f"  mean(Y) = {Y_path.mean():.4f},  G/Y = {G_over_Y},  mean(G) = {G_path.mean():.4f}")
+    print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
 
 else:
     # Hardcoded fast-test parameters (backward compatible)
@@ -147,6 +150,7 @@ else:
     )
     Y_path = np.asarray(_calib['Y'])
     G_path = np.full(T_TR, 0.30 * Y_path.mean())
+    B_initial = 0.0
     print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
@@ -159,6 +163,7 @@ base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
 scn_base = FiscalScenario(
     name      = 'baseline',
     financing = 'debt',
+    B_initial = B_initial,
 )
 
 # --- G shock: 2% of mean(Y) ---
@@ -168,6 +173,7 @@ scn_g_debt = FiscalScenario(
     name         = 'G_shock_debt',
     delta_G_path = delta_G,
     financing    = 'debt',
+    B_initial    = B_initial,
 )
 
 scn_g_taul = FiscalScenario(
@@ -176,6 +182,7 @@ scn_g_taul = FiscalScenario(
     financing         = 'tau_l',
     balance_condition = 'terminal_debt_gdp',
     target_debt_gdp   = 0.0,
+    B_initial         = B_initial,
 )
 
 # --- I_g shock: same absolute size as G shock ---
@@ -185,6 +192,7 @@ scn_ig_debt = FiscalScenario(
     name           = 'Ig_shock_debt',
     delta_I_g_path = delta_Ig,
     financing      = 'debt',
+    B_initial      = B_initial,
 )
 
 scn_ig_taul = FiscalScenario(
@@ -193,6 +201,7 @@ scn_ig_taul = FiscalScenario(
     financing         = 'tau_l',
     balance_condition = 'terminal_debt_gdp',
     target_debt_gdp   = 0.0,
+    B_initial         = B_initial,
 )
 
 # ---------------------------------------------------------------------------

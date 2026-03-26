@@ -927,6 +927,7 @@ def compare_scenarios(
                     marker='o' if i == 0 else None, markersize=3)
         ax.set_title(var_labels.get(key, key), fontweight='bold')
         ax.set_xlabel('Period')
+        ax.set_xticks(periods)
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 
@@ -1011,6 +1012,7 @@ def debt_fan_chart(
     ax.set_xlabel('Period')
     ax.set_ylabel('Debt / GDP (%)')
     ax.set_title('Debt Sustainability Analysis — Fan Chart', fontweight='bold')
+    ax.set_xticks(np.arange(T))
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
