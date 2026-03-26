@@ -384,6 +384,30 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
         'fiscal_multiplier_path': [float(x) for x in mult],
     }
 
+params_out = {
+    'alpha':         float(economy.alpha),
+    'delta':         float(economy.delta),
+    'eta_g':         float(economy.eta_g),
+    'labor_supply':  bool(getattr(economy.lifecycle_config, 'labor_supply', False)),
+    'n_sim':         int(N_SIM),
+    'T_transition':  int(T_TR),
+    'B_initial':     float(B_initial),
+    'target_debt_gdp': 0.0,
+    'tau_l_path':    [float(x) for x in base_paths['tau_l_path']],
+    'tau_c_path':    [float(x) for x in base_paths['tau_c_path']],
+    'tau_p_path':    [float(x) for x in base_paths['tau_p_path']],
+    'tau_k_path':    [float(x) for x in base_paths['tau_k_path']],
+    'delta_G_path':  [float(x) for x in delta_G] if 'G'  in shock_types else None,
+    'delta_Ig_path': [float(x) for x in delta_Ig] if 'Ig' in shock_types else None,
+}
+if args.config:
+    fiscal = config_data.get('fiscal', {})
+    for key in ['pensions_over_Y', 'ui_over_Y', 'health_over_Y', 'G_over_Y', 'tax_revenue_over_Y']:
+        if key in fiscal:
+            params_out[key] = fiscal[key]
+
+results_out['params'] = params_out
+
 results_path = os.path.join(OUTPUT_DIR, 'fiscal_results.json')
 with open(results_path, 'w') as f:
     json.dump(results_out, f, indent=2)
