@@ -109,6 +109,13 @@ class FiscalScenario:
     # ── Bequest handling ─────────────────────────────────────────────────────
     recompute_bequests: bool = False
 
+    # ── Post-target extension ─────────────────────────────────────────────────
+    # When n_post > 0, the simulation runs for T_transition + n_post periods
+    # with all paths frozen at their terminal values.  The balance condition is
+    # still evaluated at T_transition; the extra periods show convergence to the
+    # long-run rest point.
+    n_post: int = 0
+
 
 @dataclass
 class FiscalScenarioResult:
@@ -147,6 +154,10 @@ class FiscalScenarioResult:
     terminal_drift:      dict = field(default_factory=dict)
     terminal_converged:  bool = True
 
+    # Period at which the balance condition was evaluated (< total simulation
+    # length when n_post > 0; None means balance was at the last period).
+    T_balance: Optional[int] = None
+
 
 # ---------------------------------------------------------------------------
 # Adjustment profile helpers
@@ -180,6 +191,35 @@ def exponential_convergence(T: int, half_life: float) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Path extension utility
+# ---------------------------------------------------------------------------
+
+def _extend_base_paths(base_paths: dict, n_post: int) -> dict:
+    """Return base_paths with every 1-D float array extended by n_post periods.
+
+    The last value of each array is repeated, so prices and policies are frozen
+    at their terminal levels for the post-target extension window.
+    Non-array values (scalars, strings, nested dicts) are passed through unchanged.
+    """
+    if n_post <= 0:
+        return base_paths
+    extended = {}
+    for key, val in base_paths.items():
+        if val is None or isinstance(val, (str, dict)):
+            extended[key] = val
+            continue
+        try:
+            arr = np.asarray(val, dtype=float)
+            if arr.ndim == 1 and len(arr) > 0:
+                extended[key] = np.concatenate([arr, np.full(n_post, arr[-1])])
+            else:
+                extended[key] = val
+        except (TypeError, ValueError):
+            extended[key] = val
+    return extended
+
+
+# ---------------------------------------------------------------------------
 # Debt accumulation utility
 # ---------------------------------------------------------------------------
 
@@ -209,7 +249,8 @@ def _balance_residual(budget_path: dict,
                       Y_path: np.ndarray,
                       B_path: np.ndarray,
                       scenario: FiscalScenario,
-                      r_terminal: float = 0.04) -> float:
+                      r_terminal: float = 0.04,
+                      T_balance: Optional[int] = None) -> float:
     """Compute the scalar balance residual for the chosen balance_condition.
 
     Returns a value whose *sign* tells bisection which direction to adjust:
@@ -221,36 +262,38 @@ def _balance_residual(budget_path: dict,
     ----------
     r_terminal : float
         Terminal interest rate; used only by 'terminal_flow_balance'.
+    T_balance : int, optional
+        Period at which to evaluate the balance condition.  Defaults to the
+        full simulation length.  Set to T_transition when n_post > 0 so the
+        condition is evaluated at the original horizon, not the extended one.
     """
     PD = budget_path['primary_deficit']
-    T = len(PD)
+    T_full = len(PD)
+    T_bal  = T_balance if T_balance is not None else T_full
     cond = scenario.balance_condition
 
     if cond == 'terminal_debt_gdp':
-        # B_path has length T+1; index T is the end-of-horizon level
-        B_T = B_path[T]
-        Y_T = float(Y_path[T - 1])
-        residual = B_T / Y_T - scenario.target_debt_gdp
-        return float(residual)
+        # B_path has length T_full+1; index T_bal is the end-of-balance-horizon level
+        B_T = B_path[T_bal]
+        Y_T = float(Y_path[T_bal - 1])
+        return float(B_T / Y_T - scenario.target_debt_gdp)
 
     elif cond == 'terminal_flow_balance':
-        # Fiscal rest-point condition: PD[T-1]/Y[T-1] = (g - r) * target_debt_gdp
-        # For r > g and target = 0 this simplifies to PD[T-1] ≈ 0.
-        # Ensures debt is stable at target_debt_gdp after the horizon.
+        # Fiscal rest-point condition: PD[T_bal-1]/Y[T_bal-1] = (g - r) * target_debt_gdp
         g   = float(scenario.pop_growth)
-        PD_T = float(PD[-1])
-        Y_T  = float(Y_path[-1])
+        PD_T = float(PD[T_bal - 1])
+        Y_T  = float(Y_path[T_bal - 1])
         stability_rhs = (g - r_terminal) * scenario.target_debt_gdp
-        return PD_T / Y_T - stability_rhs
+        return float(PD_T / Y_T - stability_rhs)
 
     elif cond == 'pv_balance':
         delta = scenario.discount_rate
-        t_arr = np.arange(T)
+        t_arr = np.arange(T_bal)
         weights = (1.0 / (1.0 + delta)) ** t_arr
-        return float(np.dot(weights, PD))
+        return float(np.dot(weights, PD[:T_bal]))
 
     elif cond == 'period_balance':
-        return float(np.max(np.abs(PD)))
+        return float(np.max(np.abs(PD[:T_bal])))
 
     else:
         raise ValueError(f"Unknown balance_condition: {scenario.balance_condition!r}")
@@ -389,12 +432,18 @@ def _apply_shock(scenario: FiscalScenario,
         v = base_paths.get(key, default)
         if v is None:
             return None
-        return np.array(v, dtype=float)
+        arr = np.array(v, dtype=float)
+        if len(arr) < T:
+            arr = np.concatenate([arr, np.full(T - len(arr), arr[-1])])
+        return arr[:T]
 
     def _shock(arr):
         if arr is None:
             return np.zeros(T)
-        return np.asarray(arr, dtype=float) * shock_scale
+        a = np.asarray(arr, dtype=float)
+        if len(a) < T:
+            a = np.concatenate([a, np.full(T - len(a), a[-1])])
+        return a[:T] * shock_scale
 
     psi = _get_psi(scenario, T)
 
@@ -507,14 +556,20 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     """Debt-financed experiment: one simulate_transition() call.
 
     The entire shock is applied.  Debt accumulates as the accounting residual.
+    When scenario.n_post > 0, all paths are extended by n_post periods (terminal
+    values frozen) so the simulation shows post-target dynamics.
     """
-    T = int(olg.T_transition)
-    r_path = np.asarray(base_paths['r_path'], dtype=float)
+    T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
+    n_post  = scenario.n_post
+    T_total = T_base + n_post
+
+    ext_paths = _extend_base_paths(base_paths, n_post)
+    r_path = np.asarray(ext_paths['r_path'], dtype=float)
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
-    cf = _apply_shock(scenario, base_paths, T, instrument_delta=0.0, shock_scale=1.0)
+    cf = _apply_shock(scenario, ext_paths, T_total, instrument_delta=0.0, shock_scale=1.0)
     cf_macro, cf_budget = _run_one_simulation(
-        olg, base_paths, cf, n_sim=n_sim, verbose=verbose,
+        olg, ext_paths, cf, n_sim=n_sim, verbose=verbose,
         recompute_bequests=scenario.recompute_bequests,
         pre_transition_paths=pre_tp,
     )
@@ -523,15 +578,16 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
         cf_budget['primary_deficit'], r_path, B_initial=scenario.B_initial
     )
     Y_path = np.asarray(cf_macro['Y'], dtype=float)
-    B_gdp  = B_path[:-1] / Y_path  # length T
+    B_gdp  = B_path[:-1] / Y_path  # length T_total
 
     # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
     if cf_macro.get('NFA') is not None:
         cf_macro = dict(cf_macro)
-        cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T]
+        cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T_total]
     NFA, CA = _nfa_ca_paths(cf_macro)
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
+    t_balance = T_base if n_post > 0 else None
 
     return FiscalScenarioResult(
         scenario=scenario,
@@ -544,13 +600,14 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
         NFA_path=NFA,
         CA_path=CA,
         adjustment_scalar=0.0,
-        adjustment_path=np.zeros(T),
+        adjustment_path=np.zeros(T_total),
         adjustment_label='none (debt-financed)',
         converged=True,
         n_iterations=1,
         residual_history=[],
         terminal_drift=t_drift,
         terminal_converged=t_conv,
+        T_balance=t_balance,
     )
 
 
@@ -579,20 +636,29 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     Delta_lo, Delta_hi : float
         Initial bisection bracket.  Expanded geometrically if needed.
     """
-    T = int(olg.T_transition)
-    r_path = np.asarray(base_paths['r_path'], dtype=float)
-    psi = _get_psi(scenario, T)
+    T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
+    n_post  = scenario.n_post
+    T_total = T_base + n_post
+    T       = T_total  # alias used throughout this function
+
+    ext_paths = _extend_base_paths(base_paths, n_post)
+    r_path = np.asarray(ext_paths['r_path'], dtype=float)
+    psi = _get_psi(scenario, T_total)
     cond = scenario.balance_condition
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
-    r_terminal = float(r_path[-1])
+    # r_terminal is the interest rate at the balance-condition period
+    r_terminal = float(np.asarray(base_paths['r_path'], dtype=float)[-1])
+
+    # Period at which the balance condition is evaluated
+    T_bal = T_base if n_post > 0 else None
 
     def _simulate_and_residual(Delta):
-        cf = _apply_shock(scenario, base_paths, T,
+        cf = _apply_shock(scenario, ext_paths, T_total,
                           instrument_delta=Delta, shock_scale=1.0)
         _, budget = _run_one_simulation(
-            olg, base_paths, cf, n_sim=n_sim, verbose=False,
+            olg, ext_paths, cf, n_sim=n_sim, verbose=False,
             recompute_bequests=scenario.recompute_bequests,
             pre_transition_paths=pre_tp,
         )
@@ -600,7 +666,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         Y = np.asarray(olg.Y_path, dtype=float)
         B = compute_debt_path(budget['primary_deficit'], r_path,
                                B_initial=scenario.B_initial)
-        return _balance_residual(budget, Y, B, scenario, r_terminal), budget, B, Y
+        return _balance_residual(budget, Y, B, scenario, r_terminal, T_bal), budget, B, Y
 
     # Mutable container to hold the last evaluated (budget, B, Y) tuple
     _last_result = [None]  # [0] = (budget, B, Y) or None
@@ -691,7 +757,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
 
     # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
     if cf_macro.get('NFA') is not None:
-        cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T]
+        cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T_total]
 
     B_gdp = B_path[:-1] / Y_path
     NFA, CA = _nfa_ca_paths(cf_macro)
@@ -717,6 +783,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         residual_history=residual_history,
         terminal_drift=t_drift,
         terminal_converged=t_conv,
+        T_balance=T_bal,
     )
 
 
@@ -736,8 +803,13 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     Step 2b-Mode I (financing='debt'): bisect on shock scale Δ_shock.
     Step 2b-Mode II (financing != 'debt'): full shock + bisect on Δτ for NFA.
     """
-    T = int(olg.T_transition)
-    r_path = np.asarray(base_paths['r_path'], dtype=float)
+    T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
+    n_post  = scenario.n_post
+    T_total = T_base + n_post
+    T       = T_total  # alias used throughout this function
+
+    ext_paths = _extend_base_paths(base_paths, n_post)
+    r_path = np.asarray(ext_paths['r_path'], dtype=float)
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
@@ -758,10 +830,10 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         label = 'shock scale Δ'
 
         def _feasible(shock_scale):
-            cf = _apply_shock(scenario, base_paths, T,
+            cf = _apply_shock(scenario, ext_paths, T_total,
                               instrument_delta=0.0, shock_scale=shock_scale)
             macro, budget = _run_one_simulation(
-                olg, base_paths, cf, n_sim=n_sim, verbose=False,
+                olg, ext_paths, cf, n_sim=n_sim, verbose=False,
                 recompute_bequests=scenario.recompute_bequests,
                 pre_transition_paths=pre_tp,
             )
@@ -790,7 +862,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
 
         if cf_macro_star is None:
             cf_macro_star, cf_budget_star = full_debt_result.cf_macro, full_debt_result.cf_budget
-        psi = _get_psi(scenario, T)
+        psi = _get_psi(scenario, T_total)
         adj_path = Delta_star * psi
 
     else:
@@ -798,10 +870,10 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         label = f'Δ{scenario.financing} (NFA-constrained)'
 
         def _nfa_ok_at(Delta):
-            cf = _apply_shock(scenario, base_paths, T,
+            cf = _apply_shock(scenario, ext_paths, T_total,
                               instrument_delta=Delta, shock_scale=1.0)
             macro, budget = _run_one_simulation(
-                olg, base_paths, cf, n_sim=n_sim, verbose=False,
+                olg, ext_paths, cf, n_sim=n_sim, verbose=False,
                 recompute_bequests=scenario.recompute_bequests,
                 pre_transition_paths=pre_tp,
             )
@@ -839,7 +911,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
 
         if cf_macro_star is None:
             cf_macro_star, cf_budget_star = full_debt_result.cf_macro, full_debt_result.cf_budget
-        psi = _get_psi(scenario, T)
+        psi = _get_psi(scenario, T_total)
         adj_path = Delta_star * psi
 
     B_path = compute_debt_path(
@@ -851,10 +923,11 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
     if cf_macro_star.get('NFA') is not None:
         cf_macro_star = dict(cf_macro_star)
-        cf_macro_star['NFA'] = np.asarray(cf_macro_star['NFA']) - B_path[:T]
+        cf_macro_star['NFA'] = np.asarray(cf_macro_star['NFA']) - B_path[:T_total]
     NFA, CA = _nfa_ca_paths(cf_macro_star)
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro_star, cf_budget_star, olg)
+    t_balance = T_base if n_post > 0 else None
 
     return FiscalScenarioResult(
         scenario=scenario,
@@ -874,6 +947,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         residual_history=residual_history,
         terminal_drift=t_drift,
         terminal_converged=t_conv,
+        T_balance=t_balance,
     )
 
 
@@ -934,23 +1008,29 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
     else:
         if verbose:
             print(f"[run_fiscal_scenario] Running baseline for scenario '{scenario.name}'...")
-        T = len(np.asarray(base_paths['r_path']))
+        # Extend baseline paths if the scenario requests post-target dynamics.
+        n_post_base = scenario.n_post
+        ext_base = _extend_base_paths(base_paths, n_post_base)
+        T = len(np.asarray(ext_base['r_path']))
         base_cf = _apply_shock(
             FiscalScenario(name='_baseline'),  # zero shock
-            base_paths, T, instrument_delta=0.0, shock_scale=0.0,
+            ext_base, T, instrument_delta=0.0, shock_scale=0.0,
         )
         # Baseline simulation: no shock, so MIT stitching is a no-op (counterfactual
         # paths = baseline paths). Skip pre_transition_paths to avoid 177 redundant
         # NumPy baseline solves. The solved models are then cached for counterfactual runs.
         base_macro, base_budget = _run_one_simulation(
-            olg, base_paths, base_cf, n_sim=n_sim, verbose=verbose,
+            olg, ext_base, base_cf, n_sim=n_sim, verbose=verbose,
             recompute_bequests=scenario.recompute_bequests,
             pre_transition_paths=None,
         )
         # Capture baseline wage path so that MIT-shock stitching in counterfactual
         # runs uses the correct (baseline) wages, not the counterfactual ones.
         # Critical when I_g shocks change K_g → w.
-        base_paths['w_path'] = np.array(olg.w_path)
+        # Store only the first T_TR periods (before any post-target extension) so
+        # that _extend_base_paths can safely extend it later.
+        T_orig = len(np.asarray(base_paths['r_path']))
+        base_paths['w_path'] = np.array(olg.w_path[:T_orig])
 
         # Pre-populate the MIT baseline cache from the baseline run's solutions.
         # Counterfactual runs need baseline policy functions for stitching
@@ -997,6 +1077,7 @@ def compare_scenarios(
     save: bool = True,
     filename: Optional[str] = None,
     output_dir: str = 'output',
+    T_balance: Optional[int] = None,
 ) -> plt.Figure:
     """Side-by-side line plots comparing base vs. counterfactual paths.
 
@@ -1025,6 +1106,13 @@ def compare_scenarios(
 
     T = len(base.cf_macro['Y'])
     periods = np.arange(T)
+
+    # Auto-detect T_balance from counterfactuals if not supplied
+    if T_balance is None:
+        for r in counterfactuals:
+            if r.T_balance is not None:
+                T_balance = r.T_balance
+                break
 
     # Colour cycle
     colours = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -1057,6 +1145,9 @@ def compare_scenarios(
         ax.set_title(var_labels.get(key, key), fontweight='bold')
         ax.set_xlabel('Period')
         ax.set_xticks(periods[::5])
+        if T_balance is not None:
+            ax.axvline(T_balance, color='grey', linewidth=1.0, linestyle='--',
+                       label=f'T_balance={T_balance}')
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
 

@@ -159,11 +159,15 @@ base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
 # 3. Define scenarios
 # ---------------------------------------------------------------------------
 
+# Extra periods beyond T_transition to show post-target dynamics
+N_POST = 20
+
 # --- Scenario A: pure baseline (no shock, debt residual) ---
 scn_base = FiscalScenario(
     name      = 'baseline',
     financing = 'debt',
     B_initial = B_initial,
+    n_post    = N_POST,
 )
 
 # --- G shock: 2% of mean(Y) ---
@@ -174,6 +178,7 @@ scn_g_debt = FiscalScenario(
     delta_G_path = delta_G,
     financing    = 'debt',
     B_initial    = B_initial,
+    n_post       = N_POST,
 )
 
 scn_g_taul = FiscalScenario(
@@ -184,6 +189,7 @@ scn_g_taul = FiscalScenario(
     target_debt_gdp   = 0.0,
     B_initial         = B_initial,
     pop_growth        = float(economy.pop_growth),
+    n_post            = N_POST,
 )
 
 # --- I_g shock: same absolute size as G shock ---
@@ -194,6 +200,7 @@ scn_ig_debt = FiscalScenario(
     delta_I_g_path = delta_Ig,
     financing      = 'debt',
     B_initial      = B_initial,
+    n_post         = N_POST,
 )
 
 scn_ig_taul = FiscalScenario(
@@ -204,6 +211,7 @@ scn_ig_taul = FiscalScenario(
     target_debt_gdp   = 0.0,
     B_initial         = B_initial,
     pop_growth        = float(economy.pop_growth),
+    n_post            = N_POST,
 )
 
 # ---------------------------------------------------------------------------
@@ -358,6 +366,8 @@ def _result_to_dict(res):
         'terminal_converged': bool(res.terminal_converged),
         'terminal_drift': {k: float(v) for k, v in res.terminal_drift.items()},
         'balance_condition': res.scenario.balance_condition,
+        'T_balance': res.T_balance,
+        'n_post': res.scenario.n_post,
         'adjustment_scalar': float(res.adjustment_scalar) if res.adjustment_scalar else None,
         'B_gdp_path': [float(x) for x in res.B_gdp_path],
     }

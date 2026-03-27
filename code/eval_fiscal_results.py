@@ -214,7 +214,10 @@ def chk_tax_revenue(budget, macro, params, scenario):
             results.append(_skip(f'tax_revenue_{rev_key}', scenario, 'WARN',
                                  'missing data'))
             continue
-        expected = rate[:len(base)] * base
+        T_base = len(base)
+        if len(rate) < T_base:
+            rate = np.concatenate([rate, np.full(T_base - len(rate), rate[-1])])
+        expected = rate[:T_base] * base
         resid = np.abs(rev - expected)
         scale = float(np.abs(expected).mean()) + 1e-8
         mx_rel = float(resid.max()) / scale

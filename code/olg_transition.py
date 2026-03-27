@@ -496,7 +496,7 @@ class OLGTransition:
             # Cache: keyed by (edu_type, n_sim, seed_base); independent of policy functions.
             if not hasattr(self, '_sim_init_cache'):
                 self._sim_init_cache = {}
-            _init_key = (edu_type, int(n_sim), int(seed_base))
+            _init_key = (edu_type, int(n_sim), int(seed_base), n_cohorts)
             if _init_key in self._sim_init_cache:
                 (_, batch_i_a, batch_i_y, batch_i_h,
                  batch_i_y_last, batch_avg_earn, batch_n_years,
