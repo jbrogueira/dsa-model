@@ -103,7 +103,7 @@
     "params": [
       {"name": "rho_y",   "path": "edu_params.*.rho_y",   "lower": 0.80, "upper": 0.995, "initial": 0.95},
       {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.13},
-      {"name": "nu",      "path": "nu",                   "lower": 0.1,  "upper": 20.0,  "initial": 1.0}
+      {"name": "nu",      "path": "nu",                   "lower": 0.1,  "upper": 200.0, "initial": 75.0}
     ],
     "targets": [
       {"name": "wealth_gini",  "value": 0.58,  "weight": 1.0, "compute_key": "wealth_gini"},
