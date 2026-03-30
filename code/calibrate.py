@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import NamedTuple, Optional
 
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, differential_evolution
 
 from lifecycle_perfect_foresight import LifecycleConfig, LifecycleModelPerfectForesight
 
@@ -571,67 +571,143 @@ def smm_objective(x_unbounded, spec):
     return float(diff @ np.diag(w) @ diff)
 
 
-def calibrate(spec, maxiter=500, tol=1e-6, verbose=True):
-    """Run SMM calibration via Nelder-Mead.
+def smm_objective_bounded(theta, spec):
+    """SMM objective in original bounded parameter space (for global optimizers)."""
+    m_model = run_model_moments(theta, spec)
+    m_data = np.array([m.value for m in spec.moments])
+    w = np.array([m.weight for m in spec.moments])
+    diff = m_data - m_model
+    return float(diff @ np.diag(w) @ diff)
+
+
+def calibrate(spec, maxiter=500, tol=1e-6, verbose=True, method='Nelder-Mead'):
+    """Run SMM calibration.
+
+    method: 'Nelder-Mead' (default), 'differential_evolution'.
+    With 'differential_evolution', a global search is run first, then polished
+    with Nelder-Mead starting from the DE optimum.
 
     Returns dict with keys: theta, objective, model_moments, data_moments,
     convergence, history, elapsed_seconds.
     """
-    theta0 = np.array([p.initial for p in spec.params])
-    x0 = theta_to_unbounded(theta0, spec.params)
-
-    history = []
-    _last_obj = [None]  # mutable container for closure
-
-    def objective_wrapper(x_unbounded, spec):
-        val = smm_objective(x_unbounded, spec)
-        _last_obj[0] = val
-        return val
-
-    def callback(xk):
-        theta_k = unbounded_to_theta(xk, spec.params)
-        obj = _last_obj[0]
-        history.append({'theta': theta_k.tolist(), 'objective': obj})
-        if verbose and len(history) % 10 == 0:
-            param_str = ', '.join(
-                f'{p.name}={v:.6f}' for p, v in zip(spec.params, theta_k))
-            print(f"  iter {len(history):4d}  obj={obj:.8f}  {param_str}")
-
     t0 = time.time()
     if verbose:
-        print(f"Starting SMM calibration: {len(spec.params)} params, "
+        print(f"Starting SMM calibration [{method}]: {len(spec.params)} params, "
               f"{len(spec.moments)} moments, n_sim={spec.n_sim}")
 
-    result = minimize(
-        objective_wrapper,
-        x0,
-        args=(spec,),
-        method='Nelder-Mead',
-        callback=callback,
-        options={
-            'maxiter': maxiter,
-            'xatol': tol,
-            'fatol': tol,
-            'adaptive': True,
-        },
-    )
+    history = []
+    _iter = [0]
+
+    if method == 'differential_evolution':
+        bounds = [(p.lower, p.upper) for p in spec.params]
+
+        def de_callback(xk, convergence):
+            _iter[0] += 1
+            obj = smm_objective_bounded(xk, spec)
+            history.append({'theta': xk.tolist(), 'objective': obj})
+            if verbose and _iter[0] % 5 == 0:
+                param_str = ', '.join(
+                    f'{p.name}={v:.6f}' for p, v in zip(spec.params, xk))
+                print(f"  DE gen {_iter[0]:4d}  obj={obj:.8f}  {param_str}")
+
+        de_result = differential_evolution(
+            smm_objective_bounded,
+            bounds,
+            args=(spec,),
+            maxiter=maxiter,
+            tol=tol,
+            seed=spec.seed,
+            workers=1,
+            polish=True,
+            callback=de_callback,
+            popsize=5,
+            mutation=(0.5, 1.5),
+            recombination=0.9,
+            init='latinhypercube',
+        )
+        theta_opt = de_result.x
+        # Polish with Nelder-Mead from DE optimum
+        if verbose:
+            print(f"\nDE finished (obj={de_result.fun:.8f}). Polishing with Nelder-Mead...")
+        x0_polish = theta_to_unbounded(theta_opt, spec.params)
+        _last_obj = [None]
+
+        def polish_obj(x, spec):
+            val = smm_objective(x, spec)
+            _last_obj[0] = val
+            return val
+
+        def polish_cb(xk):
+            tk = unbounded_to_theta(xk, spec.params)
+            obj = _last_obj[0]
+            history.append({'theta': tk.tolist(), 'objective': obj})
+            if verbose and len(history) % 10 == 0:
+                param_str = ', '.join(
+                    f'{p.name}={v:.6f}' for p, v in zip(spec.params, tk))
+                print(f"  NM iter {len(history):4d}  obj={obj:.8f}  {param_str}")
+
+        nm_result = minimize(
+            polish_obj, x0_polish, args=(spec,), method='Nelder-Mead',
+            callback=polish_cb,
+            options={'maxiter': 300, 'xatol': 1e-8, 'fatol': 1e-8, 'adaptive': True},
+        )
+        theta_opt = unbounded_to_theta(nm_result.x, spec.params)
+        final_obj = nm_result.fun
+        converged = de_result.success or nm_result.success
+        message = f"DE: {de_result.message} | NM: {nm_result.message}"
+
+    else:
+        # Nelder-Mead on logit-transformed parameters
+        theta0 = np.array([p.initial for p in spec.params])
+        x0 = theta_to_unbounded(theta0, spec.params)
+        _last_obj = [None]
+
+        def objective_wrapper(x_unbounded, spec):
+            val = smm_objective(x_unbounded, spec)
+            _last_obj[0] = val
+            return val
+
+        def callback(xk):
+            theta_k = unbounded_to_theta(xk, spec.params)
+            obj = _last_obj[0]
+            history.append({'theta': theta_k.tolist(), 'objective': obj})
+            if verbose and len(history) % 10 == 0:
+                param_str = ', '.join(
+                    f'{p.name}={v:.6f}' for p, v in zip(spec.params, theta_k))
+                print(f"  iter {len(history):4d}  obj={obj:.8f}  {param_str}")
+
+        result = minimize(
+            objective_wrapper,
+            x0,
+            args=(spec,),
+            method='Nelder-Mead',
+            callback=callback,
+            options={
+                'maxiter': maxiter,
+                'xatol': tol,
+                'fatol': tol,
+                'adaptive': True,
+            },
+        )
+        theta_opt = unbounded_to_theta(result.x, spec.params)
+        final_obj = result.fun
+        converged = result.success
+        message = result.message
 
     elapsed = time.time() - t0
-    theta_opt = unbounded_to_theta(result.x, spec.params)
     m_model, panels = run_model_moments(theta_opt, spec, return_panels=True)
     m_data = np.array([m.value for m in spec.moments])
 
     if verbose:
-        print(f"\nCalibration finished in {elapsed:.1f}s "
-              f"({result.nit} iterations, {result.nfev} evaluations)")
+        print(f"\nCalibration finished in {elapsed:.1f}s")
 
     return {
         'theta': theta_opt,
-        'objective': result.fun,
+        'objective': final_obj,
         'model_moments': m_model,
         'data_moments': m_data,
-        'convergence': result.success,
-        'message': result.message,
+        'convergence': converged,
+        'message': message,
         'history': history,
         'elapsed_seconds': elapsed,
         'panels': panels,
@@ -1244,6 +1320,9 @@ def main():
     parser.add_argument('--backend', type=str, default=None,
                         choices=['numpy', 'jax'],
                         help='Override backend (numpy or jax)')
+    parser.add_argument('--method', type=str, default='Nelder-Mead',
+                        choices=['Nelder-Mead', 'differential_evolution'],
+                        help='Optimization method')
     args = parser.parse_args()
 
     config_data = None
@@ -1285,7 +1364,7 @@ def main():
             n_sim=args.n_sim or 10_000,
             seed=args.seed or 42)
 
-    result = calibrate(spec, maxiter=args.maxiter, tol=args.tol)
+    result = calibrate(spec, maxiter=args.maxiter, tol=args.tol, method=args.method)
     print_calibration_results(result, spec)
 
     # Compute untargeted moments and fiscal ratios

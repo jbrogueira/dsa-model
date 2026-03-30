@@ -13,7 +13,7 @@
     "beta": 0.96,
     "gamma": 2.0,
     "labor_supply": true,
-    "nu": 1.0,
+    "nu": 68.35,
     "phi": 2.0,
     "tax_progressive": false
   },
@@ -48,9 +48,9 @@
   },
 
   "edu_params": {
-    "low":    {"mu_y": -0.10, "unemployment_rate": 0.1645},
-    "medium": {"mu_y":  0.00, "unemployment_rate": 0.1580},
-    "high":   {"mu_y":  0.10, "unemployment_rate": 0.1005}
+    "low":    {"mu_y": -0.10, "unemployment_rate": 0.1645, "rho_y": 0.8047, "sigma_y": 0.2282},
+    "medium": {"mu_y":  0.00, "unemployment_rate": 0.1580, "rho_y": 0.8047, "sigma_y": 0.2282},
+    "high":   {"mu_y":  0.10, "unemployment_rate": 0.1005, "rho_y": 0.8047, "sigma_y": 0.2282}
   },
 
   "education_shares": {
@@ -101,9 +101,9 @@
 
   "calibration": {
     "params": [
-      {"name": "rho_y",   "path": "edu_params.*.rho_y",   "lower": 0.80, "upper": 0.995, "initial": 0.95},
-      {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.13},
-      {"name": "nu",      "path": "nu",                   "lower": 0.1,  "upper": 200.0, "initial": 75.0}
+      {"name": "rho_y",   "path": "edu_params.*.rho_y",   "lower": 0.80, "upper": 0.995, "initial": 0.8047},
+      {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.2282},
+      {"name": "nu",      "path": "nu",                   "lower": 0.1,  "upper": 200.0, "initial": 68.35}
     ],
     "targets": [
       {"name": "wealth_gini",  "value": 0.58,  "weight": 1.0, "compute_key": "wealth_gini"},
