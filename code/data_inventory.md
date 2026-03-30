@@ -34,7 +34,7 @@ Pre-computed calibration values for Greece. Single row.
 | Government coverage of medical costs | 66.20% | `kappa` | Step 1 |
 
 **Notes:**
-- Capital share (0.503) and depreciation (0.285) are unusually high. Verify source; may need adjustment (standard macro: alpha ~ 0.33, delta ~ 0.05-0.10).
+- Capital share (0.503) and depreciation (0.285) from the spreadsheet are unusually high. Calibration uses standard values instead: alpha=0.33, delta=0.07.
 - `mu_y` values are in EUR levels. Need to convert to log income or normalise relative to mean.
 - **Tax decomposition**: the EC ITR on labour (40.58%) **includes SSC**. The model applies `tau_l` (PIT) and `tau_p` (SSC) separately, so using both raw values double-counts. Correct decomposition for the model: `tau_l ≈ 0.10` (PIT only), `tau_p ≈ 0.34` (SSC on wages), total wedge = `tau_p + tau_l·(1−tau_p) = 0.406`. See section 3 "Obtained" for details.
 
@@ -421,9 +421,10 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 2. ~~Download Eurostat unemployment duration~~ — **Done.** jfr≈0.50/year, by-education breakdown recorded above.
 3. ~~Download health spending age profile~~ — **Done.** EU14 normalised profile from Ageing Report recorded above.
 4. ~~Obtain income process proxies~~ — **Done (provisional).** Literature values (rho≈0.95, σ_eta≈0.13) + Eurostat moments recorded above.
+5. ~~Wire data into calibration code~~ — **Done.** All externally calibrated parameters set in `calibration_input_GR.json`; SMM targets configured; calibration runs in `output/calibration/`.
+6. ~~Verify capital share and depreciation~~ — **Done.** Replaced anomalous spreadsheet values (alpha=0.503, delta=0.285) with standard macro values (alpha=0.33, delta=0.07) in `calibration_input_GR.json`.
 
 ### Remaining
 
-5. **Wire data into calibration code**: set externally calibrated parameters from DATA_GR.xlsx and the data above; configure SMM targets from Eurostat moments and HFCS wealth distribution.
-6. **LIS access** (application submitted 2026-03-24): once approved, compute var(log earnings) by age from Greek EU-SILC cross-section for direct `rho_y`/`sigma_y` identification. Re-calibrate and replace provisional literature proxies. Also covers consumption Gini.
-7. **Verify capital share and depreciation**: the Parameters sheet values (alpha=0.503, delta=0.285) are unusually high; cross-check methodology and source.
+7. **LIS access** (application submitted 2026-03-24): once approved, compute var(log earnings) by age from Greek EU-SILC cross-section for direct `rho_y`/`sigma_y` identification. Re-calibrate and replace provisional literature proxies. Also covers consumption Gini.
+8. **Financial wealth moments (excl. housing)**: obtain financial wealth Gini and zero-financial-wealth fraction from HFCS published tables (A3/A4) or microdata. The model has no housing asset, so current net wealth targets (Gini=0.58, zero-wealth=1.1%) overstate asset equality.

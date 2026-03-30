@@ -12,7 +12,9 @@
     "a_max": 200.0,
     "beta": 0.96,
     "gamma": 2.0,
-    "labor_supply": false,
+    "labor_supply": true,
+    "nu": 1.0,
+    "phi": 2.0,
     "tax_progressive": false
   },
 
@@ -100,11 +102,13 @@
   "calibration": {
     "params": [
       {"name": "rho_y",   "path": "edu_params.*.rho_y",   "lower": 0.80, "upper": 0.995, "initial": 0.95},
-      {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.13}
+      {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.13},
+      {"name": "nu",      "path": "nu",                   "lower": 0.1,  "upper": 20.0,  "initial": 1.0}
     ],
     "targets": [
       {"name": "wealth_gini",  "value": 0.58,  "weight": 1.0, "compute_key": "wealth_gini"},
-      {"name": "income_gini",  "value": 0.318, "weight": 1.0, "compute_key": "income_gini"}
+      {"name": "income_gini",  "value": 0.318, "weight": 1.0, "compute_key": "income_gini"},
+      {"name": "average_hours","value": 0.41,  "weight": 1.0, "compute_key": "average_hours"}
     ]
   },
 
@@ -115,7 +119,7 @@
     "earnings_var_mean": null,
     "earnings_var_slope": null,
     "consumption_gini": null,
-    "average_hours": null,
+    "average_hours": 0.41,
     "mean_assets": null,
     "median_wealth_to_income": null
   },
