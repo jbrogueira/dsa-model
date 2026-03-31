@@ -93,6 +93,7 @@ if args.config:
     G_path = np.full(T_TR, G_over_Y * Y_path.mean())
     B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
     B_initial = B_over_Y * Y_path.mean()
+    target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
     print(f"  mean(Y) = {Y_path.mean():.4f},  G/Y = {G_over_Y},  mean(G) = {G_path.mean():.4f}")
     print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
 
@@ -151,6 +152,7 @@ else:
     Y_path = np.asarray(_calib['Y'])
     G_path = np.full(T_TR, 0.30 * Y_path.mean())
     B_initial = 0.0
+    target_B_Y = 0.0  # hardcoded test: no initial debt, target stays at zero
     print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
@@ -186,7 +188,7 @@ scn_g_taul = FiscalScenario(
     delta_G_path      = delta_G,
     financing         = 'tau_l',
     balance_condition = 'terminal_flow_balance',
-    target_debt_gdp   = 0.0,
+    target_debt_gdp   = target_B_Y,
     B_initial         = B_initial,
     pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
@@ -208,7 +210,7 @@ scn_ig_taul = FiscalScenario(
     delta_I_g_path    = delta_Ig,
     financing         = 'tau_l',
     balance_condition = 'terminal_flow_balance',
-    target_debt_gdp   = 0.0,
+    target_debt_gdp   = target_B_Y,
     B_initial         = B_initial,
     pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
@@ -407,7 +409,7 @@ params_out = {
     'n_sim':         int(N_SIM),
     'T_transition':  int(T_TR),
     'B_initial':     float(B_initial),
-    'target_debt_gdp': 0.0,
+    'target_debt_gdp': float(target_B_Y),
     'tau_l_path':    [float(x) for x in base_paths['tau_l_path']],
     'tau_c_path':    [float(x) for x in base_paths['tau_c_path']],
     'tau_p_path':    [float(x) for x in base_paths['tau_p_path']],

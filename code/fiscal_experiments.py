@@ -46,6 +46,23 @@ _PRE_TP_KEYS = ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                 'tau_k_path', 'pension_replacement_path')
 
 
+def _nice_ylim(ax, min_span=0.01):
+    """Enforce a minimum y-axis span so tiny MC noise doesn't dominate the plot.
+
+    The minimum span is max(min_span, 0.1 × order-of-magnitude of |midpoint|),
+    which gives at least two readable decimal places at any scale.
+    """
+    ylo, yhi = ax.get_ylim()
+    ymid = (ylo + yhi) / 2
+    if abs(ymid) > 1e-10:
+        scale_span = 10 ** np.floor(np.log10(abs(ymid))) * 0.1
+    else:
+        scale_span = min_span
+    span = max(min_span, scale_span)
+    if (yhi - ylo) < span:
+        ax.set_ylim(ymid - span / 2, ymid + span / 2)
+
+
 def _build_pre_transition_paths(olg, base_paths):
     """Build pre_transition_paths dict from base_paths + lifecycle_config."""
     pre_tp = {k: base_paths.get(k) for k in _PRE_TP_KEYS}
@@ -1150,6 +1167,7 @@ def compare_scenarios(
                        label=f'T_balance={T_balance}')
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
+        _nice_ylim(ax)
 
     # Hide unused axes
     for ax in list(all_axes)[n_vars:]:

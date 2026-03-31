@@ -22,6 +22,25 @@ def _get_lifecycle_model_class(backend: str):
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+# Indices into the raw 21-tuple simulation output for the variables needed downstream.
+# Order matches the return of _slice_mean_single_age_njit + bequest as 11th element:
+#   a, c, eff_y, tax_c, tax_l, tax_p, tax_k, ui, pension, gov_h, bequest
+_PANEL_MEANS_IDX = (0, 1, 5, 11, 12, 13, 14, 7, 16, 10, 20)
+
+
+def _panel_to_age_means(panel_data):
+    """Reduce a raw 21-tuple (or legacy 19-tuple) of (T, n) simulation arrays to an
+    11-tuple of (T,) per-age means.  Memory-efficient: intermediate (T, n) slices are
+    never retained after the mean is taken."""
+    if len(panel_data) == 21:
+        return tuple(np.mean(panel_data[i], axis=1) for i in _PANEL_MEANS_IDX)
+    elif len(panel_data) >= 19:
+        # legacy: no alive_sim / bequest_sim
+        out = tuple(np.mean(panel_data[i], axis=1) for i in _PANEL_MEANS_IDX[:10])
+        return out + (np.zeros(panel_data[0].shape[0]),)
+    else:
+        raise ValueError(f"Unexpected panel_data length {len(panel_data)}")
+
 
 def _extend_path(path, n_extra):
     """Extend a path by padding with copies of the last value, or return None."""
@@ -104,7 +123,9 @@ class OLGTransition:
                  # Backend selection
                  backend='numpy',
                  # JAX simulation chunk size (None = all cohorts at once; set e.g. 10 to avoid GPU OOM)
-                 jax_sim_chunk_size=None):
+                 jax_sim_chunk_size=None,
+                 # Agent simulation batch size: agents simulated at once per cohort (controls RAM)
+                 sim_agent_batch_size=10_000):
         
         # Use provided config or create default
         if lifecycle_config is None:
@@ -199,6 +220,7 @@ class OLGTransition:
         self.backend = backend
         self._lifecycle_model_class = _get_lifecycle_model_class(backend)
         self.jax_sim_chunk_size = jax_sim_chunk_size
+        self.sim_agent_batch_size = int(sim_agent_batch_size)
 
         # Population aging parameters (Feature #21)
         self.fertility_path = np.asarray(fertility_path, dtype=float) if fertility_path is not None else None
@@ -326,7 +348,11 @@ class OLGTransition:
                 sui * inv, spen * inv, sg * inv)
 
     def _simulate_birth_cohort_cached(self, edu_type, birth_period, n_sim, seed):
-        """Simulate a full birth cohort once from age 0 and cache it."""
+        """Simulate a birth cohort in agent batches and cache per-age means.
+
+        Returns an 11-tuple of (T,) arrays (per-age means), not the raw panel.
+        Batching keeps peak RAM at O(batch_size) regardless of n_sim.
+        """
         if not hasattr(self, "_birth_sim_cache"):
             self._birth_sim_cache = {}
 
@@ -336,8 +362,23 @@ class OLGTransition:
             return self._birth_sim_cache[key]
 
         model = self.birth_cohort_solutions[edu_type][int(birth_period)]
-        # Full lifecycle simulation from age 0
-        res = model.simulate(T_sim=self.T, n_sim=n_sim, seed=seed)
+        T_sim = self.T
+        batch = self.sim_agent_batch_size
+
+        sums = [np.zeros(T_sim) for _ in range(11)]
+        agents_done = 0
+        batch_idx = 0
+        while agents_done < n_sim:
+            n_b = min(batch, n_sim - agents_done)
+            b_seed = self._seed_u32(seed + batch_idx * 7919)
+            panel = model.simulate(T_sim=T_sim, n_sim=n_b, seed=int(b_seed))
+            b_means = _panel_to_age_means(panel)
+            for k in range(11):
+                sums[k] += b_means[k] * n_b
+            agents_done += n_b
+            batch_idx += 1
+
+        res = tuple(s / n_sim for s in sums)
         self._birth_sim_cache[key] = res
         return res
 
@@ -1213,7 +1254,37 @@ class OLGTransition:
                   f"(n_sim={n_sim}, seed_base={seed_base}) ...")
 
         if self.backend == 'jax':
-            panels = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose)
+            agent_batch = self.sim_agent_batch_size
+            n_agent_batches = max(1, (n_sim + agent_batch - 1) // agent_batch)
+            if n_agent_batches == 1:
+                raw = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose)
+                panels = {edu: {b: _panel_to_age_means(p) for b, p in ep.items()}
+                          for edu, ep in raw.items()}
+            else:
+                edu_types_ab = list(self.education_shares.keys())
+                birth_periods_ab = list(range(min_birth_period, max_birth_period + 1))
+                sums = {edu: {b: [np.zeros(self.T) for _ in range(11)]
+                              for b in birth_periods_ab}
+                        for edu in edu_types_ab}
+                agents_done = 0
+                for ab_idx in range(n_agent_batches):
+                    n_ab = min(agent_batch, n_sim - agents_done)
+                    ab_seed = int((seed_base + ab_idx * 999983) & 0xFFFFFFFF)
+                    raw_b = self._simulate_cohorts_jax_batched(
+                        n_ab, ab_seed, verbose=(verbose and ab_idx == 0))
+                    for edu in edu_types_ab:
+                        for b, panel in raw_b[edu].items():
+                            bm = _panel_to_age_means(panel)
+                            for k in range(11):
+                                sums[edu][b][k] += bm[k] * n_ab
+                    # Free per-batch raw panels and cached init conditions to bound memory
+                    self._birth_sim_cache = {}
+                    if hasattr(self, '_sim_init_cache'):
+                        self._sim_init_cache = {}
+                    agents_done += n_ab
+                panels = {edu: {b: tuple(sums[edu][b][k] / n_sim for k in range(11))
+                                for b in birth_periods_ab}
+                          for edu in edu_types_ab}
         else:
             panels = {edu_type: {} for edu_type in education_types}
 
@@ -1299,28 +1370,35 @@ class OLGTransition:
                 birth_period = t - age
 
                 panel_data = edu_panels[int(birth_period)]
-                if len(panel_data) == 21:
-                    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
-                     ui_sim, m_sim, oop_m_sim, gov_m_sim,
-                     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                     pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                if len(panel_data) == 11:
+                    # Means format: 11-tuple of (T,) per-age mean arrays
+                    (a_mean, c_mean, labor_mean,
+                     tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
+                     ui_mean, pension_mean, gov_health_mean,
+                     bequest_mean) = (float(panel_data[k][age]) for k in range(11))
                 else:
-                    (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
-                     ui_sim, m_sim, oop_m_sim, gov_m_sim,
-                     tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                     pension_sim, retired_sim, l_sim) = panel_data
-                    alive_sim = np.ones_like(a_sim, dtype=bool)
-                    bequest_sim = np.zeros_like(a_sim)
+                    if len(panel_data) == 21:
+                        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                         ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                         pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                    else:
+                        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                         ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                         pension_sim, retired_sim, l_sim) = panel_data
+                        alive_sim = np.ones_like(a_sim, dtype=bool)
+                        bequest_sim = np.zeros_like(a_sim)
 
-                # Fast single-age means using Numba - O(n_sim) instead of O(T × n_sim)
-                (a_mean, c_mean, labor_mean,
-                 tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
-                 ui_mean, pension_mean, gov_health_mean) = self._slice_mean_single_age_njit(
-                    a_sim, c_sim, effective_y_sim,
-                    tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
-                    ui_sim, pension_sim, gov_m_sim,
-                    int(age)
-                )
+                    (a_mean, c_mean, labor_mean,
+                     tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
+                     ui_mean, pension_mean, gov_health_mean) = self._slice_mean_single_age_njit(
+                        a_sim, c_sim, effective_y_sim,
+                        tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
+                        ui_sim, pension_sim, gov_m_sim,
+                        int(age)
+                    )
+                    bequest_mean = float(np.mean(bequest_sim[age, :]))
 
                 assets_by_age_edu[edu_idx, age]      = a_mean
                 consumption_by_age_edu[edu_idx, age] = c_mean
@@ -1334,7 +1412,7 @@ class OLGTransition:
                 ui_by_age_edu[edu_idx, age] = ui_mean
                 pension_by_age_edu[edu_idx, age] = pension_mean
                 gov_health_by_age_edu[edu_idx, age] = gov_health_mean
-                bequest_by_age_edu[edu_idx, age] = float(np.mean(bequest_sim[age, :]))
+                bequest_by_age_edu[edu_idx, age] = bequest_mean
 
         out = {
             "education_types": education_types,
@@ -1402,26 +1480,34 @@ class OLGTransition:
                     if b not in edu_panels:
                         continue
                     panel_data = edu_panels[int(b)]
-                    if len(panel_data) == 21:
-                        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
-                         ui_sim, m_sim, oop_m_sim, gov_m_sim,
-                         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                         pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                    if len(panel_data) == 11:
+                        # Means format: 11-tuple of (T,) per-age mean arrays
+                        (a_m, c_m, l_m, tc_m, tl_m, tp_m, tk_m,
+                         ui_m, pen_m, gh_m, beq_m) = (
+                            float(panel_data[k][age]) for k in range(11))
                     else:
-                        (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
-                         ui_sim, m_sim, oop_m_sim, gov_m_sim,
-                         tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                         pension_sim, retired_sim, l_sim) = panel_data
-                        alive_sim = np.ones_like(a_sim, dtype=bool)
-                        bequest_sim = np.zeros_like(a_sim)
+                        if len(panel_data) == 21:
+                            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                             ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                             pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                        else:
+                            (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
+                             ui_sim, m_sim, oop_m_sim, gov_m_sim,
+                             tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
+                             pension_sim, retired_sim, l_sim) = panel_data
+                            alive_sim = np.ones_like(a_sim, dtype=bool)
+                            bequest_sim = np.zeros_like(a_sim)
 
-                    (a_m, c_m, l_m, tc_m, tl_m, tp_m, tk_m,
-                     ui_m, pen_m, gh_m) = self._slice_mean_single_age_njit(
-                        a_sim, c_sim, effective_y_sim,
-                        tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
-                        ui_sim, pension_sim, gov_m_sim,
-                        int(age),
-                    )
+                        (a_m, c_m, l_m, tc_m, tl_m, tp_m, tk_m,
+                         ui_m, pen_m, gh_m) = self._slice_mean_single_age_njit(
+                            a_sim, c_sim, effective_y_sim,
+                            tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
+                            ui_sim, pension_sim, gov_m_sim,
+                            int(age),
+                        )
+                        beq_m = float(np.mean(bequest_sim[age, :]))
+
                     assets[t, edu_idx, age]  = a_m
                     consum[t, edu_idx, age]  = c_m
                     labor[t, edu_idx, age]   = l_m
@@ -1432,7 +1518,7 @@ class OLGTransition:
                     ui_arr[t, edu_idx, age]  = ui_m
                     pension[t, edu_idx, age] = pen_m
                     gov_h[t, edu_idx, age]   = gh_m
-                    bequest[t, edu_idx, age] = float(np.mean(bequest_sim[age, :]))
+                    bequest[t, edu_idx, age] = beq_m
 
         # Populate _period_cache so compute_government_budget_path() can reuse
         # these results instead of recomputing via _period_cross_section().

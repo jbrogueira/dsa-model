@@ -953,6 +953,7 @@ def build_olg_transition(config_data, backend='numpy'):
         education_shares=config_data.get('education_shares'),
         backend=backend,
         jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,
+        sim_agent_batch_size=trans.get('sim_agent_batch_size', 10_000),
     )
 
     # Build transition paths
