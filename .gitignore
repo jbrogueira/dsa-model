@@ -61,3 +61,6 @@ output/*.jpeg
 
 # Logs
 *.log
+
+# LIS data artifacts (test outputs and LISSY return files; .do file is tracked)
+code/data/lis/output/
