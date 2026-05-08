@@ -21,9 +21,11 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 5 | #4 | **Done** |
 | 6 | #8, #10, #9 | **Done** |
 | 7 | #18, #19 | **Done** |
+| 8 | σ_α (post-baseline extension) | **Planned (2026-05-08)** |
 
 **Skipped:** #12 (tax application — keep code version), #13 (capital income tax — keep code version)
 **Merged:** #3 (human capital) absorbed into #5 (age-dependent productivity) — no new state variable
+**Post-baseline:** Phase 8 (σ_α permanent productivity fixed effect) is the first feature to add a new state variable; planned after the LIS-pinned baseline calibration (commit `c9b3f14`) revealed under-dispersion of within-education earnings.
 
 ---
 
@@ -365,6 +367,111 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ---
 
+## Phase 8: Permanent Productivity Fixed Effect (σ_α)
+
+**Status: Planned (added 2026-05-08).** First feature to add a new state variable to the lifecycle problem, breaking the original "no new state variables" constraint.
+
+### Motivation
+
+The LIS Greek pool estimation (`code/docs/INCOME_PROCESS_ESTIMATION_PLAN.md`, baseline ρ = 0.95) finds permanent within-education dispersion of `σ_α^(e) ∈ {0.367, 0.259, 0.318}` for low/medium/high. The current model has no fixed effect, so the AR(1) stationary variance `σ_η²/(1-ρ²) ∈ {0.030, 0.076, 0.058}` is the only source of within-education dispersion at age 25 — the model under-disperses initial earnings within low-education by a factor of ~4. Adding a permanent productivity shifter `α_i` aligns the model with the LIS variance profile and makes `σ_α^(e)` consumable rather than purely diagnostic.
+
+Wage equation:
+```
+y^L = w_t · κ_j · z · exp(α),    α ~ N(0, σ_α^(e)²),    drawn at age 25, fixed for life
+```
+
+### Architectural decision: multiple-solve over state-expansion
+
+Two approaches considered:
+
+- **(A) Multiple solves** — solve `n_alpha` separate lifecycle problems per education, indexed by α-grid point. Cleaner code, isolated change. Solve cost ≈ `n_alpha` × baseline.
+- **(B) State expansion** — add α as a 6th policy dimension `(T, n_a, n_y, n_h, n_y_last, n_alpha)`. Faster with JAX vectorization, more invasive (every solver/sim/cache touchpoint).
+
+**Choice: (A)** for the first cut. (B) is a future optimization once validated.
+
+### Discretization
+
+α grid via Gauss–Hermite quadrature: `numpy.polynomial.hermite_e.hermegauss(n_alpha)` rescaled by `σ_α · √2`. **`n_alpha = 5`** as the default (matches HSV-style fixed-effect grids; smoother than 3-node and the `~5×` solve cost is acceptable for `n_alpha · solve_time ≈ 5 × 30s ≈ 2.5min` per cohort).
+
+### Sub-phases
+
+#### 8.1 Spec and data structures
+
+- `LifecycleConfig`: add `n_alpha: int = 1` (default = no FE grid).
+- `edu_params`: add `sigma_alpha: float = 0.0` (default = no FE).
+- `_income_process()`: when `n_alpha > 1` and `sigma_alpha > 0`, build `self.alpha_grid` (length `n_alpha`) and `self.alpha_probs` from Gauss–Hermite. Expose as instance attributes.
+- `calibrate.py:build_lifecycle_config()`: read `sigma_alpha` and `n_alpha` from JSON and pass to `LifecycleConfig`.
+- `calibration_input_GR.json`: add `sigma_alpha` per education (initially `0.0` to preserve the current baseline).
+- Files: `lifecycle_perfect_foresight.py`, `calibrate.py`, `calibration_input_GR.json`
+
+**Acceptance:** all existing tests pass; `sigma_alpha=0` and `n_alpha=1` recover prior behavior exactly.
+
+#### 8.2 Lifecycle solve (NumPy reference)
+
+- `solve_lifecycle()`: when `n_alpha > 1`, loop over α-grid. For each `α_idx ∈ {0, …, n_alpha-1}`:
+  - In `_compute_budget()`, multiply effective wage income by `exp(alpha_grid[α_idx])`.
+  - Run the existing backward-induction solve.
+  - Store policies under a new leading axis: `a_policy_alpha[α_idx, t, ...]`, plus c, l, value counterparts.
+- When `n_alpha == 1`, behavior identical to current (single solve, no new dimension).
+- Files: `lifecycle_perfect_foresight.py`
+
+**Acceptance:** with `n_alpha=1`, all existing OLG transition tests pass without changes.
+
+#### 8.3 Simulation init and forward (NumPy)
+
+- `_simulate_sequential()`:
+  - At `t=0`, sample `alpha_idx_sim` for each agent via `np.random.choice(n_alpha, size=n_sim, p=alpha_probs)`.
+  - For each agent `i`, use `a_policy_alpha[alpha_idx_sim[i]]` (and c, l, value counterparts) for their full path.
+  - Compute realized earnings using `exp(alpha_grid[alpha_idx_sim[i]])` multiplier in the wage formula.
+- Add `alpha_idx_sim` (or equivalent realized `alpha_sim`) as a new entry to the simulation output tuple. Update `OLGTransition.simulate_transition` consumers and `fiscal_experiments.py` to thread it through unchanged (diagnostic only).
+- Files: `lifecycle_perfect_foresight.py`, `olg_transition.py`, `fiscal_experiments.py`
+
+**Acceptance:** simulated `Var(log y)` at age 25 within an education stratum ≈ `σ_α^(e)²`; at age 60 ≈ `σ_α^(e)² + σ_η^(e)²/(1-ρ²)`.
+
+#### 8.4 Pension and bequest accounting
+
+- Pension formula `PENS = max(ρ · w · κ_{J_R} · [λ z_last + (1-λ) z̄], b_min)` uses `z_last`. Update to multiply the wage term by `exp(α_i)` so high-α retirees receive proportionally higher pensions.
+- Bequest redistribution stays lump-sum and unaffected by α (no change needed).
+- Files: `lifecycle_perfect_foresight.py`
+
+#### 8.5 JAX backend mirror
+
+- Mirror 8.2–8.3 in `lifecycle_jax.py`: `jax.lax.scan` (or `vmap`) over the α-grid for solve; `vmap` over agents in simulation. The Metal/CPU caveat (set `JAX_PLATFORM_NAME=cpu`) already documented.
+- Re-evict `_jax_policy_batch` after MIT shock stitching as today.
+- Files: `lifecycle_jax.py`
+
+**Acceptance:** JAX cross-validation tests (NumPy ↔ JAX agreement to 1e-6) pass with `sigma_alpha > 0`.
+
+#### 8.6 Tests
+
+- **Backward compat:** `sigma_alpha=0` → existing 21-tuple outputs identical (regression).
+- **α permanence:** `alpha_idx_sim[0,i] == alpha_idx_sim[T-1,i]` for all `i`.
+- **Wage decomposition:** `y_sim[t,i] / (w_t · κ_t · z_sim[t,i]) ≈ exp(alpha_grid[alpha_idx_sim[i]])` (within numerical tolerance, employment subsample).
+- **Variance profile (ages 25 & 60):** within-education `Var(log y)` matches `σ_α²` and `σ_α² + σ_η²/(1-ρ²)` to within 5% with `n_sim=10000`.
+- **MIT shock A[0] predetermination:** still exactly 0.0 across both backends with `sigma_alpha > 0`.
+- Files: `test_olg_transition.py` (new test class `TestFixedEffect`)
+
+#### 8.7 Re-calibrate Greek baseline
+
+- Set `sigma_alpha` per education in `calibration_input_GR.json` to the LIS estimates `{0.367, 0.259, 0.318}` (low/med/high) and `n_alpha = 5`.
+- Re-run `python calibrate.py --config calibration_input_GR.json --backend jax`.
+- Compare validation moments before/after: wealth Gini, income Gini, p90/p10, mean Var(u), slope Var(u). Expectations:
+  - Within-edu var(log y) at age 25 should now match LIS data (currently severely under-dispersed).
+  - Wealth Gini likely *worsens* (currently 0.85 vs data 0.58, already an overshoot). The wealth-Gini residual is therefore not driven by earnings dispersion and a separate diagnosis is needed (transfer floor, unemployment dynamics, bequests).
+
+### Risks
+
+- **MIT shock stitching with α grid:** the pre-transition baseline policy must be solved per-α, and the stitching must preserve the per-α policy correctly. May need `_mit_baseline_cache` keyed by `(edu_type, birth_period, α_idx)`.
+- **`OLGTransition` cohort caching:** `_cohort_panel_cache` and `_period_cache` are sized for the current state space. Adding the α dimension requires verifying the keys still discriminate correctly.
+- **Computational cost:** `n_alpha=5` means ~5× the solve and simulate cost. Calibration goes from ~3 min to ~15 min per evaluation; SMM (60 evaluations) from 3 hours to ~15 hours. May need to drop `n_alpha=3` if wall-clock becomes prohibitive.
+- **α–z independence assumption:** standard but possibly violated in data (high-α workers may have different shock variance). If violated, σ_η will be biased. Out of scope here.
+
+### Computational cost
+
+`n_alpha = 5` → ~5× baseline. With current ~30s per cohort solve, ~2.5min per evaluation. Full SMM optimization ~15 min if `~60` evaluations.
+
+---
+
 ## Implementation Order Summary
 
 | Phase | Features | Key Changes | Risk |
@@ -376,6 +483,7 @@ This is the largest single feature. It changes the utility function, the solve a
 | 5 | #4 | Schooling phase and children | Low-Medium |
 | 6 | #8, #10, #9 | Public capital, public investment, SOE/sovereign debt | Medium-High |
 | 7 | #18, #19 | Pension trust fund, govt production | Low priority |
+| 8 | σ_α | Permanent productivity fixed effect (`n_alpha=5`); first feature to add a state variable | Medium-High |
 
 ---
 
