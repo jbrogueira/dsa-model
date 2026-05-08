@@ -29,10 +29,14 @@ _PANEL_MEANS_IDX = (0, 1, 5, 11, 12, 13, 14, 7, 16, 10, 20)
 
 
 def _panel_to_age_means(panel_data):
-    """Reduce a raw 21-tuple (or legacy 19-tuple) of (T, n) simulation arrays to an
-    11-tuple of (T,) per-age means.  Memory-efficient: intermediate (T, n) slices are
-    never retained after the mean is taken."""
-    if len(panel_data) == 21:
+    """Reduce a raw 21- or 22-tuple (or legacy 19-tuple) of (T, n) simulation arrays
+    to an 11-tuple of (T,) per-age means.  Memory-efficient: intermediate (T, n)
+    slices are never retained after the mean is taken.
+
+    The 22-tuple variant (Phase 8) appends ``alpha_idx_sim`` after ``bequest_sim``;
+    the per-age means we use here index into the panel by position and never reach
+    that trailing element, so the length-22 case reduces identically to length-21."""
+    if len(panel_data) in (21, 22):
         return tuple(np.mean(panel_data[i], axis=1) for i in _PANEL_MEANS_IDX)
     elif len(panel_data) >= 19:
         # legacy: no alive_sim / bequest_sim
@@ -1377,11 +1381,13 @@ class OLGTransition:
                      ui_mean, pension_mean, gov_health_mean,
                      bequest_mean) = (float(panel_data[k][age]) for k in range(11))
                 else:
-                    if len(panel_data) == 21:
+                    if len(panel_data) >= 21:
+                        # 21-tuple (pre Phase-8) and 22-tuple (Phase 8+, with
+                        # trailing alpha_idx_sim) handled identically here
                         (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                          ui_sim, m_sim, oop_m_sim, gov_m_sim,
                          tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                         pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                         pension_sim, retired_sim, l_sim, alive_sim, bequest_sim, *_) = panel_data
                     else:
                         (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                          ui_sim, m_sim, oop_m_sim, gov_m_sim,
@@ -1486,11 +1492,11 @@ class OLGTransition:
                          ui_m, pen_m, gh_m, beq_m) = (
                             float(panel_data[k][age]) for k in range(11))
                     else:
-                        if len(panel_data) == 21:
+                        if len(panel_data) >= 21:
                             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                              ui_sim, m_sim, oop_m_sim, gov_m_sim,
                              tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                             pension_sim, retired_sim, l_sim, alive_sim, bequest_sim) = panel_data
+                             pension_sim, retired_sim, l_sim, alive_sim, bequest_sim, *_) = panel_data
                         else:
                             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                              ui_sim, m_sim, oop_m_sim, gov_m_sim,

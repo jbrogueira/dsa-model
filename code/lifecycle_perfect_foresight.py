@@ -1055,6 +1055,15 @@ class LifecycleModelPerfectForesight:
         # avg_earnings tracking kept for diagnostics (not used for pension)
         avg_earnings_at_retirement = np.zeros(n_sim)
 
+        # Phase 8: draw permanent productivity fixed effect alpha for each agent.
+        # When n_alpha == 1 (FE off), alpha_idx is all zeros and alpha_mult is 1.0,
+        # which reduces to prior behavior because c_policy_alpha[0] aliases c_policy.
+        if self.n_alpha > 1:
+            alpha_idx_sim = np.random.choice(self.n_alpha, size=n_sim, p=self.alpha_probs)
+        else:
+            alpha_idx_sim = np.zeros(n_sim, dtype=int)
+        alpha_mult_per_agent = np.exp(self.alpha_grid[alpha_idx_sim])
+
         # Initial conditions
         edu_unemployment_rate = self.config.edu_params[self.config.education_type]['unemployment_rate']
         
@@ -1107,22 +1116,26 @@ class LifecycleModelPerfectForesight:
                 retired_sim[t_sim, i] = is_retired
                 
                 # Look up policy functions (before computing income quantities)
-                c_sim[t_sim, i] = self.c_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                # Phase 8: alpha-indexed policy lookup. With n_alpha=1 alpha_idx_sim
+                # is all zeros and *_policy_alpha[0] aliases the scalar policies.
+                a_idx = alpha_idx_sim[i]
+                c_sim[t_sim, i] = self.c_policy_alpha[a_idx, lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
                 # Retired agents supply zero labor; l_policy stores 1.0 as a convention
                 # (harmless economically since y=0 for retired), but output 0 for plots.
                 if is_retired:
                     l_sim[t_sim, i] = 0.0
                 else:
-                    l_sim[t_sim, i] = self.l_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                    l_sim[t_sim, i] = self.l_policy_alpha[a_idx, lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
 
+                a_mult = alpha_mult_per_agent[i]
                 if is_retired:
-                    # PENSION: career-average approximation
+                    # PENSION: career-average approximation, scaled by permanent FE
                     pension_replacement = self.pension_replacement_path[lifecycle_age]
                     lam = self.pension_avg_weight
                     pension_base = (lam * self.wage_age_profile[self.retirement_age - 1] * self.y_grid[i_y_last[i]]
                                     + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
-                    pension_val = pension_replacement * self.w_at_retirement * pension_base
-                    # Feature #11: minimum pension floor
+                    pension_val = pension_replacement * self.w_at_retirement * pension_base * a_mult
+                    # Feature #11: minimum pension floor (flat, not scaled by alpha)
                     pension_val = max(pension_val, self.pension_min_floor)
                     pension_sim[t_sim, i] = pension_val
 
@@ -1139,11 +1152,12 @@ class LifecycleModelPerfectForesight:
                     kappa_t = self.wage_age_profile[lifecycle_age]
 
                     if i_y[i] == 0:
-                        ui_sim[t_sim, i] = self.ui_replacement_rate * self.w_path[lifecycle_age] * kappa_t * self.y_grid[i_y_last[i]]
+                        ui_sim[t_sim, i] = self.ui_replacement_rate * self.w_path[lifecycle_age] * kappa_t * self.y_grid[i_y_last[i]] * a_mult
                     else:
                         ui_sim[t_sim, i] = 0.0
 
-                    gross_labor_income = self.w_path[lifecycle_age] * kappa_t * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
+                    # Phase 8: realized labor income includes permanent FE multiplier
+                    gross_labor_income = self.w_path[lifecycle_age] * kappa_t * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i] * a_mult
                     n_earnings_years[i] += 1
                     avg_earnings[i] = (avg_earnings[i] * (n_earnings_years[i] - 1) + gross_labor_income) / n_earnings_years[i]
 
@@ -1152,8 +1166,8 @@ class LifecycleModelPerfectForesight:
                 oop_m_sim[t_sim, i] = (1 - self.kappa) * m_sim[t_sim, i]
                 gov_m_sim[t_sim, i] = self.kappa * m_sim[t_sim, i]
 
-                # Effective labor income (wages + UI, used for aggregation)
-                wage_income = self.w_path[lifecycle_age] * self.wage_age_profile[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i]
+                # Effective labor income (wages + UI, used for aggregation) — also scales with alpha
+                wage_income = self.w_path[lifecycle_age] * self.wage_age_profile[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i] * a_mult
                 effective_y_sim[t_sim, i] = wage_income + ui_sim[t_sim, i]
 
                 # Tax calculations
@@ -1190,7 +1204,7 @@ class LifecycleModelPerfectForesight:
 
                 # --- State transitions to next period ---
                 if t_sim < T_sim - 1:
-                    i_a[i] = self.a_policy[lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                    i_a[i] = self.a_policy_alpha[alpha_idx_sim[i], lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
 
                     if not is_retired:
                         i_y_last[i] = i_y[i]
@@ -1199,10 +1213,15 @@ class LifecycleModelPerfectForesight:
 
                     i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
 
+        # Phase 8: broadcast per-agent alpha_idx into a (T_sim, n_sim) array so the
+        # output shape matches the rest of the panel (alpha is a permanent state,
+        # so the per-agent index is constant across time).
+        alpha_idx_panel = np.broadcast_to(alpha_idx_sim[None, :], (T_sim, n_sim)).astype(np.int32, copy=True)
+
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                pension_sim, retired_sim, l_sim, alive_sim, bequest_sim)
+                pension_sim, retired_sim, l_sim, alive_sim, bequest_sim, alpha_idx_panel)
     
     def simulate(self, T_sim=None, n_sim=10000, seed=42, parallel=False, n_jobs=None):
         """

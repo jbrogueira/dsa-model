@@ -1729,7 +1729,7 @@ class TestLaborSupply:
         model = LifecycleModelPerfectForesight(config, verbose=False)
         model.solve(verbose=False)
         result = model.simulate(n_sim=100, seed=42)
-        assert len(result) == 21, f"Expected 21-tuple, got {len(result)}-tuple"
+        assert len(result) in (21, 22), f"Expected 21- or 22-tuple, got {len(result)}-tuple"
         l_sim = result[18]
         assert l_sim.shape == result[0].shape, "l_sim shape should match a_sim shape"
         # With labor_supply=False, l_sim = 1.0 for working ages, 0.0 for retired
@@ -1857,8 +1857,10 @@ class TestLaborSupplyJAX:
         jax_results = jax_model.simulate(n_sim=n_sim, seed=42)
 
         # l_sim is at index 18
-        assert len(np_results) == 21, f"NumPy: expected 21-tuple, got {len(np_results)}"
-        assert len(jax_results) == 21, f"JAX: expected 21-tuple, got {len(jax_results)}"
+        # Phase 8.3 added alpha_idx_sim → NumPy now returns 22-tuple.
+        # JAX backend still returns 21-tuple until Phase 8.5 lands.
+        assert len(np_results) in (21, 22), f"NumPy: expected 21- or 22-tuple, got {len(np_results)}"
+        assert len(jax_results) in (21, 22), f"JAX: expected 21- or 22-tuple, got {len(jax_results)}"
 
         np_l = np_results[18]
         jax_l = jax_results[18]
@@ -2075,7 +2077,7 @@ class TestSimulationMortality:
         model.solve(verbose=False)
         n_sim = 200
         result = model.simulate(n_sim=n_sim, seed=42)
-        assert len(result) == 21
+        assert len(result) in (21, 22)
         alive_sim = result[19]
         T_sim = 10 - 0  # T - current_age
         assert alive_sim.shape == (T_sim, n_sim), \
