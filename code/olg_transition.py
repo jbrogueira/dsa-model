@@ -488,6 +488,13 @@ class OLGTransition:
                 model.a_policy = np.asarray(a_pol_batch[ci])
                 model.c_policy = np.asarray(c_pol_batch[ci])
                 model.l_policy = np.asarray(l_pol_batch[ci])
+                # Phase 8: simulate paths read 6-D policies. With the batched
+                # solve restricted to n_alpha=1 (alpha_mult=1.0), the alpha-indexed
+                # arrays are just the scalar policies wrapped on a singleton axis.
+                model.V_alpha = model.V[None, ...]
+                model.a_policy_alpha = model.a_policy[None, ...]
+                model.c_policy_alpha = model.c_policy[None, ...]
+                model.l_policy_alpha = model.l_policy[None, ...]
 
     def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False):
         """Batched simulation of all cohorts in one vmapped XLA call per education type."""
@@ -528,11 +535,19 @@ class OLGTransition:
                     self._stationary_dist_cache[edu_type] = jnp.array(stationary_dist)
             stationary = self._stationary_dist_cache[edu_type]
 
-            # Stack per-cohort policies on CPU; upload per chunk during simulation
-            # to avoid holding all 119 cohorts' policies on GPU simultaneously.
-            a_policies = np.stack([np.asarray(m.a_policy) for m in model_list])
-            c_policies = np.stack([np.asarray(m.c_policy) for m in model_list])
-            l_policies = np.stack([np.asarray(m.l_policy) for m in model_list])
+            # Stack per-cohort 6-D policies on CPU; upload per chunk during
+            # simulation to avoid holding all cohorts' policies on GPU at once.
+            # If a_policy_alpha is missing (older code path), wrap the 5-D scalar
+            # policy on a singleton leading axis to keep the shape uniform.
+            def _as_alpha_indexed(m, attr_alpha, attr_scalar):
+                arr = getattr(m, attr_alpha, None)
+                if arr is None:
+                    arr = getattr(m, attr_scalar)[None, ...]
+                return np.asarray(arr)
+
+            a_policies = np.stack([_as_alpha_indexed(m, 'a_policy_alpha', 'a_policy') for m in model_list])
+            c_policies = np.stack([_as_alpha_indexed(m, 'c_policy_alpha', 'c_policy') for m in model_list])
+            l_policies = np.stack([_as_alpha_indexed(m, 'l_policy_alpha', 'l_policy') for m in model_list])
             w_paths = jnp.stack([m.w_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
             r_paths = jnp.stack([m.r_path for m in model_list])
@@ -616,6 +631,24 @@ class OLGTransition:
                     batch_keys, all_seeds_u32,
                 )
 
+            # Phase 8: per-cohort permanent-FE draws. With n_alpha=1 the draws
+            # collapse to zeros / ones and the leading singleton axis of the
+            # 6-D policies makes the simulation identical to the pre-Phase-8 path.
+            n_alpha = ref.n_alpha
+            if n_alpha > 1:
+                alpha_probs_jax = jnp.array(ref.alpha_probs)
+                alpha_idx_per_cohort = []
+                for ci, seed in enumerate(all_seeds_u32):
+                    fe_key = jax.random.PRNGKey(self._seed_u32(seed + 0x9E3779B1))
+                    alpha_idx_per_cohort.append(
+                        jax.random.choice(fe_key, n_alpha, shape=(n_sim,),
+                                          p=alpha_probs_jax).astype(jnp.int32)
+                    )
+                batch_alpha_idx = jnp.stack(alpha_idx_per_cohort)
+            else:
+                batch_alpha_idx = jnp.zeros((n_cohorts, n_sim), dtype=jnp.int32)
+            batch_alpha_mult = jnp.exp(jnp.array(ref.alpha_grid)[batch_alpha_idx])
+
             chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
             if verbose:
@@ -633,6 +666,7 @@ class OLGTransition:
                 batch_keys,
                 batch_i_a, batch_i_y, batch_i_h, batch_i_y_last,
                 batch_avg_earn, batch_n_years,
+                batch_alpha_idx, batch_alpha_mult,  # Phase 8 per-cohort FE arrays
             )
 
             for chunk_start in range(0, n_cohorts, chunk_size):
@@ -652,7 +686,8 @@ class OLGTransition:
                 (ca_pol, cc_pol, cl_pol,
                  cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                  ckeys,
-                 ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr) = (s(a) for a in per_cohort_arrs)
+                 ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
+                 calpha_idx, calpha_mult) = (s(a) for a in per_cohort_arrs)
 
                 chunk_results = _simulate_lifecycle_jax_batched(
                     ca_pol, cc_pol, cl_pol,
@@ -672,6 +707,7 @@ class OLGTransition:
                     ref.survival_probs,
                     ref.wage_age_profile,
                     ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
+                    calpha_idx, calpha_mult,
                 )
 
                 # Store only actual (non-padded) cohorts

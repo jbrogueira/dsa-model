@@ -627,12 +627,19 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     wage_age_profile=None,
                     pension_avg_weight=1.0,
                     mean_kappa_working=1.0,
-                    mean_y_employed=1.0):
+                    mean_y_employed=1.0,
+                    alpha_idx=0,
+                    alpha_mult=1.0):
     """
     Single time-step for one agent.
 
     carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive)
     t_data: (t_sim_idx, u_y, u_h, u_alive)
+
+    Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
+    [n_alpha, T, n_a, n_y, n_h, n_y]. The agent's permanent FE is captured by the
+    closed-over `alpha_idx` (slice into the leading axis) and `alpha_mult`
+    (= exp(alpha_grid[alpha_idx]), multiplies wage, UI, and pension wage component).
     """
     i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive = carry
     t_sim_idx, u_y, u_h, u_alive = t_data
@@ -641,10 +648,10 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     is_retired = lifecycle_age >= retirement_age
     is_last_step = (t_sim_idx == (T - current_age - 1))
 
-    # Look up policy
-    a_pol_val = a_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
-    c_pol_val = c_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
-    l_pol_val = l_policy[lifecycle_age, i_a, i_y, i_h, i_y_last]
+    # Look up policy on the agent's alpha slice
+    a_pol_val = a_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
+    c_pol_val = c_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
+    l_pol_val = l_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
 
     # Current state values
     a_val = a_grid[i_a]
@@ -655,27 +662,27 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     # Wage age profile
     kappa_wage_t = wage_age_profile[lifecycle_age]
 
-    # Pension with career-average approximation
+    # Pension with career-average approximation, scaled by permanent FE multiplier
     pension_replacement = pension_replacement_path[lifecycle_age]
     kappa_wage_ret = wage_age_profile[retirement_age - 1]
     pension_base = (pension_avg_weight * kappa_wage_ret * y_last_val
                     + (1 - pension_avg_weight) * mean_kappa_working * mean_y_employed)
-    pension_raw = pension_replacement * w_at_retirement * pension_base
+    pension_raw = pension_replacement * w_at_retirement * pension_base * alpha_mult
     pension_with_floor = jnp.maximum(pension_raw, pension_min_floor)
     pension = jnp.where(is_retired, pension_with_floor, 0.0)
 
-    # UI
+    # UI (scales with permanent FE)
     ui = jnp.where(
         (~is_retired) & (i_y == 0),
-        ui_replacement_rate * w_path[lifecycle_age] * kappa_wage_t * y_last_val,
+        ui_replacement_rate * w_path[lifecycle_age] * kappa_wage_t * y_last_val * alpha_mult,
         0.0,
     )
 
     # Employment
     employed = (~is_retired) & (i_y > 0)
 
-    # Effective income
-    wage_income = w_path[lifecycle_age] * kappa_wage_t * y_val * h_val * l_pol_val
+    # Effective income (scales with permanent FE)
+    wage_income = w_path[lifecycle_age] * kappa_wage_t * y_val * h_val * l_pol_val * alpha_mult
     effective_y = jnp.where(is_retired, 0.0, wage_income + ui)
 
     # Health expenditure — m_grid is (T, n_h) now
@@ -802,11 +809,21 @@ def simulate_lifecycle_jax(
     pension_avg_weight=1.0,
     mean_kappa_working=1.0,
     mean_y_employed=1.0,
+    alpha_idx_sim=None,
+    alpha_mult_sim=None,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
 
-    Returns tuple of 21 arrays, each shape (T_sim, n_sim).
+    Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
+    [n_alpha, T, n_a, n_y, n_h, n_y]. alpha_idx_sim (n_sim,) gives each
+    agent's permanent fixed-effect grid index; alpha_mult_sim (n_sim,) is
+    exp(alpha_grid[alpha_idx_sim]). When n_alpha=1 the leading axis of the
+    policies is a singleton, alpha_idx_sim is all zeros, and alpha_mult_sim
+    is all ones — recovering pre-Phase-8 behavior exactly.
+
+    Returns tuple of 22 arrays, each shape (T_sim, n_sim). The trailing
+    array is alpha_idx_sim broadcast to the panel shape.
     """
     T_sim = T - current_age
 
@@ -834,54 +851,68 @@ def simulate_lifecycle_jax(
     else:
         survival_probs_arr = jnp.asarray(survival_probs)
 
-    step_fn = partial(
-        _agent_step_jax,
-        a_policy=a_policy, c_policy=c_policy, l_policy=l_policy,
-        a_grid=a_grid, y_grid=y_grid, h_grid=h_grid, m_grid=m_grid,
-        P_y=P_y, P_h=P_h,
-        w_path=w_path, w_at_retirement=w_at_retirement,
-        tau_c_path=tau_c_path, tau_l_path=tau_l_path,
-        tau_p_path=tau_p_path, tau_k_path=tau_k_path,
-        r_path=r_path, pension_replacement_path=pension_replacement_path,
-        ui_replacement_rate=ui_replacement_rate, kappa=kappa,
-        retirement_age=retirement_age, T=T, current_age=current_age,
-        pension_min_floor=pension_min_floor,
-        tax_progressive=tax_progressive,
-        tax_kappa_hsv=tax_kappa_hsv,
-        tax_eta=tax_eta,
-        P_y_age_health=P_y_age_health,
-        P_y_4d=P_y_4d,
-        survival_probs=survival_probs_arr,
-        wage_age_profile=wage_age_profile,
-        pension_avg_weight=pension_avg_weight,
-        mean_kappa_working=mean_kappa_working,
-        mean_y_employed=mean_y_employed,
-    )
+    # Phase 8: per-agent FE arrays. Default to all-zero index / unit multiplier
+    # (n_alpha=1 case), which makes the 6-D policy lookup degenerate to the
+    # original 5-D lookup at index 0.
+    if alpha_idx_sim is None:
+        alpha_idx_sim = jnp.zeros(n_sim, dtype=jnp.int32)
+    if alpha_mult_sim is None:
+        alpha_mult_sim = jnp.ones(n_sim)
 
     initial_alive = jnp.ones(n_sim, dtype=jnp.bool_)
 
-    def simulate_one(init_state, u_y_seq, u_h_seq, u_alive_seq):
-        """Scan over T_sim steps for one agent."""
+    def simulate_one(init_state, alpha_idx_self, alpha_mult_self,
+                     u_y_seq, u_h_seq, u_alive_seq):
+        """Scan over T_sim steps for one agent. alpha_idx/alpha_mult are
+        per-agent constants captured into the step closure."""
+        step_fn = partial(
+            _agent_step_jax,
+            a_policy=a_policy, c_policy=c_policy, l_policy=l_policy,
+            a_grid=a_grid, y_grid=y_grid, h_grid=h_grid, m_grid=m_grid,
+            P_y=P_y, P_h=P_h,
+            w_path=w_path, w_at_retirement=w_at_retirement,
+            tau_c_path=tau_c_path, tau_l_path=tau_l_path,
+            tau_p_path=tau_p_path, tau_k_path=tau_k_path,
+            r_path=r_path, pension_replacement_path=pension_replacement_path,
+            ui_replacement_rate=ui_replacement_rate, kappa=kappa,
+            retirement_age=retirement_age, T=T, current_age=current_age,
+            pension_min_floor=pension_min_floor,
+            tax_progressive=tax_progressive,
+            tax_kappa_hsv=tax_kappa_hsv,
+            tax_eta=tax_eta,
+            P_y_age_health=P_y_age_health,
+            P_y_4d=P_y_4d,
+            survival_probs=survival_probs_arr,
+            wage_age_profile=wage_age_profile,
+            pension_avg_weight=pension_avg_weight,
+            mean_kappa_working=mean_kappa_working,
+            mean_y_employed=mean_y_employed,
+            alpha_idx=alpha_idx_self,
+            alpha_mult=alpha_mult_self,
+        )
         xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
         return outputs
 
     # vmap across n_sim agents
-    # init_states is a tuple of (n_sim,) arrays — vmap axis 0
-    # u_y_all, u_h_all, u_alive_all are (T_sim, n_sim) — vmap axis 1 (agent dimension)
+    # init_states: tuple of (n_sim,) arrays — axis 0
+    # alpha_idx_sim, alpha_mult_sim: (n_sim,) — axis 0
+    # u_y_all, u_h_all, u_alive_all: (T_sim, n_sim) — axis 1
     init_states = (initial_i_a, initial_i_y, initial_i_h, initial_i_y_last,
                    initial_avg_earnings, initial_n_earnings_years, initial_alive)
 
     all_outputs = jax.vmap(
         simulate_one,
-        in_axes=(0, 1, 1, 1),
-    )(init_states, u_y_all, u_h_all, u_alive_all)
+        in_axes=(0, 0, 0, 1, 1, 1),
+    )(init_states, alpha_idx_sim, alpha_mult_sim, u_y_all, u_h_all, u_alive_all)
 
     # all_outputs is a tuple of 21 arrays, each (n_sim, T_sim) from vmap
     # Transpose each to (T_sim, n_sim) to match NumPy convention
-    result = tuple(out.T for out in all_outputs)
+    result_21 = tuple(out.T for out in all_outputs)
 
-    return result
+    # Phase 8: append alpha_idx_panel broadcast to (T_sim, n_sim)
+    alpha_idx_panel = jnp.broadcast_to(alpha_idx_sim[None, :], (T_sim, n_sim)).astype(jnp.int32)
+    return result_21 + (alpha_idx_panel,)
 
 
 _simulate_lifecycle_jax_jit = jax.jit(
@@ -910,6 +941,7 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None,                    # survival_probs (shared across cohorts)
         None,                    # wage_age_profile (shared)
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
+        0, 0,                    # alpha_idx_sim, alpha_mult_sim (per-cohort: each cohort has its own draw)
     )),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
@@ -1092,7 +1124,12 @@ class LifecycleModelJAX:
         """
         Simulate lifecycle paths.
 
-        Returns same 21-tuple as LifecycleModelPerfectForesight.simulate().
+        Returns the 22-tuple matching LifecycleModelPerfectForesight.simulate().
+        Phase 8: each agent draws alpha_idx from self.alpha_probs at t=0; the
+        6-D per-alpha policies (self.{a,c,l}_policy_alpha) and the implied
+        per-agent multiplier alpha_mult = exp(alpha_grid[alpha_idx]) flow into
+        simulate_lifecycle_jax. With n_alpha=1, alpha_idx is all zero,
+        alpha_mult is all one, and behavior matches pre-Phase-8 exactly.
         """
         if self.V is None:
             raise RuntimeError("Must call solve() before simulate().")
@@ -1145,10 +1182,23 @@ class LifecycleModelJAX:
             initial_avg_earnings = jnp.zeros(n_sim)
             initial_n_years = jnp.zeros(n_sim, dtype=jnp.float64)
 
-        # Convert policies to JAX for simulation
-        a_policy_jax = jnp.array(self.a_policy)
-        c_policy_jax = jnp.array(self.c_policy)
-        l_policy_jax = jnp.array(self.l_policy)
+        # Phase 8: per-agent permanent FE draw. Use the 6-D policies stored as
+        # self.{a,c,l}_policy_alpha (always present after solve()). With
+        # n_alpha=1 the leading axis is a singleton and the draws collapse to
+        # zeros / ones.
+        if self.n_alpha > 1:
+            key, subkey = jax.random.split(key)
+            alpha_idx_sim = jax.random.choice(
+                subkey, self.n_alpha, shape=(n_sim,), p=self.alpha_probs
+            ).astype(jnp.int32)
+        else:
+            alpha_idx_sim = jnp.zeros(n_sim, dtype=jnp.int32)
+        alpha_mult_sim = jnp.exp(self.alpha_grid[alpha_idx_sim])
+
+        # Convert per-alpha policies to JAX (shape (n_alpha, T, n_a, n_y, n_h, n_y))
+        a_policy_jax = jnp.array(self.a_policy_alpha)
+        c_policy_jax = jnp.array(self.c_policy_alpha)
+        l_policy_jax = jnp.array(self.l_policy_alpha)
 
         key, subkey = jax.random.split(key)
 
@@ -1178,9 +1228,11 @@ class LifecycleModelJAX:
             pension_avg_weight=self.pension_avg_weight,
             mean_kappa_working=self.mean_kappa_working,
             mean_y_employed=self.mean_y_employed,
+            alpha_idx_sim=alpha_idx_sim,
+            alpha_mult_sim=alpha_mult_sim,
         )
 
-        # Convert all outputs to numpy arrays
+        # Convert all outputs to numpy arrays (now 22-tuple including alpha_idx_panel)
         return tuple(np.asarray(x) for x in result)
 
 
