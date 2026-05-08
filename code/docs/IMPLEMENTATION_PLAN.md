@@ -21,11 +21,11 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 5 | #4 | **Done** |
 | 6 | #8, #10, #9 | **Done** |
 | 7 | #18, #19 | **Done** |
-| 8 | σ_α (post-baseline extension) | **Planned (2026-05-08)** |
+| 8 | σ_α (post-baseline extension) | **Done (2026-05-08)** |
 
 **Skipped:** #12 (tax application — keep code version), #13 (capital income tax — keep code version)
 **Merged:** #3 (human capital) absorbed into #5 (age-dependent productivity) — no new state variable
-**Post-baseline:** Phase 8 (σ_α permanent productivity fixed effect) is the first feature to add a new state variable; planned after the LIS-pinned baseline calibration (commit `c9b3f14`) revealed under-dispersion of within-education earnings.
+**Post-baseline:** Phase 8 (σ_α permanent productivity fixed effect) is the first feature to add a new state variable; landed on main 2026-05-08 in merge `4a9e4aa`. Calibration result: ν=73.97, β=0.959 (vs 74.05/0.954 in the no-FE baseline); within-education `Var(log y)` rises from 0.112 to 0.169, matching the LIS-MD identifying moment. Wealth-Gini residual unchanged.
 
 ---
 
@@ -369,7 +369,18 @@ This is the largest single feature. It changes the utility function, the solve a
 
 ## Phase 8: Permanent Productivity Fixed Effect (σ_α)
 
-**Status: Planned (added 2026-05-08).** First feature to add a new state variable to the lifecycle problem, breaking the original "no new state variables" constraint.
+**Status: Done (landed on `main` 2026-05-08, merge `4a9e4aa`).** First feature to add a new state variable to the lifecycle problem, breaking the original "no new state variables" constraint. Sub-phase commits: 8.1 `d96d525`, 8.2 `a556dd0`, 8.3 `704d75c`, 8.5a `b94779a`, 8.5b `ff8305e`, 8.6 `efe18e5`, 8.7 `9efbd4b`. (8.4 absorbed into 8.2/8.3 — pension scaling done in `_compute_budget`; bequests are α-agnostic.)
+
+**Final calibration outcome** (Greek baseline, `n_alpha=5`, σ_α from LIS):
+
+| | No FE | With σ_α |
+|---|---|---|
+| ν | 74.05 | 73.97 |
+| β | 0.954 | 0.959 |
+| `earnings_var_mean` | 0.112 | **0.169** |
+| Wealth Gini | 0.85 | 0.85 |
+
+The wealth-Gini residual (model 0.85 vs data 0.58) does not move with σ_α. Likely drivers are the discrete `z=0` unemployment state, the transfer floor mass point, the absence of a bequest motive, and limited initial wealth dispersion — diagnosed separately.
 
 ### Motivation
 
