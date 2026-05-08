@@ -418,6 +418,11 @@ class OLGTransition:
             n_cohorts = len(model_list)
             chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
+            # Phase 8: alpha_mult is shared across cohorts within one solve sweep.
+            # 8.5a only supports the n_alpha=1 batched path (alpha_mult=1.0). For
+            # n_alpha>1 we'd need to outer-loop over alpha here and stack results;
+            # see Phase 8.5b for the per-agent simulation side.
+            alpha_mult_jax = 1.0
             def _solve_chunk(w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c):
                 return _solve_lifecycle_jax_batched(
                     ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
@@ -435,6 +440,7 @@ class OLGTransition:
                     beq_c,
                     ref.wage_age_profile,
                     ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
+                    alpha_mult_jax,
                 )
 
             batched_arrays = (w_at_rets, r_paths, w_paths,
