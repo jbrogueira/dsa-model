@@ -8,6 +8,7 @@
     "n_a": 100,
     "n_y": 5,
     "n_h": 1,
+    "n_alpha": 5,
     "a_min": 0.0,
     "a_max": 200.0,
     "beta": 0.96,
@@ -48,9 +49,9 @@
   },
 
   "edu_params": {
-    "low":    {"mu_y": -0.1529, "unemployment_rate": 0.1645, "rho_y": 0.95, "sigma_y": 0.0538},
-    "medium": {"mu_y":  0.0000, "unemployment_rate": 0.1580, "rho_y": 0.95, "sigma_y": 0.0858},
-    "high":   {"mu_y":  0.2590, "unemployment_rate": 0.1005, "rho_y": 0.95, "sigma_y": 0.0750}
+    "low":    {"mu_y": -0.1529, "unemployment_rate": 0.1645, "rho_y": 0.95, "sigma_y": 0.0538, "sigma_alpha": 0.367},
+    "medium": {"mu_y":  0.0000, "unemployment_rate": 0.1580, "rho_y": 0.95, "sigma_y": 0.0858, "sigma_alpha": 0.259},
+    "high":   {"mu_y":  0.2590, "unemployment_rate": 0.1005, "rho_y": 0.95, "sigma_y": 0.0750, "sigma_alpha": 0.318}
   },
 
   "education_shares": {

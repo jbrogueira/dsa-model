@@ -37,7 +37,7 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# 1. SimPanel — named wrapper for the 21-tuple simulation output
+# 1. SimPanel — named wrapper for the 22-tuple simulation output
 # ---------------------------------------------------------------------------
 
 class SimPanel(NamedTuple):
@@ -62,10 +62,20 @@ class SimPanel(NamedTuple):
     l_sim: np.ndarray           # (T, n_sim) labor hours
     alive_sim: np.ndarray       # (T, n_sim) bool
     bequest_sim: np.ndarray     # (T, n_sim)
+    alpha_idx_sim: np.ndarray   # (T, n_sim) int — Phase 8 permanent FE grid index (constant across t)
 
 
 def wrap_sim_output(tup):
-    """Convert the raw 21-tuple from model.simulate() to a SimPanel."""
+    """Convert the raw 22-tuple from model.simulate() to a SimPanel.
+
+    The trailing alpha_idx_sim entry was added in Phase 8. For backward
+    compatibility with older callers that still emit a 21-tuple (e.g., the
+    JAX backend before Phase 8.5 lands), pad with zeros so the NamedTuple
+    constructor still succeeds — that's equivalent to n_alpha=1 (no FE).
+    """
+    if len(tup) == 21:
+        T_sim, n_sim = tup[0].shape
+        tup = tuple(tup) + (np.zeros((T_sim, n_sim), dtype=np.int32),)
     return SimPanel(*tup)
 
 
@@ -1006,10 +1016,11 @@ def build_lifecycle_config(raw, w=None):
                     edu_params[et].setdefault(field_name, p['initial'])
             else:
                 edu_params[parts[1]].setdefault(field_name, p['initial'])
-    # Ensure rho_y and sigma_y have defaults even without calibration section
+    # Ensure rho_y, sigma_y, and sigma_alpha have defaults even without calibration section
     for et in edu_params:
         edu_params[et].setdefault('rho_y', 0.95)
         edu_params[et].setdefault('sigma_y', 0.10)
+        edu_params[et].setdefault('sigma_alpha', 0.0)  # FE off by default
 
     kwargs = {}
     T = raw['model']['T']
