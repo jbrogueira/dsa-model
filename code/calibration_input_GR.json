@@ -1,6 +1,6 @@
 {
   "country": "GR",
-  "description": "Greece — provisional (income process from IT/ES proxies, LIS pending)",
+  "description": "Greece — income process from LIS Greek pool GR03-GR21 (n=76,255 emp_fyft); AR(1) baseline rho=0.95, sigma_y per-edu from MD fit on var(u) age profile",
 
   "model": {
     "T": 60,
@@ -48,9 +48,9 @@
   },
 
   "edu_params": {
-    "low":    {"mu_y": -0.10, "unemployment_rate": 0.1645, "rho_y": 0.8047, "sigma_y": 0.2282},
-    "medium": {"mu_y":  0.00, "unemployment_rate": 0.1580, "rho_y": 0.8047, "sigma_y": 0.2282},
-    "high":   {"mu_y":  0.10, "unemployment_rate": 0.1005, "rho_y": 0.8047, "sigma_y": 0.2282}
+    "low":    {"mu_y": -0.1529, "unemployment_rate": 0.1645, "rho_y": 0.95, "sigma_y": 0.0538},
+    "medium": {"mu_y":  0.0000, "unemployment_rate": 0.1580, "rho_y": 0.95, "sigma_y": 0.0858},
+    "high":   {"mu_y":  0.2590, "unemployment_rate": 0.1005, "rho_y": 0.95, "sigma_y": 0.0750}
   },
 
   "education_shares": {
