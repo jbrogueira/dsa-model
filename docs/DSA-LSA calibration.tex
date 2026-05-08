@@ -159,44 +159,137 @@ $\kappa$ & Govt.\ coverage rate of medical costs & OECD Health Statistics / Euro
 Parameter & Description & Source & Range \\
 \midrule
 Education shares & Population shares by education & Census / Eurostat & Country-specific \\
-$\mu_z^{(e)}$ & Mean log income by education $e$ & CPS / EU-SILC & Education-specific \\
-$u^{(e)}$ & Unemployment rate by education $e$ & CPS / BLS / Eurostat & Education-specific \\
+$\mu_z^{(e)}$ & Mean log income by education $e$ & EU-SILC via LIS, see \S\ref{sec:lis-income} & Education-specific \\
+$\rho_z^{(e)}$ & Income persistence by education $e$ & EU-SILC via LIS, see \S\ref{sec:lis-income} & Education-specific \\
+$\sigma_\eta^{(e)}$ & Innovation std.\ dev.\ by education $e$ & EU-SILC via LIS, see \S\ref{sec:lis-income} & Education-specific \\
+$u^{(e)}$ & Unemployment rate by education $e$ & Eurostat & Education-specific \\
 $g_N$ & Population growth rate & Demographic projections & $-0.01$--$0.02$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Internally Calibrated Parameters}
+\subsubsection{Income Process from LIS Greek EU-SILC}\label{sec:lis-income}
 
-These parameters are calibrated via moment matching using the Simulated Method of Moments (SMM).
+The AR(1) labor productivity process per education stratum is calibrated externally using Luxembourg Income Study (LIS) microdata for Greece, accessed via LISSY remote execution. Greek EU-SILC in LIS is cross-sectional only (no cross-wave personal identifier), so persistence cannot be identified from within-individual autocovariances; identification of $\sigma_\eta$ relies on the cross-sectional age profile of $\mathrm{Var}(\log y)$, with $\rho$ fixed at a baseline value and treated as a sensitivity parameter.
+
+\paragraph{Data.} 19 Greek EU-SILC waves pooled (GR03--GR21). Master sample after age 25--60 and valid-education filters: 222{,}246 observations. Primary specification (\textsf{emp\_fyft}) selects employees by $\textsf{pi11} > 0$ (positive wage income) and $\textsf{fyft} = 1$ (full-year-full-time). Top/bottom 0.5\% of $\log y$ trimmed within each (education, year) cell; residualization on year fixed effects within education stratum.\footnote{Greek EU-SILC populates LIS \textsf{status1} only with codes $\{100, 210, 220, 240\}$, with no $\{110, 120\}$ split, so a \textsf{status1}-based employee filter returns zero observations. The $\textsf{pi11} > 0$ criterion is the cross-country-robust alternative.}
 
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{llll}
+\caption{LIS Greek pool: sample composition by education (\textsf{emp\_fyft}, GR03--GR21).}
+\label{tab:lis-sample}
+\begin{tabular}{lccc}
 \toprule
-Parameter & Role & Identified by & Notes \\
+Education & $N$ obs & Mean $\log y$ & SD $\log y$ \\
 \midrule
-$\beta$ & Discount factor & Capital-output ratio $K/Y$ & GE parameter \\
-$Z$ & TFP level & Output/wage normalization & Production side \\
-$\rho_z^{(e)}$ & Income persistence & Consumption-income comovement & Per education \\
-$\sigma_z^{(e)}$ & Income shock variance & Wealth Gini, zero-wealth fraction & Per education \\
-$\lambda^{\text{find}}$ & Job finding rate & Unemployment duration & Shared \\
-$\bar{\lambda}^{\text{sep}}$ & Max separation rate & Unemployment rate & Cap on derived rate \\
-$P_s^{\text{young}}, P_s^{\text{mid}}, P_s^{\text{old}}$ & Health transitions & Health distribution by age & $3 \times n_s^2$ entries \\
-$a_0$ & Initial assets & Wealth at entry age & Scalar \\
+Low (ISCED 0--2)    & 11{,}718 & 9.489 & 0.432 \\
+Medium (ISCED 3--4) & 32{,}211 & 9.642 & 0.396 \\
+High (ISCED 5+)     & 32{,}326 & 9.901 & 0.443 \\
+\midrule
+Total              & 76{,}255 &       &       \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Variance profile.} Table~\ref{tab:lis-variance-profile} reports the cross-sectional variance of residualized log earnings, $\mathrm{Var}(u_j)$, by 5-year age band and education stratum. The age slope of $\mathrm{Var}(u_j)$ is the moment that identifies $\sigma_\eta$ (given $\rho$).
+
+\begin{table}[H]
+\centering
+\small
+\caption{$\mathrm{Var}(u_j)$ by 5-year age band and education (\textsf{emp\_fyft}).}
+\label{tab:lis-variance-profile}
+\begin{tabular}{lccc}
+\toprule
+Age band & Low & Medium & High \\
+\midrule
+25--29 & 0.160 & 0.091 & 0.115 \\
+30--34 & 0.136 & 0.102 & 0.129 \\
+35--39 & 0.140 & 0.115 & 0.143 \\
+40--44 & 0.178 & 0.124 & 0.155 \\
+45--49 & 0.166 & 0.136 & 0.152 \\
+50--54 & 0.157 & 0.143 & 0.150 \\
+55--59 & 0.168 & 0.148 & 0.158 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Estimation strategy.} Within each education stratum we fit
+\begin{equation}\label{eq:lis-md}
+\mathrm{Var}(u_j) = \sigma_\alpha^2 + \sigma_\eta^2 \cdot \frac{1 - \rho^{2j}}{1 - \rho^2},
+\end{equation}
+where $j = \text{age} - 25$ is years since the model anchor age. Estimation is by weighted nonlinear least squares (weights = cell sample sizes) on the 36 single-year-age cells per education. We report two specifications: (i) a joint fit of $(\rho, \sigma_\eta, \sigma_\alpha)$, and (ii) the calibration baseline with $\rho = 0.95$ and $(\sigma_\eta, \sigma_\alpha)$ estimated. Specification (ii) is the baseline: $\rho$ is weakly identified from cross-sectional moments alone, and the joint specification is reported as sensitivity. The permanent-component estimate $\sigma_\alpha$ is informational---the calibrated model has no fixed effect, so $\sigma_\alpha$ loads onto education-type mean dispersion via $\mu_z^{(e)}$.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Estimated AR(1) parameters by education, LIS Greek pool.}
+\label{tab:lis-estimates}
+\begin{tabular}{lccc}
+\toprule
+ & Low & Medium & High \\
+\midrule
+\multicolumn{4}{l}{\textit{Joint MD: $(\rho, \sigma_\eta, \sigma_\alpha)$}} \\
+\quad $\rho$ & 0.961 & 0.980 & 0.954 \\
+\quad $\sigma_\eta$ & 0.047 & 0.061 & 0.072 \\
+\quad $\sigma_\alpha$ & 0.370 & 0.280 & 0.320 \\
+\midrule
+\multicolumn{4}{l}{\textit{Fixed $\rho = 0.95$ (baseline): $(\sigma_\eta, \sigma_\alpha)$}} \\
+\quad $\sigma_\eta$ & 0.054 & 0.086 & 0.075 \\
+\quad $\sigma_\alpha$ & 0.367 & 0.259 & 0.318 \\
+\midrule
+$\mu_z^{(e)} - \mu_z^{(\text{med})}$ & $-0.153$ & $0.000$ & $+0.259$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Sensitivity of $\sigma_\eta^{(e)}$ to fixed $\rho$.}
+\label{tab:lis-rho-sensitivity}
+\begin{tabular}{lccc}
+\toprule
+$\rho$ & Low & Medium & High \\
+\midrule
+0.90 & 0.073 & 0.118 & 0.110 \\
+0.95 & 0.054 & 0.086 & 0.075 \\
+0.97 & 0.042 & 0.070 & 0.059 \\
+0.99 & 0.030 & 0.053 & 0.043 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Comparison with proxies.} Provisional values from Cooper, Haan \& Zhu (BIS WP 1102) for Italy/Spain are $\rho \approx 0.95$ and $\sigma_\eta \approx 0.13$. The Greek estimates at $\rho = 0.95$ are $\sigma_\eta \in \{0.054, 0.086, 0.075\}$---half or less of the Italy/Spain proxy. The flatter Greek age profile of $\mathrm{Var}(u_j)$ is consistent with stronger labour-market institutions (collective bargaining coverage, large public-sector share) and with selection into formal full-year employment among the \textsf{emp\_fyft} sample.
+
+\subsection{Internally Calibrated Parameters}\label{sec:internal-cal}
+
+The income process $(\rho_z^{(e)}, \sigma_\eta^{(e)}, \mu_z^{(e)})$ is pinned externally from LIS estimation (\S\ref{sec:lis-income}); job separation rates and per-education unemployment rates are likewise pinned from external data. Two parameters are calibrated internally via the Simulated Method of Moments (SMM).
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+Parameter & Role & Identified by \\
+\midrule
+$\beta$ & Discount factor & Wealth-to-income ratio $A/Y$ \\
+$\nu$ & Frisch labour-disutility scale & Average hours worked \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Notes.}
 \begin{itemize}[leftmargin=*]
-    \item The income persistence $\rho_z$ and shock variance $\sigma_z$ are defined per education type. They can be calibrated jointly (same for all types) or separately; joint calibration reduces dimensionality.
+    \item In the small-open-economy specification the interest rate $r$ is exogenous, so $\beta$ is identified by the household-saving target $A/Y$ rather than the closed-economy capital-output ratio $K/Y$.
+    \item TFP $A$ is set to a normalization ($A = 1$) and the wage is recovered from the firm's first-order condition; no calibration of $A$ or $Z$ is needed.
     \item The job separation rate is not a free parameter---it is derived from $u^{(e)}$ and $\lambda^{\text{find}}$: $\lambda^{\text{sep}} = \min\!\big(\frac{u}{1-u}\lambda^{\text{find}},\;\bar{\lambda}^{\text{sep}}\big)$.
-    \item Changing $Z$ or $\beta$ requires re-solving the full general equilibrium (price iteration).
+    \item Income-process parameters are excluded from the SMM problem because $\rho$ is weakly identified from cross-sectional moments alone (\S\ref{sec:lis-income}). Folding $\rho$ and $\sigma_\eta$ into the SMM loop would let wealth-distribution residuals contaminate parameters that have a clean external identification from LIS.
 \end{itemize}
 
-\subsection{Target Moments}
+\subsection{Target and Validation Moments}\label{sec:targets}
+
+The SMM problem targets two macro moments. The remaining moments listed below are reported as untargeted validation moments---they discipline the calibration ex post but are not in the objective function.
 
 \begin{table}[H]
 \centering
@@ -205,133 +298,78 @@ $a_0$ & Initial assets & Wealth at entry age & Scalar \\
 \toprule
 Moment & Data source & Identifies \\
 \midrule
-\multicolumn{3}{l}{\textit{Macro aggregates}} \\
-Capital-output ratio $K/Y$ & National accounts & $\beta$, $Z$ \\
-Labor share of income & National accounts & $\alpha$ (validation) \\
+\multicolumn{3}{l}{\textit{Targeted (in SMM objective)}} \\
+Wealth-to-income ratio $A/Y$ & National accounts & $\beta$ \\
+Average hours worked & Labour-force survey & $\nu$ \\
 \midrule
-\multicolumn{3}{l}{\textit{Wealth distribution}} \\
-Wealth Gini coefficient & SCF / HFCS & $\sigma_z$, $\underline{a}$ \\
-Fraction with zero/negative wealth & SCF / HFCS & $\underline{a}$, $\sigma_z$ \\
-Median wealth-to-income ratio & SCF / HFCS & $\beta$ \\
-Wealth-to-income by age & SCF / PSID / HFCS & $\beta$, income process \\
-Wealth-to-income by education & SCF / HFCS & $\mu_z^{(e)}$ (validation) \\
+\multicolumn{3}{l}{\textit{Validation: wealth and income distribution}} \\
+Wealth Gini coefficient & HFCS & income process, $\underline{a}$ \\
+Income Gini coefficient & EU-SILC & income process \\
+Fraction with zero/negative wealth & HFCS & $\underline{a}$, income process \\
+Median wealth-to-income ratio & HFCS & $\beta$ \\
+$p_{90}/p_{10}$ income & EU-SILC & income process \\
 \midrule
-\multicolumn{3}{l}{\textit{Income dynamics}} \\
-Consumption-income comovement & CEX / PSID / HBS & $\rho_z$ \\
-Earnings variance by age & PSID / EU-SILC & $\sigma_z$ \\
+\multicolumn{3}{l}{\textit{Validation: income process (LIS estimation, \S\ref{sec:lis-income})}} \\
+Mean $\mathrm{Var}(\log y)$ across ages & EU-SILC via LIS & $\sigma_\eta$, $\sigma_\alpha$ \\
+Slope of $\mathrm{Var}(\log y)$ in age & EU-SILC via LIS & $\sigma_\eta$, $\rho$ \\
 \midrule
-\multicolumn{3}{l}{\textit{Labor market}} \\
-Unemployment rate (aggregate) & CPS / BLS / Eurostat & $u^{(e)}$, $\lambda^{\text{find}}$ \\
-Average unemployment duration & CPS / Eurostat & $\lambda^{\text{find}}$ \\
-Unemployment rate by education & CPS / Eurostat & $u^{(e)}$ \\
+\multicolumn{3}{l}{\textit{Validation: labour market}} \\
+Aggregate unemployment rate & Eurostat & $u^{(e)}$, $\lambda^{\text{find}}$ \\
 \midrule
-\multicolumn{3}{l}{\textit{Health}} \\
-Fraction in poor health by age & MEPS / HRS / SHARE & Health transition matrices \\
-Medical spending by age & MEPS / Eurostat & $m(\cdot)$, $\kappa$ (validation) \\
-\midrule
-\multicolumn{3}{l}{\textit{Fiscal}} \\
-Government spending / GDP & NIPA / Eurostat & Pension/health (validation) \\
-Tax revenue / GDP & NIPA / Eurostat & Tax rates (validation) \\
+\multicolumn{3}{l}{\textit{Validation: fiscal}} \\
+Tax revenue / GDP & Eurostat & Tax rates (external) \\
+Government spending / GDP & Eurostat & Pension/health (external) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Notes.}
 \begin{itemize}[leftmargin=*]
-    \item The model's separation rate is not age-varying---it depends only on education type. Age-specific unemployment moments can validate the aggregate fit but cannot identify age-specific parameters without model extension.
-    \item The borrowing constraint $\underline{a}$ strongly affects wealth distribution moments. If $\underline{a} = 0$ is imposed externally, $\sigma_z$ bears more of the identification burden for wealth dispersion.
+    \item Wealth Gini and income Gini are kept as validation rather than targets because the income process is pinned externally from LIS, so a wealth-Gini residual cannot ``correct'' $\sigma_\eta$ or $\rho$ without contaminating the clean external identification (\S\ref{sec:internal-cal}).
+    \item The borrowing constraint $\underline{a}$ is set institutionally to zero; conditional on that, the wealth-distribution moments are predictions of the calibrated model rather than objects of fit.
 \end{itemize}
 
 \subsection{Calibration Algorithm}
 
-\subsubsection{Two-Stage Structure}
-
-We split calibration into two stages to reduce dimensionality and avoid unnecessary general equilibrium iterations.
-
-\paragraph{Stage A: Partial equilibrium (fixed prices).}
-Fix $r$ and $w$ at empirically reasonable values. Calibrate parameters that primarily affect individual behavior:
-
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{ll}
-\toprule
-Parameter & Target \\
-\midrule
-$\rho_z$, $\sigma_z$ & Earnings variance by age, consumption-income comovement \\
-$\lambda^{\text{find}}$ & Average unemployment duration \\
-$u^{(e)}$ & Unemployment rate by education \\
-$P_s$ matrices & Fraction in poor health by age \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{Stage B: General equilibrium.}
-With Stage~A parameters fixed, calibrate GE parameters by iterating on market clearing:
-
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{ll}
-\toprule
-Parameter & Target \\
-\midrule
-$\beta$ & Capital-output ratio $K/Y$ \\
-$Z$ & Wage level normalization (or set $Z=1$ and target $w$) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
 \subsubsection{SMM Objective Function}
 
-The objective minimizes the distance between data and simulated moments:
-\begin{equation}
+With the income process and tax/transfer policy parameters pinned externally (\S\ref{sec:lis-income}), and with the interest rate $r$ exogenous in the small-open-economy specification, the calibration reduces to a two-parameter SMM problem in $\theta = (\beta, \nu)$:
+\begin{equation}\label{eq:smm-objective}
 Q(\theta) = \big[m^{\text{data}} - m^{\text{model}}(\theta)\big]'\, W\, \big[m^{\text{data}} - m^{\text{model}}(\theta)\big],
 \end{equation}
-where $m^{\text{data}}$ is the vector of empirical target moments, $m^{\text{model}}(\theta)$ collects the corresponding simulated moments at parameter vector $\theta$, and $W$ is a weighting matrix.
-
-\paragraph{Weighting matrix.}
-\begin{itemize}[leftmargin=*]
-    \item \textbf{Identity matrix} (equal weights): simple, robust, suitable for initial exploration.
-    \item \textbf{Diagonal of inverse variances}: weights moments by precision of data estimates.
-    \item \textbf{Optimal (two-step)}: use first-stage identity estimates to compute the optimal $W$ from the simulated moment covariance matrix.
-\end{itemize}
-We start with diagonal weighting and move to the two-step optimal weighting matrix if needed.
+with target vector $m^{\text{data}} = (A/Y,\, \overline{h})$ and identity weighting matrix $W$. There is no GE iteration: the wage is recovered from the firm's first-order condition once $r$ is given, and household saving (and hence $A/Y$) is matched by varying $\beta$ directly.
 
 \subsubsection{Optimizer}
 
 We use derivative-free methods, as the objective is noisy (simulation-based) and non-smooth (grid search in the inner loop):
-\begin{enumerate}
-    \item \textbf{Nelder--Mead simplex} for Stage~A (moderate dimensionality).
-    \item \textbf{Brent's method} or bisection for Stage~B (1--2 parameters).
-\end{enumerate}
-For Stage~B, the GE loop provides a natural fixed-point iteration: guess $\beta$, solve all lifecycle problems, simulate, aggregate $K$ and $L$, compute new prices, and check $K/Y$. Bisect on $\beta$ until the target is matched.
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Nelder--Mead simplex} on logit-transformed bounded parameters is the default for the two-parameter problem.
+    \item \textbf{Differential evolution} followed by Nelder--Mead polishing is available as a global-search option for sensitivity exercises.
+\end{itemize}
 
 \subsubsection{Simulation Requirements}
 
 \begin{itemize}[leftmargin=*]
-    \item Use $n_{\text{sim}} \geq 10{,}000$ agents per education type to reduce simulation noise.
-    \item Fix the random seed across objective function evaluations for a smooth optimization landscape.
-    \item Discard initial periods as burn-in if agents start from non-ergodic initial conditions.
+    \item $n_{\text{sim}} = 10{,}000$ agents per education type.
+    \item Random seeds are fixed across objective evaluations to keep the optimization landscape smooth.
+    \item Lifecycle solution and simulation use the JAX backend; aggregation runs on the NumPy/Numba path.
 \end{itemize}
 
 \subsubsection{Convergence Criteria}
 
 \begin{itemize}[leftmargin=*]
-    \item Stage~A: $Q(\theta) < \text{tol}$ or parameter changes $< 10^{-5}$ across iterations.
-    \item Stage~B: $|K/Y_{\text{model}} - K/Y_{\text{target}}| < 0.01$ (1\% tolerance).
-    \item Full convergence: all target moments within 5\% of data values, or within 2 standard errors of data estimates.
+    \item $Q(\theta) < \text{tol}$ or parameter changes $< 10^{-5}$ across simplex iterations.
+    \item Each targeted moment within 5\% of its data value at the optimum, or within 2 standard errors of the data estimate.
 \end{itemize}
 
 \subsubsection{Practical Workflow}
 
 \begin{enumerate}
-    \item Set externally calibrated parameters (Step~1) from data.
-    \item Run Stage~A calibration with fixed prices.
-    \item Validate Stage~A: check that simulated income dynamics, unemployment rates, and health distributions match data.
-    \item Run Stage~B GE calibration.
-    \item Validate Stage~B: check fiscal moments (tax revenue/GDP, spending/GDP) as untargeted predictions.
-    \item Sensitivity analysis: vary $\sigma$, $\underline{a}$, key tax rates to check robustness.
+    \item Fix externally calibrated parameters from country-level data: tax/transfer rates, demographics, education shares, health-expenditure shares.
+    \item Estimate the AR(1) income process per education stratum from LIS Greek EU-SILC by minimum distance on the cross-sectional variance profile (\S\ref{sec:lis-income}); write $(\rho_z^{(e)}, \sigma_\eta^{(e)}, \mu_z^{(e)})$ into the model configuration.
+    \item Run SMM on $(\beta, \nu)$ against $(A/Y,\, \overline{h})$ using the JAX backend.
+    \item Report untargeted validation moments: wealth Gini, income Gini, $p_{90}/p_{10}$, mean and slope of $\mathrm{Var}(\log y)$ by age, fiscal ratios.
+    \item Sensitivity analysis: vary the LIS-baseline $\rho$ over $\{0.90, 0.95, 0.97, 0.99\}$ (Table~\ref{tab:lis-rho-sensitivity}) and re-run the SMM step; vary risk aversion $\sigma$ and the borrowing constraint $\underline{a}$ to check robustness of the validation moments.
 \end{enumerate}
 
 \subsection{Missing Model Features (Implementation To-Do)}
