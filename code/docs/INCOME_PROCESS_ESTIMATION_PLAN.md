@@ -149,8 +149,8 @@ Age × education cells are empty for `emp_fyft` and `selfemp` because the IT pub
 2. Confirm output format matches LIS aggregate-only rules.
 3. Submit the .do file to LISSY targeting Greek datasets (pool GR03-GR21 to maximize sample per age × education cell).
 4. Run `02_estimate_ar1.py` on the returned LISSY output.
-5. Update `calibration_input_GR.json` with the estimates.
-6. Rerun calibration: `python calibrate.py --config calibration_input_GR.json --backend jax`.
+5. Write the per-education estimates into `calibration_input_GR.json` under `edu_params.<e>.rho_y`, `edu_params.<e>.sigma_y`, `edu_params.<e>.mu_y`. These fields are not in `calibration.params` — they are inputs, not free SMM parameters.
+6. Rerun calibration: `python calibrate.py --config calibration_input_GR.json --backend jax`. SMM operates only on the parameters listed in `calibration.params` (currently `nu`, `beta`).
 7. Re-validate fiscal experiments: `python run_fiscal_figures.py --config calibration_input_GR.json --shock G`.
 
 ## Validation
@@ -158,7 +158,7 @@ Age × education cells are empty for `emp_fyft` and `selfemp` because the IT pub
 - **Sample-size check.** Reject any age × education cell with `n < 30` raw observations. Smooth the profile by 5-year age bands when single-year cells are sparse.
 - **Cross-wave consistency.** Plot `Var(log pi11)` by age separately by wave. If the profile shifts substantially across waves, suspect a measurement-protocol break and pool only consistent waves.
 - **Italy benchmark.** Run the same pipeline on `data/it20ip.dta` and compare against the Cooper-Haan-Zhu Italian estimates (ρ ≈ 0.95, σ_η ≈ 0.13). Discrepancies indicate sample-selection or specification problems before going to Greece.
-- **Internal consistency with SMM.** After updating `calibration_input_GR.json`, the SMM target "wealth Gini" should remain achievable — large jumps in implied σ_z relative to current calibration warrant a separate review.
+- **Internal consistency with SMM.** After updating `calibration_input_GR.json`, the model-implied `wealth_gini` and `income_gini` (now untargeted validation moments) should remain in a reasonable neighborhood of the data values (0.58 / 0.318). Large deviations relative to the current provisional calibration warrant a separate review of the income process specification before continuing.
 
 ## Output Deliverables
 
@@ -171,7 +171,15 @@ For each education stratum `e ∈ {low, medium, high}`:
 | `σ_α^(e)` | MD on age profile, fixed ρ = 0.95 | Validation only — model has no fixed effect |
 | `ρ_z^(e)` | Fixed at 0.95 | Sensitivity range: {0.90, 0.95, 0.97, 0.99} |
 
-Written into `calibration_input_GR.json` under the existing per-education fields.
+Written directly into `calibration_input_GR.json` under the per-education fields `edu_params.<e>.rho_y`, `edu_params.<e>.sigma_y`, `edu_params.<e>.mu_y`.
+
+## Integration with SMM Calibration
+
+Income process parameters are **pinned externally** from the LIS estimation, not calibrated internally. The SMM problem in `calibrate.py` does not include `rho_y` or `sigma_y` in `calibration.params`, and `wealth_gini` and `income_gini` are not SMM targets — they are reported as untargeted validation moments alongside the calibration output.
+
+Rationale: ρ is weakly identified from cross-sectional moments alone, and σ_η is identified by the age profile of `Var(log earnings)`, not by wealth-distribution moments. Folding ρ and σ into the SMM loop would let wealth-Gini residuals contaminate parameters that have a clean external identification.
+
+After the LIS values are written into the JSON, the SMM problem reduces to free parameters that are not pinned by external data — currently `nu` (Frisch disutility scale) and `beta` (discount factor in SOE), against `average_hours` and `A/Y` respectively.
 
 ## Open Issues
 

@@ -298,6 +298,10 @@ class CalibrationSpec:
     w: float = 1.0
     age_weights: Optional[np.ndarray] = None  # (T,) stationary age distribution
     backend: str = 'numpy'  # 'numpy' or 'jax'
+    production: dict = field(default_factory=lambda: {
+        'alpha': 0.33, 'delta': 0.07, 'A_tfp': 1.0,
+        'K_g': 0.0, 'eta_g': 0.0, 'K_over_L': None,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +510,111 @@ def _moment_mean_consumption(panels, spec):
     return float(np.sum(vals * weights) / np.sum(weights))
 
 
+def _compute_ss_aggregates(panels, spec):
+    """Age-weighted steady-state aggregates pooled across education types.
+
+    Same convention as compute_fiscal_ratios: per-period cross-sectional means
+    among alive, weighted by education share and stationary age weights, summed
+    over ages. Returns dict with keys for income components, taxes, transfers,
+    plus L, K_domestic, Y derived from production primitives in spec.production.
+    """
+    T = spec.base_config.T
+    aw = spec.age_weights if spec.age_weights is not None else np.ones(T) / T
+
+    keys = ['labor_income', 'consumption', 'assets', 'pension', 'ui',
+            'oop_health', 'gov_health', 'tax_c', 'tax_l', 'tax_p', 'tax_k']
+    agg = {k: 0.0 for k in keys}
+    for edu, panel in panels.items():
+        share = spec.education_shares[edu]
+        alive = panel.alive_sim.astype(bool)
+        for t in range(T):
+            a_t = alive[t]
+            if not np.any(a_t):
+                continue
+            wt = share * aw[t]
+            agg['labor_income'] += wt * float(np.mean(panel.effective_y_sim[t, a_t]))
+            agg['consumption']  += wt * float(np.mean(panel.c_sim[t, a_t]))
+            agg['assets']       += wt * float(np.mean(panel.a_sim[t, a_t]))
+            agg['pension']      += wt * float(np.mean(panel.pension_sim[t, a_t]))
+            agg['ui']           += wt * float(np.mean(panel.ui_sim[t, a_t]))
+            agg['oop_health']   += wt * float(np.mean(panel.oop_m_sim[t, a_t]))
+            agg['gov_health']   += wt * float(np.mean(panel.gov_m_sim[t, a_t]))
+            agg['tax_c']        += wt * float(np.mean(panel.tax_c_sim[t, a_t]))
+            agg['tax_l']        += wt * float(np.mean(panel.tax_l_sim[t, a_t]))
+            agg['tax_p']        += wt * float(np.mean(panel.tax_p_sim[t, a_t]))
+            agg['tax_k']        += wt * float(np.mean(panel.tax_k_sim[t, a_t]))
+
+    prod = spec.production or {}
+    alpha = prod.get('alpha', 0.33)
+    A_tfp = prod.get('A_tfp', 1.0)
+    K_g = prod.get('K_g', 0.0)
+    eta_g = prod.get('eta_g', 0.0)
+    K_g_factor = K_g ** eta_g if (K_g > 0 and eta_g > 0) else 1.0
+
+    L = agg['labor_income'] / spec.w if spec.w > 0 else 0.0
+    K_over_L = prod.get('K_over_L') or 0.0
+    K_domestic = K_over_L * L
+    Y = A_tfp * K_g_factor * K_domestic ** alpha * L ** (1.0 - alpha) if L > 0 else 0.0
+
+    out = dict(agg)
+    out['L'] = L
+    out['K_domestic'] = K_domestic
+    out['Y'] = Y
+    return out
+
+
+def _moment_A_over_Y(panels, spec):
+    """Aggregate household assets divided by SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['assets'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
+def _moment_K_over_Y(panels, spec):
+    """Domestic capital (firm-FOC pinned) divided by SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['K_domestic'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
+def _moment_C_over_Y(panels, spec):
+    """Aggregate consumption divided by SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['consumption'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
+def _moment_labor_share(panels, spec):
+    """Labor share w*L/Y. In Cobb-Douglas this pins mechanically to 1-alpha."""
+    agg = _compute_ss_aggregates(panels, spec)
+    if agg['Y'] <= 0:
+        return 0.0
+    return spec.w * agg['L'] / agg['Y']
+
+
+def _moment_tax_revenue_over_Y(panels, spec):
+    """Total tax revenue (c + l + p + k) divided by SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    if agg['Y'] <= 0:
+        return 0.0
+    return (agg['tax_c'] + agg['tax_l'] + agg['tax_p'] + agg['tax_k']) / agg['Y']
+
+
+def _moment_pensions_over_Y(panels, spec):
+    """Aggregate pension expenditure / SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['pension'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
+def _moment_ui_over_Y(panels, spec):
+    """Aggregate UI expenditure / SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['ui'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
+def _moment_health_gov_over_Y(panels, spec):
+    """Government share of health expenditure / SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['gov_health'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
 MOMENT_DISPATCH = {
     'wealth_gini': _moment_wealth_gini,
     'zero_wealth_fraction': _moment_zero_wealth_fraction,
@@ -520,6 +629,14 @@ MOMENT_DISPATCH = {
     'median_wealth_to_income': _moment_median_wealth_to_income,
     'p90_p10_income': _moment_p90_p10_income,
     'mean_consumption': _moment_mean_consumption,
+    'A_over_Y': _moment_A_over_Y,
+    'K_over_Y': _moment_K_over_Y,
+    'C_over_Y': _moment_C_over_Y,
+    'labor_share': _moment_labor_share,
+    'tax_revenue_over_Y': _moment_tax_revenue_over_Y,
+    'pensions_over_Y': _moment_pensions_over_Y,
+    'ui_over_Y': _moment_ui_over_Y,
+    'health_over_Y': _moment_health_gov_over_Y,
 }
 
 
@@ -838,6 +955,15 @@ def load_config(path):
     moments = [TargetMoment(**m) for m in raw['calibration']['targets']]
 
     sim = raw.get('simulation', {})
+    prod = raw.get('production', {})
+    production = {
+        'alpha': prod.get('alpha', 0.33),
+        'delta': prod.get('delta', 0.07),
+        'A_tfp': prod.get('A_tfp', 1.0),
+        'K_g': prod.get('K_g', 0.0),
+        'eta_g': prod.get('eta_g', 0.0),
+        'K_over_L': eq_prices.get('K_over_L'),
+    }
     spec = CalibrationSpec(
         params=params,
         moments=moments,
@@ -849,6 +975,7 @@ def load_config(path):
         w=w,
         age_weights=age_weights,
         backend=sim.get('backend', 'numpy'),
+        production=production,
     )
     return {'spec': spec, 'config_data': raw, 'eq_prices': eq_prices,
             'age_weights': age_weights}

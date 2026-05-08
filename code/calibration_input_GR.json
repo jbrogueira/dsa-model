@@ -101,25 +101,24 @@
 
   "calibration": {
     "params": [
-      {"name": "rho_y",   "path": "edu_params.*.rho_y",   "lower": 0.80, "upper": 0.995, "initial": 0.8047},
-      {"name": "sigma_y", "path": "edu_params.*.sigma_y", "lower": 0.005, "upper": 0.30, "initial": 0.2282},
-      {"name": "nu",      "path": "nu",                   "lower": 0.1,  "upper": 200.0, "initial": 68.35}
+      {"name": "nu",   "path": "nu",   "lower": 0.1,  "upper": 200.0, "initial": 68.35},
+      {"name": "beta", "path": "beta", "lower": 0.90, "upper": 0.999, "initial": 0.96}
     ],
     "targets": [
-      {"name": "wealth_gini",  "value": 0.58,  "weight": 1.0, "compute_key": "wealth_gini"},
-      {"name": "income_gini",  "value": 0.318, "weight": 1.0, "compute_key": "income_gini"},
-      {"name": "average_hours","value": 0.41,  "weight": 1.0, "compute_key": "average_hours"}
+      {"name": "average_hours", "value": 0.41, "weight": 1.0, "compute_key": "average_hours"},
+      {"name": "A_over_Y",      "value": 4.0,  "weight": 1.0, "compute_key": "A_over_Y"}
     ]
   },
 
   "untargeted": {
+    "wealth_gini": 0.58,
+    "income_gini": 0.318,
     "zero_wealth_fraction": 0.011,
     "unemployment_rate": 0.14,
     "p90_p10_income": 3.9,
     "earnings_var_mean": null,
     "earnings_var_slope": null,
     "consumption_gini": null,
-    "average_hours": 0.41,
     "mean_assets": null,
     "median_wealth_to_income": null
   },
