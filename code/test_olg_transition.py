@@ -2348,5 +2348,138 @@ class TestInitialAssetDistribution:
             "initial_asset_distribution=None should not change behavior"
 
 
+class TestFixedEffect:
+    """Phase 8: permanent productivity fixed effect (sigma_alpha)."""
+
+    def _base_config(self, sigma_alpha=0.0, n_alpha=1):
+        edu_params = {
+            'low':    {'mu_y': 0.05, 'sigma_y': 0.10, 'rho_y': 0.95,
+                       'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.10},
+            'medium': {'mu_y': 0.10, 'sigma_y': 0.10, 'rho_y': 0.95,
+                       'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.06},
+            'high':   {'mu_y': 0.12, 'sigma_y': 0.10, 'rho_y': 0.95,
+                       'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.03},
+        }
+        return LifecycleConfig(T=50, retirement_age=40, n_a=30,
+                               current_age=0, n_alpha=n_alpha,
+                               edu_params=edu_params)
+
+    def test_alpha_grid_off_by_default(self):
+        """Default config has n_alpha=1 and a degenerate {0.0} alpha grid."""
+        cfg = LifecycleConfig()
+        m = LifecycleModelPerfectForesight(cfg, verbose=False)
+        assert m.n_alpha == 1
+        assert np.allclose(m.alpha_grid, 0.0)
+        assert np.allclose(m.alpha_probs, 1.0)
+
+    def test_alpha_grid_gauss_hermite(self):
+        """With sigma_alpha>0 and n_alpha=5, alpha has zero mean and
+        variance exactly sigma_alpha^2."""
+        sigma = 0.30
+        cfg = self._base_config(sigma_alpha=sigma, n_alpha=5)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False)
+        assert m.n_alpha == 5
+        mean = float(np.dot(m.alpha_grid, m.alpha_probs))
+        var = float(np.dot(m.alpha_grid ** 2, m.alpha_probs))
+        assert abs(mean) < 1e-12
+        assert abs(var - sigma ** 2) < 1e-10
+        assert abs(m.alpha_probs.sum() - 1.0) < 1e-12
+
+    def test_n_alpha_1_no_op(self):
+        """n_alpha=1 with sigma_alpha=0 reproduces an identical V/policy
+        to a model built without the FE feature in mind."""
+        cfg = self._base_config(sigma_alpha=0.0, n_alpha=1)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False)
+        m.solve(verbose=False)
+        # Scalar policies alias the (singleton) per-alpha arrays
+        assert m.V_alpha.shape[0] == 1
+        assert np.array_equal(m.V, m.V_alpha[0])
+        assert np.array_equal(m.a_policy, m.a_policy_alpha[0])
+
+    def test_alpha_permanence(self):
+        """Each agent's alpha_idx is constant across all simulation periods."""
+        cfg = self._base_config(sigma_alpha=0.30, n_alpha=5)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False)
+        m.solve(verbose=False)
+        result = m.simulate(T_sim=50, n_sim=500, seed=7)
+        alpha_idx_panel = result[-1]
+        # Every column should be constant across time
+        assert np.all(alpha_idx_panel[0] == alpha_idx_panel[-1])
+        for t in range(alpha_idx_panel.shape[0]):
+            assert np.array_equal(alpha_idx_panel[t], alpha_idx_panel[0])
+
+    def test_wage_decomposition(self):
+        """For employed agents, effective_y / (w * kappa * y_state) equals
+        exp(alpha) within the agent's alpha bin."""
+        cfg = self._base_config(sigma_alpha=0.30, n_alpha=5)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False)
+        m.solve(verbose=False)
+        result = m.simulate(T_sim=50, n_sim=2000, seed=7)
+        y_state = result[2]
+        eff_y = result[5]
+        employed = result[6].astype(bool) & (y_state > 0)
+        alpha_idx = result[-1]
+        t = 10  # working age
+        kappa_t = float(m.wage_age_profile[t])
+        w_t = float(m.w_path[t])
+        for k in range(m.n_alpha):
+            mask = employed[t] & (alpha_idx[t] == k)
+            if mask.sum() < 5:
+                continue
+            ratio = (eff_y[t, mask] / (w_t * kappa_t * y_state[t, mask])).mean()
+            expected = float(np.exp(m.alpha_grid[k]))
+            assert abs(ratio - expected) < 1e-4, \
+                f"alpha[{k}]: ratio={ratio:.4f}, expected={expected:.4f}"
+
+    def test_alpha_frequency_matches_probs(self):
+        """At t=0, alpha_idx frequencies match alpha_probs (within sampling tol)."""
+        cfg = self._base_config(sigma_alpha=0.30, n_alpha=5)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False)
+        m.solve(verbose=False)
+        n_sim = 5000
+        result = m.simulate(T_sim=50, n_sim=n_sim, seed=7)
+        alpha_idx = result[-1][0]
+        empirical = np.bincount(alpha_idx, minlength=m.n_alpha) / n_sim
+        # 3 standard errors for a multinomial proportion: sqrt(p*(1-p)/n)
+        for k in range(m.n_alpha):
+            p = float(m.alpha_probs[k])
+            tol = 3 * np.sqrt(p * (1 - p) / n_sim)
+            assert abs(empirical[k] - p) < tol + 1e-3, \
+                f"alpha[{k}]: empirical={empirical[k]:.4f}, p={p:.4f}, tol={tol:.4f}"
+
+
+class TestFixedEffectJAX:
+    """Phase 8 cross-validation: NumPy and JAX agree on per-alpha policies."""
+
+    def _base_config(self, sigma_alpha=0.0, n_alpha=1):
+        edu_params = {
+            'low':    {'mu_y': 0.05, 'sigma_y': 0.10, 'rho_y': 0.95,
+                       'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.10},
+            'medium': {'mu_y': 0.10, 'sigma_y': 0.10, 'rho_y': 0.95,
+                       'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.06},
+            'high':   {'mu_y': 0.12, 'sigma_y': 0.10, 'rho_y': 0.95,
+                       'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.03},
+        }
+        return LifecycleConfig(T=50, retirement_age=40, n_a=30,
+                               current_age=0, n_alpha=n_alpha,
+                               edu_params=edu_params)
+
+    def test_solve_value_function_matches_numpy(self):
+        """V_alpha agrees between NumPy and JAX at every alpha index."""
+        try:
+            from lifecycle_jax import LifecycleModelJAX
+        except ImportError:
+            pytest.skip("JAX not available")
+        cfg = self._base_config(sigma_alpha=0.30, n_alpha=5)
+        m_np = LifecycleModelPerfectForesight(cfg, verbose=False)
+        m_np.solve(verbose=False)
+        m_jx = LifecycleModelJAX(cfg, verbose=False)
+        m_jx.solve(verbose=False)
+        assert m_np.V_alpha.shape == m_jx.V_alpha.shape
+        for k in range(m_np.n_alpha):
+            diff = np.abs(m_np.V_alpha[k] - m_jx.V_alpha[k]).max()
+            assert diff < 1e-6, f"V mismatch at alpha[{k}]: max diff = {diff:.2e}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
