@@ -10,9 +10,12 @@ Estimation strategy for the AR(1) labor productivity process by education type, 
 | Cross-sectional vs panel structure verified | cross-sectional only | 2026-05-06 |
 | `01_extract_moments.do` written | done | 2026-05-06 |
 | Local test on `data/it20ip.dta` | passed | 2026-05-06 |
-| `LOCAL_RUN = 0` set for LISSY submission | done | 2026-05-06 |
-| LISSY job submitted | pending | — |
-| `02_estimate_ar1.py` (MD second stage) | not started — write after LISSY output returns | — |
+| LISSY submission #1 (file output) | failed — output never delivered | 2026-05-07 |
+| LISSY submission #2 (`type` for echo) | rejected — `type` blacklisted | 2026-05-08 |
+| LISSY submission #3 (`status1 ∈ {110,120}` filter) | run completed but employee subsets empty (filter wrong for GR) | 2026-05-08 |
+| LISSY submission #4 (filter `pi11>0`) | **run completed; moments returned** | 2026-05-08 |
+| `code/data/lis/output/moments_GR_pooled.txt` saved | done (gitignored) | 2026-05-08 |
+| `02_estimate_ar1.py` (MD second stage) | not started | — |
 | `calibration_input_GR.json` updated | not started | — |
 
 ## Objective
@@ -38,30 +41,32 @@ for `e ∈ {low, medium, high}` corresponding to ISCED 0-2, 3-4, 5+.
 
 ## Variables
 
-From the LIS 2024 template:
+From the LIS 2024 template (populated status as observed in Greek pool, 222,246 obs):
 
-| Code | Description | Use |
-|------|-------------|-----|
-| `pid`, `hid`, `did`, `year`, `wave` | IDs | Stratification |
-| `pi11` | Wage income (employees) | **Primary earnings concept** |
-| `pi12` | Self-employment income | Diagnostic only; excluded from baseline |
-| `pilabour` | Total labor income | Robustness |
-| `educ` | Education, 3-category recode | **Maps to model's low/medium/high** |
-| `age` | Age in years | Primary age dimension |
-| `wexptl` | Years of total work experience | Alternative age dimension |
-| `status1` | Status in employment | Employee selection (`110`/`120`) |
-| `weeks`, `weeksft`, `hours1`, `fyft` | Hours/weeks worked | Full-year-full-time selection |
-| `pwgt` | Person weight | Survey weighting |
-| `grossnet` | Gross/net income flag | Verify gross consistently across waves |
+| Code | Description | Use | Greek pool status |
+|------|-------------|-----|-------------------|
+| `pid`, `hid`, `did`, `year`, `wave` | IDs | Stratification | populated |
+| `pi11` | Wage income (employees) | **Primary earnings concept** | populated |
+| `pi12` | Self-employment income | Diagnostic only; excluded from baseline | populated |
+| `pilabour` | Total labor income | Robustness | populated |
+| `educ` | Education, 3-category recode | **Maps to model's low/medium/high** | populated; only 1,808 invalid in master |
+| `age` | Age in years | Primary age dimension | populated |
+| `wexptl` | Years of total work experience | Alternative age dimension | GR20–GR21 only |
+| `status1` | Status in employment | Employee selection | only `{100, 210, 220, 240}`; **no `110`/`120`** — use `pi11 > 0` instead |
+| `emp` | LIS employed flag | Alternative employee filter | populated |
+| `emp_ilo` | ILO employed flag | — | **77.7% missing — do not use** |
+| `lfs` | Labour-force status | Validation | populated; clean unemployed/retired/inactive split |
+| `fyft` | Full-year-full-time | FYFT selection | populated; 47/53 split (real variation) |
+| `pwgt` | Person weight | Survey weighting | populated |
+| `grossnet` | Gross/net income flag | Verify across waves | switches from 200 (GR03–GR05) to 120 (GR06+) |
 
 ## Sample Selection
 
 1. Working-age 25-60 (avoids schooling and early retirement margins).
-2. Employees only: `status1 ∈ {110, 120}`. Self-employed excluded — labor/capital income mixing contaminates ρ.
-3. `pi11 > 0` (positive wage income).
-4. `fyft == 1` if available (full-year-full-time) for cleaner interpretation as a wage rate; else condition on `weeks ≥ 26` and `hours1 ≥ 30` as fallback.
-5. Drop top/bottom 0.5% of `log pi11` within each (education × wave) cell.
-6. Verify `grossnet` is constant (gross) across pooled waves; otherwise stratify or restrict.
+2. Employees identified by `pi11 > 0` (positive wage income). **Greek EU-SILC populates `status1` only with `{100, 210, 220, 240}` — no `110`/`120` split** — so a `status1`-based employee filter returns zero observations. `pi11 > 0` is the cleanest cross-country employee criterion.
+3. `fyft == 1` for the primary specification (full-year-full-time interpretation as wage rate). `fyft` is genuinely populated in Greek waves (47/53 split).
+4. Drop top/bottom 0.5% of `log pi11` within each (education × wave) cell.
+5. `grossnet` switched from 200 (gross only) in GR03–GR05 to 120 (mixed gross/net) from GR06 onward; year fixed effects in residualization absorb the level shift, but report robustness on post-2006 waves only.
 
 ## What Is Identifiable
 
@@ -117,13 +122,47 @@ code/data/lis/
 
 Three subsets reported per education stratum:
 
-- `emp_fyft` — employees (`status1 ∈ {110,120}`), `fyft==1`, `pi11>0`. Primary specification.
-- `emp_all` — employees, no `fyft` filter. Robustness.
-- `selfemp` — self-employed (`status1 ∈ {200,210,220,240}`), `pi12>0`. Diagnostic only, not used in AR(1) calibration.
+- `emp_fyft` — `pi11 > 0` AND `fyft == 1`. Primary specification. **N = 76,255 (Greek pool)**.
+- `emp_all` — `pi11 > 0`. Robustness (includes part-year/part-time). **N = 100,500**.
+- `selfemp` — self-employed (`status1 ∈ {200, 210, 220, 240}`), `pi12 > 0`. Diagnostic only, not used in AR(1) calibration. **N = 44,770**.
 
-Each subset writes six numbered blocks: `[1]` wave-level metadata + sample sizes (used to confirm `grossnet` consistency across pooled waves), `[2]` mean log earnings by education, `[3]` `var(u)` by single-year age × education (n ≥ 10), `[4]` `var(u)` by 5-year age band × education (n ≥ 30), `[5]` log-earnings percentiles by age band, `[6]` `var(u)` by experience band as robustness. All output is aggregated cell statistics with cell-size thresholds — LISSY-compatible (no individual-level data, no graphics).
+Each subset writes six numbered blocks: `[1]` wave-level metadata + sample sizes, `[2]` mean log earnings by education, `[3]` `var(u)` by single-year age × education (n ≥ 10), `[4]` `var(u)` by 5-year age band × education (n ≥ 30), `[5]` log-earnings percentiles by age band, `[6]` `var(u)` by experience band as robustness. The .do file also emits a one-time diagnostics block ([D1]–[D6]) tabulating `status1`, `emp`, `emp_ilo`, `lfs`, `fyft`, and `status1 × pi11>0` so future submissions know exactly which labour-force codes are populated.
+
+**LISSY operational notes (these are not obvious and cost three submissions to learn):**
+
+- Output is returned **only by email** to the LIS-registered address, not via the web portal.
+- LISSY blocks `type`, `file read`, `shell`, and similar file-touching commands. Use `display` for all output — `display` writes to the Stata log that LISSY mails back. `file open`/`file write` writes to the job's working directory and is discarded.
+- `levelsof` echoes its result to stdout — wrap in `quietly levelsof ...` to keep the listing clean.
 
 **`02_estimate_ar1.py`** [TODO — write after LISSY output returns]. Reads the moments file, runs WLS fit of the variance profile `Var(u_j) = σ_α² + σ_η²·(1−ρ^{2j})/(1−ρ²)` per education stratum, produces `(ρ, σ_η, σ_α, μ)` and writes `ar1_estimates_GR.json`. The values are then merged into `calibration_input_GR.json` under the existing `rho_y`, `sigma_y`, `mu_y` fields by education.
+
+## LISSY Greek Pool Results (2026-05-08)
+
+Pooled 19 Greek waves (GR03–GR21), master n=222,246 after age 25-60 + valid-educ filter. Output saved to `code/data/lis/output/moments_GR_pooled.txt` (gitignored).
+
+**Pooled mean log earnings by education (emp_fyft):**
+
+| Education | N | Mean log y | SD log y |
+|-----------|---|-----------|----------|
+| Low (ISCED 0-2) | 11,718 | 9.49 | 0.43 |
+| Medium (ISCED 3-4) | 32,211 | 9.64 | 0.40 |
+| High (ISCED 5+) | 32,326 | 9.90 | 0.44 |
+
+Education premium (high vs. low): 0.41 log points ≈ 51%.
+
+**Var(u) by 5-year age band (emp_fyft, year-FE residualized within education):**
+
+| Age band | educ=1 | educ=2 | educ=3 |
+|----------|--------|--------|--------|
+| 25-29 | 0.160 | 0.091 | 0.115 |
+| 30-34 | 0.136 | 0.102 | 0.129 |
+| 35-39 | 0.140 | 0.115 | 0.143 |
+| 40-44 | 0.178 | 0.124 | 0.155 |
+| 45-49 | 0.166 | 0.136 | 0.152 |
+| 50-54 | 0.157 | 0.143 | 0.150 |
+| 55-59 | 0.168 | 0.148 | 0.158 |
+
+**Pre-estimation read.** ΔVar(u) over 30 years is ~0.01–0.05 across education strata, much flatter than US/UK (typically 0.20+) and below Cooper-Haan-Zhu's Italy/Spain estimates. Implied σ_η is in the 0.05–0.10 range under ρ ≈ 0.95, well below the 0.13 proxy. The flatness likely reflects strong labour-market institutions (collective bargaining, large public-sector share) and selection into formal full-year employment. Final estimates pending Stage 2.
 
 ## Local Test Results (IT 2020 sample)
 
@@ -145,10 +184,10 @@ Age × education cells are empty for `emp_fyft` and `selfemp` because the IT pub
 
 ## Workflow
 
-1. Develop and test `01_extract_moments.do` against `data/it20ip.dta` (single-wave Italy 2020 LIS sample).
-2. Confirm output format matches LIS aggregate-only rules.
-3. Submit the .do file to LISSY targeting Greek datasets (pool GR03-GR21 to maximize sample per age × education cell).
-4. Run `02_estimate_ar1.py` on the returned LISSY output.
+1. ~~Develop and test `01_extract_moments.do` against `data/it20ip.dta`~~ — done 2026-05-06.
+2. ~~Confirm output format matches LIS aggregate-only rules~~ — done after three iterations (see Status table).
+3. ~~Submit to LISSY targeting Greek datasets~~ — done 2026-05-08; moments at `code/data/lis/output/moments_GR_pooled.txt`.
+4. **Next:** write `02_estimate_ar1.py` and run on `moments_GR_pooled.txt`.
 5. Write the per-education estimates into `calibration_input_GR.json` under `edu_params.<e>.rho_y`, `edu_params.<e>.sigma_y`, `edu_params.<e>.mu_y`. These fields are not in `calibration.params` — they are inputs, not free SMM parameters.
 6. Rerun calibration: `python calibrate.py --config calibration_input_GR.json --backend jax`. SMM operates only on the parameters listed in `calibration.params` (currently `nu`, `beta`).
 7. Re-validate fiscal experiments: `python run_fiscal_figures.py --config calibration_input_GR.json --shock G`.

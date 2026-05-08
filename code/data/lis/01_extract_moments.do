@@ -24,11 +24,9 @@ local LOCAL_RUN = 0
 if `LOCAL_RUN' == 1 {
     local datasets "it20"
     local local_path "../../../data"
-    local outname  "output/moments_it20.txt"
 }
 else {
     local datasets "gr03 gr04 gr05 gr06 gr07 gr08 gr09 gr10 gr11 gr12 gr13 gr14 gr15 gr16 gr17 gr18 gr19 gr20 gr21"
-    local outname  "moments_GR_pooled.txt"
 }
 
 local kvars "pid hid did dname year wave grossnet currency age sex pi11 pi12 pilabour educ educlev edyrs status1 lfs emp emp_ilo weeks weeksft hours1 fyft wexptl pwgt"
@@ -68,21 +66,44 @@ tempfile master
 save `master'
 
 *-----------------------------------------------------------
-* 3. Open output file + write header
+* 3. Header — emitted via display so it lands in the LISSY log
 *-----------------------------------------------------------
-capture file close fh
-file open fh using "`outname'", write replace text
+display "==== LIS income process moments ===="
+display "datasets: `datasets'"
+display "common filters: age 25-60, educ in {1,2,3}"
+display "subsets:"
+display "  emp_fyft = pi11>0 & fyft==1;                                  logy=log(pi11)"
+display "  emp_all  = pi11>0;                                            logy=log(pi11)"
+display "  selfemp  = self-employed (status1 in {200,210,220,240}) & pi12>0; logy=log(pi12)"
+display "trim: top/bottom 0.5% of logy within (educ,year)"
+display "residualization: logy on i.year FE, within education, weighted by pwgt"
+display ""
 
-file write fh "==== LIS income process moments ====" _n
-file write fh "datasets: `datasets'" _n
-file write fh "common filters: age 25-60, educ in {1,2,3}" _n
-file write fh "subsets:" _n
-file write fh "  emp_fyft = employees (status1 in {110,120}), fyft==1, pi11>0; logy=log(pi11)" _n
-file write fh "  emp_all  = employees (status1 in {110,120}), pi11>0;          logy=log(pi11)" _n
-file write fh "  selfemp  = self-employed (status1 in {200,210,220,240}), pi12>0; logy=log(pi12)" _n
-file write fh "trim: top/bottom 0.5% of logy within (educ,year)" _n
-file write fh "residualization: logy on i.year FE, within education, weighted by pwgt" _n
-file write fh _n
+*-----------------------------------------------------------
+* 3b. Diagnostic: tabulate labour-force / employment indicators
+*     so we can see which codes are populated in the pool
+*-----------------------------------------------------------
+display "==== Diagnostics: labour-force indicators in master ===="
+display "[D1] status1 (frequencies, including missing)"
+tabulate status1, missing
+display ""
+display "[D2] emp (LIS employed flag)"
+tabulate emp, missing
+display ""
+display "[D3] emp_ilo (ILO employed flag)"
+tabulate emp_ilo, missing
+display ""
+display "[D4] lfs (labour-force status)"
+tabulate lfs, missing
+display ""
+display "[D5] fyft (full-year-full-time flag)"
+tabulate fyft, missing
+display ""
+display "[D6] pi11>0 by status1 (cross-tab, missing included)"
+gen byte pi11_pos = (pi11 > 0 & !missing(pi11))
+tabulate status1 pi11_pos, missing
+drop pi11_pos
+display ""
 
 *-----------------------------------------------------------
 * 4. Loop over subsets
@@ -92,14 +113,12 @@ foreach S in emp_fyft emp_all selfemp {
     use `master', clear
 
     if "`S'" == "emp_fyft" {
-        keep if inlist(status1, 110, 120)
-        keep if !missing(fyft) & fyft == 1
         keep if !missing(pi11) & pi11 > 0
+        keep if !missing(fyft) & fyft == 1
         gen logy = log(pi11)
         local incvar "pi11"
     }
     else if "`S'" == "emp_all" {
-        keep if inlist(status1, 110, 120)
         keep if !missing(pi11) & pi11 > 0
         gen logy = log(pi11)
         local incvar "pi11"
@@ -113,7 +132,8 @@ foreach S in emp_fyft emp_all selfemp {
 
     quietly count
     if r(N) == 0 {
-        file write fh "==== subset = `S' (incvar = `incvar') — EMPTY, skipped ====" _n _n
+        display "==== subset = `S' (incvar = `incvar') — EMPTY, skipped ===="
+        display ""
         continue
     }
 
@@ -126,7 +146,7 @@ foreach S in emp_fyft emp_all selfemp {
 
     * Residualize logy on year FE within education
     gen double u = .
-    levelsof educ, local(elist)
+    quietly levelsof educ, local(elist)
     foreach e of local elist {
         quietly count if educ == `e'
         if r(N) > 0 {
@@ -144,12 +164,12 @@ foreach S in emp_fyft emp_all selfemp {
         }
     }
 
-    file write fh "==== subset = `S' (incvar = `incvar') ====" _n
+    display "==== subset = `S' (incvar = `incvar') ===="
 
     * [1] Wave-level metadata + sample sizes
-    file write fh "[1] Wave-level metadata and sample sizes" _n
-    file write fh "subset  dname  year  grossnet  n  mean_logy  var_logy  var_u" _n
-    levelsof dname, local(dlist)
+    display "[1] Wave-level metadata and sample sizes"
+    display "subset  dname  year  grossnet  n  mean_logy  var_logy  var_u"
+    quietly levelsof dname, local(dlist)
     foreach dn of local dlist {
         quietly summarize year if dname == "`dn'"
         local yr = r(mean)
@@ -162,38 +182,38 @@ foreach S in emp_fyft emp_all selfemp {
         local vly = r(Var)
         quietly summarize u if dname == "`dn'" [aw=pwgt]
         local vu = r(Var)
-        file write fh "`S'  `dn'  " %4.0f (`yr') "  " %4.0f (`gn') "  " ///
-            %7.0f (`n') "  " %9.4f (`mly') "  " %9.4f (`vly') "  " %9.4f (`vu') _n
+        display "`S'  `dn'  " %4.0f (`yr') "  " %4.0f (`gn') "  " ///
+            %7.0f (`n') "  " %9.4f (`mly') "  " %9.4f (`vly') "  " %9.4f (`vu')
     }
-    file write fh _n
+    display ""
 
     * [2] Mean log earnings by education
-    file write fh "[2] Mean log earnings by education (pooled across waves)" _n
-    file write fh "subset  educ  n  mean_logy  sd_logy" _n
+    display "[2] Mean log earnings by education (pooled across waves)"
+    display "subset  educ  n  mean_logy  sd_logy"
     foreach e of local elist {
         quietly summarize logy if educ == `e' [aw=pwgt]
-        file write fh "`S'  `e'  " %7.0f (r(N)) "  " %9.4f (r(mean)) "  " %9.4f (r(sd)) _n
+        display "`S'  `e'  " %7.0f (r(N)) "  " %9.4f (r(mean)) "  " %9.4f (r(sd))
     }
-    file write fh _n
+    display ""
 
     * [3] Var(u) by single-year age x education (n>=10)
-    file write fh "[3] Var(u) by single-year age x education (n>=10)" _n
-    file write fh "subset  educ  age  n  var_u" _n
+    display "[3] Var(u) by single-year age x education (n>=10)"
+    display "subset  educ  age  n  var_u"
     foreach e of local elist {
         forvalues a = 25/60 {
             quietly count if educ == `e' & age == `a' & !missing(u)
             local n = r(N)
             if `n' >= 10 {
                 quietly summarize u if educ == `e' & age == `a' [aw=pwgt]
-                file write fh "`S'  `e'  " %3.0f (`a') "  " %5.0f (`n') "  " %9.6f (r(Var)) _n
+                display "`S'  `e'  " %3.0f (`a') "  " %5.0f (`n') "  " %9.6f (r(Var))
             }
         }
     }
-    file write fh _n
+    display ""
 
     * [4] Var(u) by 5-year age band x education (n>=30)
-    file write fh "[4] Var(u) by 5-year age band x education (n>=30)" _n
-    file write fh "subset  educ  age_lo  age_hi  n  mean_u  var_u" _n
+    display "[4] Var(u) by 5-year age band x education (n>=30)"
+    display "subset  educ  age_lo  age_hi  n  mean_u  var_u"
     foreach e of local elist {
         forvalues b = 25(5)55 {
             local bhi = `b' + 4
@@ -201,16 +221,16 @@ foreach S in emp_fyft emp_all selfemp {
             local n = r(N)
             if `n' >= 30 {
                 quietly summarize u if educ == `e' & age5 == `b' [aw=pwgt]
-                file write fh "`S'  `e'  " %3.0f (`b') "  " %3.0f (`bhi') "  " ///
-                    %5.0f (`n') "  " %9.6f (r(mean)) "  " %9.6f (r(Var)) _n
+                display "`S'  `e'  " %3.0f (`b') "  " %3.0f (`bhi') "  " ///
+                    %5.0f (`n') "  " %9.6f (r(mean)) "  " %9.6f (r(Var))
             }
         }
     }
-    file write fh _n
+    display ""
 
     * [5] Log earnings percentiles by 5-year age band x education (n>=30)
-    file write fh "[5] logy percentiles by age band x education (n>=30)" _n
-    file write fh "subset  educ  age_lo  age_hi  n  p10  p50  p90" _n
+    display "[5] logy percentiles by age band x education (n>=30)"
+    display "subset  educ  age_lo  age_hi  n  p10  p50  p90"
     foreach e of local elist {
         forvalues b = 25(5)55 {
             local bhi = `b' + 4
@@ -218,16 +238,16 @@ foreach S in emp_fyft emp_all selfemp {
             local n = r(N)
             if `n' >= 30 {
                 _pctile logy if educ == `e' & age5 == `b' [aw=pwgt], p(10 50 90)
-                file write fh "`S'  `e'  " %3.0f (`b') "  " %3.0f (`bhi') "  " ///
-                    %5.0f (`n') "  " %9.4f (r(r1)) "  " %9.4f (r(r2)) "  " %9.4f (r(r3)) _n
+                display "`S'  `e'  " %3.0f (`b') "  " %3.0f (`bhi') "  " ///
+                    %5.0f (`n') "  " %9.4f (r(r1)) "  " %9.4f (r(r2)) "  " %9.4f (r(r3))
             }
         }
     }
-    file write fh _n
+    display ""
 
     * [6] Var(u) by 5-year experience band x education (n>=30) — robustness
-    file write fh "[6] Var(u) by 5-year experience band x education (n>=30)" _n
-    file write fh "subset  educ  exp_lo  exp_hi  n  var_u" _n
+    display "[6] Var(u) by 5-year experience band x education (n>=30)"
+    display "subset  educ  exp_lo  exp_hi  n  var_u"
     quietly count if !missing(wexptl)
     if r(N) > 0 {
         capture drop exp5
@@ -239,19 +259,16 @@ foreach S in emp_fyft emp_all selfemp {
                 local n = r(N)
                 if `n' >= 30 {
                     quietly summarize u if educ == `e' & exp5 == `b' [aw=pwgt]
-                    file write fh "`S'  `e'  " %3.0f (`b') "  " %3.0f (`bhi') "  " ///
-                        %5.0f (`n') "  " %9.6f (r(Var)) _n
+                    display "`S'  `e'  " %3.0f (`b') "  " %3.0f (`bhi') "  " ///
+                        %5.0f (`n') "  " %9.6f (r(Var))
                 }
             }
         }
     }
     else {
-        file write fh "`S'  wexptl missing across all waves — skipped" _n
+        display "`S'  wexptl missing across all waves — skipped"
     }
-    file write fh _n
+    display ""
 }
 
-file write fh "==== END ====" _n
-file close fh
-
-display "Output written to: `outname'"
+display "==== END ===="
