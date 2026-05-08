@@ -324,6 +324,9 @@ class LifecycleModelPerfectForesight:
         self.y_grid, self.P_y = self._income_process()
         self.alpha_grid, self.alpha_probs = self._alpha_process()
         self.n_alpha = len(self.alpha_grid)
+        # Wage multiplier from the permanent fixed effect; set during solve()
+        # loop so _compute_budget applies the right alpha. Default 1.0 (no FE).
+        self._alpha_mult = 1.0
 
         # Pension averaging: precompute mean of employed y_grid for career-average approximation
         self.pension_avg_weight = config.pension_avg_weight
@@ -604,7 +607,15 @@ class LifecycleModelPerfectForesight:
     def solve(self, verbose=False, parallel=False, n_jobs=None):
         """
         Solve the lifecycle problem using backward induction.
-        
+
+        With n_alpha > 1 (permanent productivity fixed effect on), the lifecycle
+        problem is solved separately for each alpha grid point — the α multiplier
+        scales wages/UI/pensions in `_compute_budget`. Per-α policies are stored
+        in `self.{a,c,l}_policy_alpha` and `self.V_alpha` with shape
+        (n_alpha, T, n_a, n_y, n_h, n_y); the scalar `self.{a,c,l}_policy` and
+        `self.V` are aliased to index 0 for backward compatibility with code that
+        does not yet read the per-α arrays.
+
         Parameters:
         -----------
         verbose : bool
@@ -617,30 +628,61 @@ class LifecycleModelPerfectForesight:
         if verbose:
             print(f"Solving lifecycle model for {self.config.education_type} education...")
             print(f"  Solving for periods {self.current_age} to {self.T-1}")
+            if self.n_alpha > 1:
+                print(f"  Looping over n_alpha = {self.n_alpha} permanent FE grid points")
             if parallel:
                 n_jobs_actual = n_jobs if n_jobs is not None else cpu_count()
                 print(f"  Using parallel processing with {n_jobs_actual} workers")
-        
-        # Initialize value and policy functions
-        # Dimensions: (T, n_a, n_y, n_h, n_y_last)
-        shape = (self.T, self.n_a, self.n_y, self.n_h, self.n_y)
-        self.V = np.zeros(shape)
-        self.a_policy = np.zeros(shape, dtype=np.int32)
-        self.c_policy = np.zeros(shape)
-        self.l_policy = np.ones(shape)
 
-        # Terminal period (T-1)
-        t = self.T - 1
-        self._solve_period(t, self.r_path[t], self.w_path[t],
-                           self.tau_c_path[t], self.tau_l_path[t],
-                           self.tau_p_path[t], self.tau_k_path[t])
+        # Pre-allocate alpha-indexed policy arrays. With n_alpha=1 the leading
+        # axis is a singleton and storage is identical to the pre-FE shape.
+        base_shape = (self.T, self.n_a, self.n_y, self.n_h, self.n_y)
+        full_shape = (self.n_alpha,) + base_shape
+        self.V_alpha = np.zeros(full_shape)
+        self.a_policy_alpha = np.zeros(full_shape, dtype=np.int32)
+        self.c_policy_alpha = np.zeros(full_shape)
+        self.l_policy_alpha = np.ones(full_shape)
 
-        # Backward induction
-        if parallel:
-            self._solve_backward_parallel(verbose, n_jobs)
-        else:
-            self._solve_backward_sequential(verbose)
-        
+        for alpha_idx in range(self.n_alpha):
+            self._alpha_mult = float(np.exp(self.alpha_grid[alpha_idx]))
+            if verbose and self.n_alpha > 1:
+                print(f"  alpha[{alpha_idx}] = {self.alpha_grid[alpha_idx]:+.4f}  "
+                      f"(exp = {self._alpha_mult:.4f})")
+
+            # Per-alpha scratch arrays. The existing _solve_period /
+            # _solve_backward_* methods write into self.V / self.a_policy / ...
+            # so we keep them as plain arrays during the inner solve.
+            self.V = np.zeros(base_shape)
+            self.a_policy = np.zeros(base_shape, dtype=np.int32)
+            self.c_policy = np.zeros(base_shape)
+            self.l_policy = np.ones(base_shape)
+
+            # Terminal period (T-1)
+            t = self.T - 1
+            self._solve_period(t, self.r_path[t], self.w_path[t],
+                               self.tau_c_path[t], self.tau_l_path[t],
+                               self.tau_p_path[t], self.tau_k_path[t])
+
+            # Backward induction
+            if parallel:
+                self._solve_backward_parallel(verbose, n_jobs)
+            else:
+                self._solve_backward_sequential(verbose)
+
+            # Snapshot this alpha's policies into the per-alpha arrays
+            self.V_alpha[alpha_idx] = self.V
+            self.a_policy_alpha[alpha_idx] = self.a_policy
+            self.c_policy_alpha[alpha_idx] = self.c_policy
+            self.l_policy_alpha[alpha_idx] = self.l_policy
+
+        # Reset multiplier and alias the scalar policies to alpha=0 for any
+        # downstream consumer that has not yet been ported to per-alpha lookup.
+        self._alpha_mult = 1.0
+        self.V = self.V_alpha[0]
+        self.a_policy = self.a_policy_alpha[0]
+        self.c_policy = self.c_policy_alpha[0]
+        self.l_policy = self.l_policy_alpha[0]
+
         if verbose:
             print("Done!")
     
@@ -656,8 +698,9 @@ class LifecycleModelPerfectForesight:
             lam = self.pension_avg_weight
             pension_base = (lam * self.wage_age_profile[self.retirement_age - 1] * self.y_grid[i_y_last]
                             + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
-            pension = self.pension_replacement_path[t] * self.w_at_retirement * pension_base
-            # Feature #11: minimum pension floor
+            # Phase 8: pension scales with the retiree's permanent productivity multiplier
+            pension = self.pension_replacement_path[t] * self.w_at_retirement * pension_base * self._alpha_mult
+            # Feature #11: minimum pension floor (flat amount, not scaled by alpha)
             pension = max(pension, self.pension_min_floor)
             if self.tax_progressive:
                 # Feature #14: HSV progressive tax on pension
@@ -669,10 +712,12 @@ class LifecycleModelPerfectForesight:
         else:
             kappa_t = self.wage_age_profile[t]
             if i_y == 0:
-                ui_benefit = self.ui_replacement_rate * w_t * kappa_t * self.y_grid[i_y_last]
+                # Phase 8: UI benefit scales with permanent fixed effect
+                ui_benefit = self.ui_replacement_rate * w_t * kappa_t * self.y_grid[i_y_last] * self._alpha_mult
             else:
                 ui_benefit = 0.0
-            gross_wage_income = w_t * kappa_t * y * h * labor_hours
+            # Phase 8: wage income scales with permanent fixed effect (default 1.0 if FE off)
+            gross_wage_income = w_t * kappa_t * y * h * labor_hours * self._alpha_mult
             gross_labor_income = gross_wage_income + ui_benefit
             payroll_tax = tau_p_t * gross_wage_income
             taxable_income = gross_labor_income - payroll_tax
@@ -752,7 +797,8 @@ class LifecycleModelPerfectForesight:
         """
         if not self.labor_supply or y <= 0:
             return 1.0  # Fixed labor supply
-        effective_wage = w_t * y * h
+        # Phase 8: effective wage scales with the permanent fixed effect
+        effective_wage = w_t * y * h * self._alpha_mult
         if self.tax_progressive:
             tau_eff = tau_p_t  # progressive tax handled separately
         else:
@@ -774,7 +820,8 @@ class LifecycleModelPerfectForesight:
         if y <= 0:
             return c_guess, 1.0
         tau_eff = tau_p_t if self.tax_progressive else tau_l_t + tau_p_t
-        net_wage = w_t * y * h * (1.0 - tau_eff)
+        # Phase 8: wage scales with the permanent fixed effect
+        net_wage = w_t * y * h * self._alpha_mult * (1.0 - tau_eff)
         if net_wage <= 0.0 or c_guess <= 0.0:
             return c_guess, 1.0
         dc_dl = net_wage / (1.0 + tau_c_t)
