@@ -2,6 +2,7 @@ import numpy as np
 from numba import njit
 import matplotlib.pyplot as plt
 from quantecon.markov import tauchen
+from numpy.polynomial.hermite_e import hermegauss
 from dataclasses import dataclass, field, replace
 from typing import Optional
 from multiprocessing import Pool, cpu_count
@@ -32,31 +33,35 @@ class LifecycleConfig:
     
     # === Income process parameters ===
     n_y: int = 5                         # Number of income states (including unemployment)
-    
+    n_alpha: int = 1                     # Permanent productivity fixed-effect grid size (1 = FE off)
+
     # === Pension parameters ===
     N_earnings_history: int = 35         # Number of years for earnings history computation (moving average)
-    
+
     # === Education parameters ===
     education_type: str = 'medium'       # 'low', 'medium', 'high'
-    
+
     # Education-specific income parameters
     edu_params: dict = field(default_factory=lambda: {
         'low': {
             'mu_y': 0.05,
             'sigma_y': 0.03,
             'rho_y': 0.97,
+            'sigma_alpha': 0.0,
             'unemployment_rate': 0.10,
         },
         'medium': {
             'mu_y': 0.1,
             'sigma_y': 0.03,
             'rho_y': 0.97,
+            'sigma_alpha': 0.0,
             'unemployment_rate': 0.06,
         },
         'high': {
             'mu_y': 0.12,
             'sigma_y': 0.03,
             'rho_y': 0.97,
+            'sigma_alpha': 0.0,
             'unemployment_rate': 0.03,
         }
     })
@@ -317,6 +322,8 @@ class LifecycleModelPerfectForesight:
         # Create grids and processes
         self.a_grid = self._create_asset_grid()
         self.y_grid, self.P_y = self._income_process()
+        self.alpha_grid, self.alpha_probs = self._alpha_process()
+        self.n_alpha = len(self.alpha_grid)
 
         # Pension averaging: precompute mean of employed y_grid for career-average approximation
         self.pension_avg_weight = config.pension_avg_weight
@@ -493,9 +500,32 @@ class LifecycleModelPerfectForesight:
         # Ensure rows sum to 1 (numerical stability)
         for i in range(self.n_y):
             P_y[i, :] = P_y[i, :] / P_y[i, :].sum()
-        
+
         return y_grid, P_y
-    
+
+    def _alpha_process(self):
+        """Discrete grid for the permanent productivity fixed effect alpha.
+
+        alpha ~ N(0, sigma_alpha^2) at age 25, held fixed for life. Discretized
+        via Gauss-Hermite quadrature. Returns (alpha_grid, alpha_probs).
+
+        When config.n_alpha == 1 or sigma_alpha == 0, returns the degenerate
+        grid {0.0} with probability 1.0, recovering the no-FE baseline exactly.
+        """
+        edu_params = self.config.edu_params[self.config.education_type]
+        sigma_alpha = edu_params.get('sigma_alpha', 0.0)
+        n_alpha = self.config.n_alpha
+
+        if n_alpha <= 1 or sigma_alpha <= 0.0:
+            return np.zeros(1), np.ones(1)
+
+        nodes, weights = hermegauss(n_alpha)
+        alpha_grid = sigma_alpha * nodes
+        alpha_probs = weights / np.sqrt(2.0 * np.pi)
+        # Force exact normalization to absorb tiny quadrature rounding.
+        alpha_probs = alpha_probs / alpha_probs.sum()
+        return alpha_grid, alpha_probs
+
     def _health_process(self):
         """Age-dependent health transition matrix."""
         if self.n_h == 1:

@@ -1006,10 +1006,11 @@ def build_lifecycle_config(raw, w=None):
                     edu_params[et].setdefault(field_name, p['initial'])
             else:
                 edu_params[parts[1]].setdefault(field_name, p['initial'])
-    # Ensure rho_y and sigma_y have defaults even without calibration section
+    # Ensure rho_y, sigma_y, and sigma_alpha have defaults even without calibration section
     for et in edu_params:
         edu_params[et].setdefault('rho_y', 0.95)
         edu_params[et].setdefault('sigma_y', 0.10)
+        edu_params[et].setdefault('sigma_alpha', 0.0)  # FE off by default
 
     kwargs = {}
     T = raw['model']['T']

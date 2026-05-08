@@ -48,9 +48,9 @@
   },
 
   "edu_params": {
-    "low":    {"mu_y": -0.1529, "unemployment_rate": 0.1645, "rho_y": 0.95, "sigma_y": 0.0538},
-    "medium": {"mu_y":  0.0000, "unemployment_rate": 0.1580, "rho_y": 0.95, "sigma_y": 0.0858},
-    "high":   {"mu_y":  0.2590, "unemployment_rate": 0.1005, "rho_y": 0.95, "sigma_y": 0.0750}
+    "low":    {"mu_y": -0.1529, "unemployment_rate": 0.1645, "rho_y": 0.95, "sigma_y": 0.0538, "sigma_alpha": 0.0},
+    "medium": {"mu_y":  0.0000, "unemployment_rate": 0.1580, "rho_y": 0.95, "sigma_y": 0.0858, "sigma_alpha": 0.0},
+    "high":   {"mu_y":  0.2590, "unemployment_rate": 0.1005, "rho_y": 0.95, "sigma_y": 0.0750, "sigma_alpha": 0.0}
   },
 
   "education_shares": {
