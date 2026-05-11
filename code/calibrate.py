@@ -451,13 +451,16 @@ def _moment_consumption_gini(panels, spec):
 
 
 def _moment_income_gini(panels, spec):
-    """Gini of total income (earnings + pensions + UI), age-weighted."""
+    """Gini of total income (earnings + UI + pensions), age-weighted.
+
+    effective_y_sim already equals wage_income + ui_sim from the simulation,
+    so adding ui_sim again double-counts UI. The correct total income for
+    Gini purposes is effective_y_sim (employed wage OR UI) + pension_sim.
+    """
     all_inc, all_w = [], []
     for edu, panel in panels.items():
         alive, w = _agent_weights(panel, spec, edu)
-        income = (panel.effective_y_sim[alive] +
-                  panel.pension_sim[alive] +
-                  panel.ui_sim[alive])
+        income = panel.effective_y_sim[alive] + panel.pension_sim[alive]
         all_inc.append(income)
         all_w.append(w)
     return compute_gini(np.concatenate(all_inc), np.concatenate(all_w))
@@ -496,13 +499,16 @@ def _moment_median_wealth_to_income(panels, spec):
 
 
 def _moment_p90_p10_income(panels, spec):
-    """P90/P10 ratio of total income among alive agents."""
+    """P90/P10 ratio of total income (earnings + UI + pensions) among alive agents.
+
+    effective_y_sim already includes ui_sim (wage_income + ui_sim from the
+    simulation), so adding ui_sim again would double-count. Total income for
+    the ratio is effective_y_sim + pension_sim.
+    """
     all_inc = []
     for edu, panel in panels.items():
         alive = panel.alive_sim.astype(bool)
-        income = (panel.effective_y_sim[alive] +
-                  panel.pension_sim[alive] +
-                  panel.ui_sim[alive])
+        income = panel.effective_y_sim[alive] + panel.pension_sim[alive]
         all_inc.append(income)
     vals = np.concatenate(all_inc)
     vals = vals[vals > 0]

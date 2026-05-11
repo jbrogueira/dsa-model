@@ -2396,12 +2396,12 @@ class OLGTransition:
             else:
                 seed = 999 + 10_000 * b  # legacy behavior (extra MC stream)
 
-            results = self._simulate_birth_cohort_cached(
-                edu_type=edu_type,
-                birth_period=b,
-                n_sim=int(n_sim),
-                seed=seed,
-            )
+            # _simulate_birth_cohort_cached returns an 11-tuple of per-age means
+            # (memory-optimized for aggregation), which drops fields like
+            # employed_sim and l_sim that the plot wants. For just two cohorts
+            # the raw panels are cheap, so call the cohort model directly.
+            model = self.birth_cohort_solutions[edu_type][b]
+            results = model.simulate(T_sim=self.T, n_sim=int(n_sim), seed=seed)
 
             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
              ui_sim, m_sim, oop_m_sim, gov_m_sim,
