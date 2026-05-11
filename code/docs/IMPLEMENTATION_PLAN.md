@@ -22,6 +22,7 @@ Covers 18 of the 20 features listed in `model_vs_implementation.md` — the gaps
 | 6 | #8, #10, #9 | **Done** |
 | 7 | #18, #19 | **Done** |
 | 8 | σ_α (post-baseline extension) | **Done (2026-05-08)** |
+| 9 | Warm-glow bequest + initial wealth | **Planned (2026-05-11)** |
 
 **Skipped:** #12 (tax application — keep code version), #13 (capital income tax — keep code version)
 **Merged:** #3 (human capital) absorbed into #5 (age-dependent productivity) — no new state variable
@@ -483,6 +484,113 @@ Two approaches considered:
 
 ---
 
+## Phase 9: Wealth-Distribution Margins (warm-glow bequest + initial wealth)
+
+**Status: Planned (added 2026-05-11).** Two sub-features both targeting the wealth-distribution residual that Phase 8 left untouched: model wealth Gini 0.85 vs Greek HFCS 0.58, zero-wealth fraction 0.43 vs 0.011.
+
+### Motivation
+
+After Phase 8, the income process is correctly disciplined by LIS data: within-education `Var(log y)` matches the LIS-MD target. The remaining wealth-distribution gap is therefore *not* about earnings — it is about saving-side and initial-condition margins:
+
+1. **No bequest motive.** Agents currently treat death as the end of utility and consume the last unit of wealth. Without a "joy of giving" or precautionary-bequest term, the model has no force generating a long upper tail of the wealth distribution. De Nardi (RES 2004) and Cagetti & De Nardi (JPE 2008) show this is the single largest driver of top wealth shares in heterogeneous-agent models.
+2. **Initial wealth degenerate at 0.** The Greek JSON sets neither `initial_assets` nor `initial_asset_distribution`, so every age-25 agent starts with wealth = 0. In Greek HFCS, age-25 households have a *distribution* — many at zero, but a sizeable fraction with inherited or parental-transfer wealth. The mass at zero in the model is partly an artifact of the degenerate initial condition.
+
+### Sub-features
+
+#### 9A. Warm-glow bequest motive (De Nardi-style)
+
+Add a utility term at death:
+$$ u_b(b) = \varphi \cdot \frac{(b + \bar b)^{1-\sigma}}{1-\sigma} $$
+
+where `b = a_j` (assets at death) and `(\varphi, \bar b)` are two new parameters:
+
+- **`varphi`** (`bequest_weight`) — overall weight on bequest utility. Larger → more savings at the top.
+- **`bbar`** (`bequest_shifter`) — luxury parameter. With `bbar > 0`, bequest is a luxury good: poor agents don't bequest, rich agents do. This is what generates the upper tail.
+
+Mortality is already in the code (`survival_probs`, `bequest_sim`). Adding the preference requires modifying the period value function:
+
+V_j(s) = max_a' { u(c, l) + β · [π · E V_{j+1}(s') + (1-π) · u_b(a')] }
+
+i.e., the value of dying with assets `a'` is `u_b(a')`, weighted by death probability `(1-π)`.
+
+#### 9B. Initial wealth distribution
+
+Set `LifecycleConfig.initial_asset_distribution` to an empirical distribution of net household wealth at age 25 from Greek HFCS. The infrastructure for this already exists — it's just a `(n_samples,)` array in the JSON config; agents sample from it at simulation start. No code changes needed.
+
+### Calibration
+
+Adding **two** internal parameters (`varphi`, `bbar`) requires **two** new targeted moments. Candidates from HFCS Greece:
+
+- **Top-decile wealth share** (top 10%) — identifies `bbar` strongly (luxury-bequest shifter sharpens the upper tail).
+- **Wealth Gini** — identifies `varphi` (overall savings strength).
+- **Top-quintile wealth share** (top 20%) — alternative if top-decile is noisy.
+- **`p90/p10` wealth ratio** — robust dispersion.
+
+Likely SMM problem after Phase 9: free parameters (β, ν, φ, b̄) against targets (A/Y, h̄, top10%_wealth, wealth_Gini). 4-by-4 system.
+
+### Sub-phases
+
+#### 9.1 Initial wealth distribution (easy first step)
+
+- Obtain Greek HFCS data (see data sources below).
+- Build per-education or pooled initial-wealth empirical distribution for households age 25–29.
+- Write into `calibration_input_GR.json` under `"initial_asset_distribution": [...]` (or per-education `edu_params[e]['initial_asset_distribution']`).
+- No code changes — `lifecycle_perfect_foresight.py` already samples from this array at t=0.
+- Acceptance: re-run calibration; check `zero_wealth_fraction` falls toward the data value (0.011).
+
+#### 9.2 Warm-glow bequest in NumPy backend
+
+- Add `bequest_weight`, `bequest_shifter` to `LifecycleConfig` (defaults 0.0 — feature OFF).
+- Modify `_solve_state_choice()` / `_solve_period()` to include `(1-π) · u_b(a')` in the value at non-terminal periods with mortality.
+- Terminal period: V_T includes only `u_b(a')` since `π = 0` at death-certain age.
+- Files: `lifecycle_perfect_foresight.py`.
+- Acceptance: with `bequest_weight = 0`, all prior behavior unchanged (regression).
+
+#### 9.3 Warm-glow bequest in JAX backend
+
+- Mirror 9.2 in `lifecycle_jax.py` (`compute_budget_jax` / `solve_period_jax` / `_solve_terminal_period_jax`).
+- JAX cross-validation: V agrees with NumPy to 1e-6 with bequest motive on.
+
+#### 9.4 Re-calibrate Greek baseline
+
+- Add HFCS top-decile-wealth-share and wealth-Gini to `calibration.targets`.
+- Run SMM with 4 free parameters (β, ν, φ, b̄).
+- Validate: wealth Gini, top-decile share, zero-wealth fraction, all closer to data.
+
+### Data sources to obtain
+
+For both sub-features below, the canonical source is **Eurosystem Household Finance and Consumption Survey (HFCS)**, the Greek microdata managed by the Bank of Greece on behalf of the ECB.
+
+| Need | Source | Specifics |
+|---|---|---|
+| Top decile / top quintile **wealth share** | HFCS Statistical Tables, Eurosystem | Greek wave (latest available: 2021/HFCS Wave 4). Look for "Distribution of net wealth by percentile" — typically tables show shares for top 1%, top 5%, top 10%, top 20%, bottom 50%. |
+| Wealth **Gini** (cross-check) | HFCS Statistical Tables, Eurosystem | Same source. Greek wealth Gini was 0.58 in HFCS Wave 3 (2017). |
+| **Net wealth percentiles** (P10, P25, P50, P75, P90, P95, P99) | HFCS Statistical Tables, Eurosystem | Used as targets if top-decile share is too noisy. |
+| **Age-25 to 29 wealth distribution** (initial wealth) | HFCS microdata, Greek subset | Need either the empirical distribution itself (n_samples values of net wealth) or quantile statistics (P0, P10, P25, P50, P75, P90) within the 25–29 age band. The Bank of Greece publishes summary stats by age; microdata requires application. |
+| Median wealth by age band (validation) | HFCS Statistical Tables / OECD WDD | Reference points by 10-year age bracket. |
+
+**Access notes for HFCS microdata:**
+
+- **Aggregate tables**: free on the ECB HFCS portal (`ecb.europa.eu/pub/economic-research/research-networks/html/researcher_hfcn.en.html`), no application needed.
+- **Microdata**: requires application to the Bank of Greece HFCS contact point, via the ECB HFCN data-access portal. Typically a research-purpose declaration plus institutional affiliation. Processing time: 2–8 weeks.
+- **Alternative if microdata is slow**: use HFCS published cross-tabs by age band as quantile statistics, then construct an empirical distribution via inverse-CDF sampling between the published percentiles. Coarser but immediately available.
+
+The **top-decile and Gini targets are immediately obtainable** from the public HFCS Statistical Tables — no application needed. **Initial-wealth distribution by age band** is the only piece that may require microdata or a fallback to the published quantile reconstruction.
+
+### Computational cost
+
+Bequest motive: adds one term to the period value function (constant cost per state evaluation). With Phase 8's `n_alpha = 5`, no further multiplication. Total SMM optimization with 4 free parameters: probably 100–200 NM iterations × 2.5 min/eval ≈ 5–8 hours wall time (versus ~17 min for Phase 8.7).
+
+Initial-wealth distribution: zero solve-side cost. Simulation-side, just a different `t=0` draw.
+
+### Risks
+
+- **Warm-glow vs accidental bequest**: the current code already has *accidental* bequests (assets at death redistributed as `bequest_lumpsum`). Adding warm-glow changes household preferences but not the aggregate accounting — bequests are still received as a lump-sum transfer. No accounting fix needed, just utility-side modification.
+- **Calibration identifies `bbar` and `varphi` separately**: in principle both shift the wealth distribution. The luxury shifter `bbar` has its biggest effect on the *shape* (long upper tail), while `varphi` shifts the overall *level* of saving. Joint identification should work with two distinct distributional moments, but worth verifying via local sensitivity.
+- **Numerical**: the bequest term enters as `(a + bbar)^(1-σ)`. With σ = 2.0, this is convex and bounded below by `bbar^(1-σ)`. No solver problems anticipated.
+
+---
+
 ## Implementation Order Summary
 
 | Phase | Features | Key Changes | Risk |
@@ -495,6 +603,7 @@ Two approaches considered:
 | 6 | #8, #10, #9 | Public capital, public investment, SOE/sovereign debt | Medium-High |
 | 7 | #18, #19 | Pension trust fund, govt production | Low priority |
 | 8 | σ_α | Permanent productivity fixed effect (`n_alpha=5`); first feature to add a state variable | Medium-High |
+| 9 | warm-glow bequest + initial wealth | De Nardi-style bequest utility (`varphi`, `bbar`) + empirical initial-wealth distribution from HFCS Greece; addresses the wealth-distribution residual (model Gini 0.85 vs data 0.58) | Medium |
 
 ---
 
