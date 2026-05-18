@@ -38,7 +38,7 @@
     "tau_l": 0.10,
     "tau_p": 0.34,
     "tau_k": 0.2236,
-    "pension_replacement_default": 0.25,
+    "pension_replacement_default": 0.18,
     "pension_min_floor": 0.15,
     "ui_replacement_rate": 0.0945,
     "transfer_floor": 0.0,
@@ -106,7 +106,7 @@
   "calibration": {
     "params": [
       {"name": "nu",   "path": "nu",   "lower": 0.1,  "upper": 200.0, "initial": 68.35},
-      {"name": "beta", "path": "beta", "lower": 0.90, "upper": 0.999, "initial": 0.96}
+      {"name": "beta", "path": "beta", "lower": 0.90, "upper": 1.10, "initial": 0.96}
     ],
     "targets": [
       {"name": "average_hours", "value": 0.41, "weight": 1.0, "compute_key": "average_hours"},
