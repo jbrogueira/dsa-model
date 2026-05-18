@@ -419,7 +419,7 @@ params_out = {
 }
 if args.config:
     fiscal = config_data.get('fiscal', {})
-    for key in ['pensions_over_Y', 'ui_over_Y', 'health_over_Y', 'G_over_Y', 'tax_revenue_over_Y']:
+    for key in ['pensions_over_Y', 'ui_over_Y', 'health_gov_over_Y', 'health_oop_over_Y', 'health_total_over_Y', 'G_over_Y', 'tax_revenue_over_Y']:
         if key in fiscal:
             params_out[key] = fiscal[key]
 

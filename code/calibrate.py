@@ -652,7 +652,7 @@ MOMENT_DISPATCH = {
     'tax_revenue_over_Y': _moment_tax_revenue_over_Y,
     'pensions_over_Y': _moment_pensions_over_Y,
     'ui_over_Y': _moment_ui_over_Y,
-    'health_over_Y': _moment_health_gov_over_Y,
+    'health_gov_over_Y': _moment_health_gov_over_Y,
 }
 
 
@@ -1091,6 +1091,7 @@ def build_olg_transition(config_data, backend='numpy'):
         delta_g=prod.get('delta_g', 0.05),
         economy_type='soe',
         r_star=r,
+        r_B=config_data['prices'].get('r_B'),
         pop_growth=ext.get('pop_growth', 0.0),
         birth_year=trans.get('birth_year', 1960),
         current_year=trans.get('current_year', 2020),
@@ -1205,10 +1206,13 @@ def compute_fiscal_ratios(panels, spec, config_data):
     # --- Fiscal ratios ---
     fiscal_data = config_data.get('fiscal', {})
     B_over_Y = fiscal_data.get('B_over_Y', 0.0)
+    # Sovereign debt service uses r_B (separate from the firm FOC return r).
+    # Default to r if r_B not specified — preserves prior behavior.
+    r_B = config_data.get('prices', {}).get('r_B', r)
 
     tax_revenue = agg['tax_c'] + agg['tax_l'] + agg['tax_p'] + agg['tax_k']
     expenditure = (agg['pension'] + agg['ui'] + agg['gov_health'] +
-                   r * B_over_Y * Y)  # interest on debt
+                   r_B * B_over_Y * Y)  # interest on debt at sovereign rate
 
     ratios = {
         'Y': Y,
@@ -1223,9 +1227,11 @@ def compute_fiscal_ratios(panels, spec, config_data):
         'tax_k_over_Y': agg['tax_k'] / Y,
         'pensions_over_Y': agg['pension'] / Y,
         'ui_over_Y': agg['ui'] / Y,
-        'health_over_Y': agg['gov_health'] / Y,
-        'interest_over_Y': r * B_over_Y,
-        'primary_balance_over_Y': (tax_revenue - expenditure + r * B_over_Y * Y) / Y,
+        'health_gov_over_Y': agg['gov_health'] / Y,
+        'health_oop_over_Y': agg['oop_health'] / Y,
+        'health_total_over_Y': (agg['gov_health'] + agg['oop_health']) / Y,
+        'interest_over_Y': r_B * B_over_Y,
+        'primary_balance_over_Y': (tax_revenue - expenditure + r_B * B_over_Y * Y) / Y,
         'total_balance_over_Y': (tax_revenue - expenditure) / Y,
     }
 
@@ -1373,7 +1379,8 @@ def generate_report(result, spec, config_data, output_dir='output/calibration'):
         display_keys = [
             'C_over_Y', 'K_over_Y', 'tax_revenue_over_Y',
             'tax_c_over_Y', 'tax_l_over_Y', 'tax_p_over_Y', 'tax_k_over_Y',
-            'pensions_over_Y', 'ui_over_Y', 'health_over_Y',
+            'pensions_over_Y', 'ui_over_Y',
+            'health_gov_over_Y', 'health_oop_over_Y', 'health_total_over_Y',
             'interest_over_Y', 'primary_balance_over_Y', 'total_balance_over_Y',
         ]
         for key in display_keys:

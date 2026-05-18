@@ -381,7 +381,7 @@ def chk_calibration_ratios(cf_budget, cf_macro, params, scenario):
     targets = [
         ('pension',      'pensions_over_Y'),
         ('ui',           'ui_over_Y'),
-        ('gov_health',   'health_over_Y'),
+        ('gov_health',   'health_gov_over_Y'),
         ('govt_spending','G_over_Y'),
     ]
     for bud_key, param_key in targets:
@@ -548,7 +548,7 @@ def main():
         with open(args.config) as f:
             cfg = json.load(f)
         fiscal = cfg.get('fiscal', {})
-        for key in ['pensions_over_Y', 'ui_over_Y', 'health_over_Y', 'G_over_Y', 'tax_revenue_over_Y']:
+        for key in ['pensions_over_Y', 'ui_over_Y', 'health_gov_over_Y', 'health_oop_over_Y', 'health_total_over_Y', 'G_over_Y', 'tax_revenue_over_Y']:
             if key in fiscal:
                 params[key] = fiscal[key]
         prod = cfg.get('production', {})
