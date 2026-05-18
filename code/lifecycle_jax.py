@@ -6,6 +6,15 @@ Uses vectorized operations and XLA compilation for massive speedup.
 The NumPy implementation remains as reference/fallback.
 """
 
+import os
+import platform
+
+# On macOS ARM, JAX defaults to the experimental Metal backend, which does not
+# support float64 and breaks the lifecycle solver. Force CPU before any jax
+# import; setdefault preserves an explicit user override.
+if platform.system() == 'Darwin' and platform.machine() == 'arm64':
+    os.environ.setdefault('JAX_PLATFORMS', 'cpu')
+
 import jax
 import jax.numpy as jnp
 import jax.lax as lax

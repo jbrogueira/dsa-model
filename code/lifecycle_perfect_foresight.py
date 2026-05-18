@@ -41,24 +41,26 @@ class LifecycleConfig:
     # === Education parameters ===
     education_type: str = 'medium'       # 'low', 'medium', 'high'
 
-    # Education-specific income parameters
+    # Education-specific income parameters. mu_y is the unconditional mean of
+    # log y; values are chosen so the discretized y_grid matches the old defaults
+    # (which set mu_y to the AR(1) intercept under rho_y=0.97).
     edu_params: dict = field(default_factory=lambda: {
         'low': {
-            'mu_y': 0.05,
+            'mu_y': 5.0 / 3.0,
             'sigma_y': 0.03,
             'rho_y': 0.97,
             'sigma_alpha': 0.0,
             'unemployment_rate': 0.10,
         },
         'medium': {
-            'mu_y': 0.1,
+            'mu_y': 10.0 / 3.0,
             'sigma_y': 0.03,
             'rho_y': 0.97,
             'sigma_alpha': 0.0,
             'unemployment_rate': 0.06,
         },
         'high': {
-            'mu_y': 0.12,
+            'mu_y': 4.0,
             'sigma_y': 0.03,
             'rho_y': 0.97,
             'sigma_alpha': 0.0,
@@ -461,10 +463,12 @@ class LifecycleModelPerfectForesight:
         job_finding_rate = self.config.job_finding_rate
         max_job_separation_rate = self.config.max_job_separation_rate
         
-        # Discretize employed income states using Tauchen (excluding unemployment)
+        # Discretize employed income states using Tauchen (excluding unemployment).
+        # mu_y is the unconditional mean of log y; quantecon's tauchen takes the
+        # AR(1) intercept, so we rescale by (1 - rho_y).
         n_employed = self.n_y - 1
-        
-        mc = tauchen(n_employed, rho_y, sigma_y, mu_y, n_std=2)  # Changed from n_std=3
+
+        mc = tauchen(n_employed, rho_y, sigma_y, (1.0 - rho_y) * mu_y, n_std=2)
         y_employed = np.exp(mc.state_values)
         P_employed = mc.P
         

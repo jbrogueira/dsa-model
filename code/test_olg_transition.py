@@ -2353,11 +2353,11 @@ class TestFixedEffect:
 
     def _base_config(self, sigma_alpha=0.0, n_alpha=1):
         edu_params = {
-            'low':    {'mu_y': 0.05, 'sigma_y': 0.10, 'rho_y': 0.95,
+            'low':    {'mu_y': 1.0, 'sigma_y': 0.10, 'rho_y': 0.95,
                        'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.10},
-            'medium': {'mu_y': 0.10, 'sigma_y': 0.10, 'rho_y': 0.95,
+            'medium': {'mu_y': 2.0, 'sigma_y': 0.10, 'rho_y': 0.95,
                        'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.06},
-            'high':   {'mu_y': 0.12, 'sigma_y': 0.10, 'rho_y': 0.95,
+            'high':   {'mu_y': 2.4, 'sigma_y': 0.10, 'rho_y': 0.95,
                        'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.03},
         }
         return LifecycleConfig(T=50, retirement_age=40, n_a=30,
@@ -2453,11 +2453,11 @@ class TestFixedEffectJAX:
 
     def _base_config(self, sigma_alpha=0.0, n_alpha=1):
         edu_params = {
-            'low':    {'mu_y': 0.05, 'sigma_y': 0.10, 'rho_y': 0.95,
+            'low':    {'mu_y': 1.0, 'sigma_y': 0.10, 'rho_y': 0.95,
                        'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.10},
-            'medium': {'mu_y': 0.10, 'sigma_y': 0.10, 'rho_y': 0.95,
+            'medium': {'mu_y': 2.0, 'sigma_y': 0.10, 'rho_y': 0.95,
                        'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.06},
-            'high':   {'mu_y': 0.12, 'sigma_y': 0.10, 'rho_y': 0.95,
+            'high':   {'mu_y': 2.4, 'sigma_y': 0.10, 'rho_y': 0.95,
                        'sigma_alpha': sigma_alpha, 'unemployment_rate': 0.03},
         }
         return LifecycleConfig(T=50, retirement_age=40, n_a=30,

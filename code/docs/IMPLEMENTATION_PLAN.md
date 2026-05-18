@@ -591,6 +591,64 @@ Initial-wealth distribution: zero solve-side cost. Simulation-side, just a diffe
 
 ---
 
+## Phase 10: Test-Suite Audit
+
+**Status: Planned (added 2026-05-18).** Independent audit of `test_olg_transition.py` + `test_fiscal_experiments.py` + `test_income_process.py` to repair signal loss in the test suite. Triggered by the 2026-05-18 `mu_y` debugging session, which surfaced three suite-quality issues at once: (a) the bug was uncaught by 132 tests; (b) `TestPhase6Features::test_public_capital_increases_output` hangs indefinitely on macOS ARM; (c) `test_constant_r_small_economy` was passing for the wrong reason (relied on an inflated y-level from the bug).
+
+### Motivation
+
+Today the suite returns either green or several pages of noise; in both cases it provides limited actionable information. Existing skip-strings (15 JAX/Metal tests, 1 pre-existing `TestLaborSupply::test_l_sim_in_output` failure, 1 hang) are accumulated in shell flags rather than `pytest.skip` decorators, so each new contributor has to rediscover them. The `mu_y` bug went undetected for the entire Phase 8 cycle despite extensive cross-validation tests because no test asserted accounting identities at the aggregator level.
+
+### Audit deliverables
+
+Run as an **independent read-only Agent** (no edits without explicit approval). Output is a written report, triaged. The audit has four asks, in order:
+
+1. **Triage every currently failing or skipped test.** Each one lands in exactly one bucket:
+   - (a) genuine bug — ticket and link to a planned fix
+   - (b) environment-specific (macOS/Metal/JAX) — convert to `@pytest.mark.skipif` with the platform reason in the message, drop from `-k` exclusion strings
+   - (c) brittle/wrong assertion — fix the assertion (e.g., test that `K > 0` should be `K > some_minimum_threshold` tied to model parameters, not `0`)
+   - (d) obsolete (no longer testing what was intended after refactors) — delete
+
+2. **Runtime profile.** `pytest --durations=20`. Identify the 5–10 slowest tests; explain why each is slow (large `n_sim`, full transition simulation when a steady-state check suffices, etc.); propose tightenings. The `test_public_capital_increases_output` hang should get a root-cause diagnosis (likely a degenerate path interacting with Phase 6 public-capital code and `get_test_config`'s `n_y=2` setup) — fix or skip with a documented reason.
+
+3. **Brittle-assertion sweep.** Grep for assertions of the form:
+   - `assert np.all(X > 0)` on simulation aggregates — fragile to calibration drift
+   - `rtol=1e-5` or tighter against simulated output (not against analytical references) — fragile to seed and discretization choices
+   - `assert abs(... - hardcoded) < tol` where `hardcoded` is a magic number not derived from the test's setup
+   - Tests that depend on `LifecycleConfig` defaults rather than building an explicit config
+   
+   Replace with structural assertions where possible. Examples: labor share = 1−α (Cobb-Douglas identity), aggregate budget identity `C + I + G = Y` in closed-economy mode, `tax_revenue ≥ 0`, `pensions/Y ≤ pension_replacement_default × employed_share`.
+
+4. **Coverage gaps.** What should have caught the `mu_y` bug? The post-hoc answer is "accounting-identity assertions at the calibration step":
+   - `C/Y ≤ 1 + |NFA|/Y` (consistent with resource constraint)
+   - `primary_balance/Y ∈ [−0.10, +0.10]` (baseline is a fiscal SS, not 140% deficit)
+   - `pensions/Y ≤ 0.20` (any plausible OECD calibration)
+   - `tax_revenue/Y ∈ [0.20, 0.55]` (OECD bounds)
+   
+   These would have flagged the bug at the calibration step instead of fiscal-experiment time. Catalog the rest of these structural invariants and propose a `test_accounting_identities.py` companion to `test_income_process.py`.
+
+### Output format
+
+A single markdown report at `code/docs/TEST_SUITE_AUDIT.md` with:
+
+- **Inventory table.** One row per test in (file × class × method) order. Columns: status (pass/fail/skip/hang), runtime (s), bucket (a–d from triage), proposed action.
+- **Hang report.** Section on `test_public_capital_increases_output` with reproducer, suspected cause, recommended fix.
+- **Brittle-assertion list.** File:line citations + suggested replacement.
+- **Coverage-gap proposal.** List of accounting identities to assert, with implementation sketch.
+
+After review, sub-tasks 1–4 can be executed in any order as separate phases.
+
+### Risks
+
+- The audit Agent may propose deleting tests that are slow but provide genuine coverage. Decision authority stays with the user; the audit is read-only.
+- Fixing brittle assertions may cause new failures if previously-passing tests were silently broken (passing for the wrong reason, as `test_constant_r_small_economy` was). This is a feature, not a bug — surface them.
+
+### Computational cost
+
+Read-only audit pass: ~30 min wall clock (one full `pytest --durations` run + grep + report writing). Subsequent fixes: scoped per-bucket, each typically a few-minute change.
+
+---
+
 ## Implementation Order Summary
 
 | Phase | Features | Key Changes | Risk |
@@ -604,6 +662,7 @@ Initial-wealth distribution: zero solve-side cost. Simulation-side, just a diffe
 | 7 | #18, #19 | Pension trust fund, govt production | Low priority |
 | 8 | σ_α | Permanent productivity fixed effect (`n_alpha=5`); first feature to add a state variable | Medium-High |
 | 9 | warm-glow bequest + initial wealth | De Nardi-style bequest utility (`varphi`, `bbar`) + empirical initial-wealth distribution from HFCS Greece; addresses the wealth-distribution residual (model Gini 0.85 vs data 0.58) | Medium |
+| 10 | test-suite audit | Independent read-only audit of the pytest suite; triage failures, profile runtime, sweep brittle assertions, propose accounting-identity coverage | Low (read-only) |
 
 ---
 
