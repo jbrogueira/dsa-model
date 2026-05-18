@@ -1,8 +1,12 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-05-11.
+Last updated: 2026-05-18. **STATUS: ROOT CAUSE FIXED.** See `## Resolution (2026-05-18)` at end.
 
-## Where we are
+Original handoff (2026-05-11) preserved below for context.
+
+---
+
+## Where we are (2026-05-11)
 
 The fiscal-experiment code path through `run_fiscal_figures.py` is **functionally intact** after the Phase 8 σ_α merge (`4a9e4aa`, 2026-05-08) and the follow-up plot/income-moment fixes (`599454b`, 2026-05-11). Smoke tests confirmed:
 
@@ -80,3 +84,70 @@ Outputs land in `code/output/fiscal_test/`. Full stdout log: `/tmp/fiscal_GR_FEo
 - Plot generation: fixed in `599454b`.
 - Income-moment double-counting: fixed in `599454b` (UI was being summed twice in `income_gini` and `p90_p10_income`).
 - JAX backend on macOS: works with `JAX_PLATFORM_NAME=cpu`. The Metal float64 issue is documented; do not retry Metal.
+
+---
+
+## Resolution (2026-05-18)
+
+**Root cause was a single bug:** `mu_y` in `calibration_input_*.json` is the unconditional mean of log y per education stratum (per LIS estimation `data/lis/02_estimate_ar1.py:236`), but `lifecycle_perfect_foresight.py:_income_process()` was passing it as the AR(1) intercept to `tauchen()`. With ρ=0.95 this scaled the unconditional log-y mean by 20×. For Greek "high" edu (`mu_y=0.259`), the discretized stationary mean of log y was 5.18 instead of 0.259, producing y-grid levels around 110-290 instead of 0.8-2.1. Cross-section weighted mean y was 55 (should be 1.1).
+
+This single error explained the entire fiscal-ratio blow-up:
+- inflated `y_last` ⇒ inflated pensions
+- inflated `effective_y` ⇒ inflated tax revenue
+- inflated `Y` ⇒ understated `health/Y` (numerator was independent of y, denominator wasn't)
+- inflated household income ⇒ `C > Y` (resource constraint violated)
+
+The aggregator (`_compute_ss_aggregates`, `compute_government_budget`) was **correct** — numerator and denominator were always in the same per-living-person units. The bug was upstream, in the income-process discretization.
+
+### Commits
+
+1. **`8efa408`** — `mu_y` fix at `lifecycle_perfect_foresight.py:467`. Pass `(1-rho_y)*mu_y` as the intercept so `mu_y` is the unconditional mean of log y. Includes:
+   - `test_income_process.py` (new) — data-driven regression test that auto-discovers `calibration_input_*.json` and asserts `mean(log y_grid) == mu_y` to 1e-12.
+   - Updated default `edu_params` in `LifecycleConfig` so existing tests' y-grids stay bit-identical.
+   - `lifecycle_jax.py` — auto-set `JAX_PLATFORMS=cpu` on macOS ARM (no more env-var ritual).
+   - `IMPLEMENTATION_PLAN.md` — Phase 10 (test-suite audit) added.
+
+2. **`99313fb`** — Class 1: data-target triage. Updates JSON fiscal targets to Greek 2023 data values; replaces single `health_over_Y` with `health_{gov,oop,total}_over_Y`; introduces `r_B` (sovereign rate) distinct from `r` (private K return). Code changes in `calibrate.py`, `olg_transition.py`, `eval_fiscal_results.py`, `run_fiscal_figures.py`.
+
+3. **`93cec78`** — Class 1 fixup: Greek total health spending is ~8% of GDP (OECD), not 5.4% (data-sheet partial). Updated targets to match and rescaled `m_good` accordingly.
+
+4. **`9c0bf90`** — Class 2: pension generosity. `pension_replacement_default 0.50 → 0.25`, `pension_min_floor 0.40 → 0.15`. Reason: model pension formula `ρ·w·y_last·α_mult` omits hours, so ρ represents replacement of "full-time potential earnings" not realised earnings. With Greek headline replacement 76% and realised aggregate ratio ~50%, ρ_model ≈ 0.25 calibrates the model concept to the data flow.
+
+### Post-recalibration state
+
+Re-calibrated Greek baseline (n_sim=10000, JAX/CPU, 33 min):
+
+| Calibrated param | Value |
+|---|---|
+| ν | 36.57 |
+| β | 1.019 (above 1; effective β·survival well below 1) |
+
+Targeted moments:
+
+| Moment | Target | Model | Dev |
+|---|---|---|---|
+| A_over_Y | 4.0 | 4.003 | exact |
+| average_hours | 0.41 | 0.488 | +19% |
+
+Fiscal ratios (untargeted):
+
+| Ratio | Model | Data | Dev |
+|---|---|---|---|
+| `interest/Y` | 0.034 | 0.034 | exact |
+| `K/Y` | 3.00 | (firm FOC) | exact |
+| `health_total/Y` | 0.092 | 0.082 | +12% |
+| `health_gov/Y` | 0.061 | 0.054 | +13% |
+| `tax_revenue/Y` | 0.437 | 0.400 | +9% |
+| `pensions/Y` | 0.221 | 0.160 | +38% |
+| `ui/Y` | 0.011 | 0.006 | (small abs) |
+
+Full-balance picture (including exogenous G/Ig/defense/transfers): primary balance ~ −6% of Y vs Greek 2023 +2%. The remaining gap is dominated by the pension overshoot.
+
+Calibration report: `code/output/calibration/calibration_GR_20260518_184335.md`.
+
+### Open items
+
+- **Tighten pensions further.** Model 0.221 vs target 0.16. Likely needs another small reduction in `pension_replacement_default` (0.25 → ~0.18) followed by re-calibration.
+- **Wealth-distribution residuals** (`wealth_gini = 0.38` vs 0.58, `zero_wealth_fraction = 2.9%` vs 1.1%) — Phase 9 (warm-glow bequest + initial wealth distribution).
+- **Hours overshoots +19%.** Class 3 of `docs/CALIBRATION_FIX_CHECKLIST.md` proposes adding φ (Frisch curvature) as a third free parameter to close the trade-off with A/Y.
+- **Fiscal experiments not yet re-validated.** The `run_fiscal_figures.py` smoke test should be re-run on the post-bug-fix baseline to confirm the debt path no longer explodes. Expected: debt path stable around target B/Y=1.64; bisection on τ_l for tax-financed shock should converge to plausible Δτ (~1-3 pp).
