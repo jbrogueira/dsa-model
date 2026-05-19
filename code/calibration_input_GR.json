@@ -26,7 +26,7 @@
 
   "production": {
     "alpha": 0.33,
-    "delta": 0.07,
+    "delta": 0.05,
     "A_tfp": 1.0,
     "K_g": 0.0,
     "eta_g": 0.0,
