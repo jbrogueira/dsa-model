@@ -957,8 +957,11 @@ def load_config(path):
     base_config, eq_prices = build_lifecycle_config(raw)
     r = raw['prices']['r']
     w = eq_prices['w']
-    raw['_derived'] = {'w': w, 'K_over_L': eq_prices.get('K_over_L', 0),
-                       'Y_over_L': eq_prices.get('Y_over_L', 0)}
+    # Preserve any existing _derived block (e.g. theta from a previous SMM run)
+    # rather than overwriting it with only the firm-FOC-derived prices.
+    raw.setdefault('_derived', {})
+    raw['_derived'].update({'w': w, 'K_over_L': eq_prices.get('K_over_L', 0),
+                            'Y_over_L': eq_prices.get('Y_over_L', 0)})
 
     # Age weights
     T = raw['model']['T']
@@ -1042,6 +1045,28 @@ def build_lifecycle_config(raw, w=None):
     kwargs['w_path'] = np.full(T, w)
     kwargs['r_default'] = r
     kwargs['w_default'] = w
+
+    # Apply calibrated theta from _derived.theta if present. This closes the loop
+    # between calibrate.py (which writes _derived.theta after SMM) and downstream
+    # consumers (build_olg_transition, run_fiscal_figures.py): post-SMM runs use
+    # the calibrated parameters automatically, without manually editing model.nu /
+    # model.beta. Param paths come from raw['calibration']['params'].
+    derived_theta = raw.get('_derived', {}).get('theta', {})
+    if derived_theta:
+        param_paths = {p['name']: p['path']
+                       for p in raw.get('calibration', {}).get('params', [])}
+        for name, value in derived_theta.items():
+            path = param_paths.get(name, name)
+            parts = path.split('.')
+            if parts[0] == 'edu_params' and len(parts) == 3:
+                field_name = parts[2]
+                if parts[1] == '*':
+                    for et in edu_params:
+                        edu_params[et][field_name] = value
+                else:
+                    edu_params[parts[1]][field_name] = value
+            else:
+                kwargs[path] = value
     if raw.get('survival_probs') is not None:
         kwargs['survival_probs'] = np.array(raw['survival_probs'])
     if raw.get('m_age_profile') is not None:
@@ -1530,6 +1555,25 @@ def main():
     if config_data is not None:
         report_path = generate_report(result, spec, config_data, args.report_dir)
         print(f"\nReport: {report_path}")
+
+    # Write calibrated theta back into the input JSON's _derived.theta block
+    # so downstream consumers (build_olg_transition, run_fiscal_figures.py)
+    # pick up the post-SMM values automatically. Re-read the file from disk
+    # to preserve formatting and ignore the in-memory derived-prices fields.
+    if args.config and result.get('convergence', False):
+        with open(args.config) as f:
+            raw_disk = json.load(f)
+        raw_disk.setdefault('_derived', {})
+        raw_disk['_derived']['theta'] = {
+            p.name: float(v) for p, v in zip(spec.params, result['theta'])
+        }
+        raw_disk['_derived']['theta_metadata'] = {
+            'calibration_date': datetime.now().isoformat(timespec='seconds'),
+            'source_report': report_path if config_data is not None else None,
+        }
+        with open(args.config, 'w') as f:
+            json.dump(raw_disk, f, indent=2)
+        print(f"Calibrated theta written to {args.config}._derived.theta")
 
     if args.output:
         out = {
