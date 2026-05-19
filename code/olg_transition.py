@@ -1008,17 +1008,18 @@ class OLGTransition:
         )
 
         for edu_type in self.education_shares.keys():
-            ss_config = LifecycleConfig(
-                T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
-                education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
-                retirement_age=self.retirement_age,
+            # Build SS config by replacing only the cohort-specific paths on the
+            # base lifecycle_config — this preserves edu_params, n_alpha,
+            # wage_age_profile, pension_avg_weight, kappa, m_good, ... that the
+            # bare LifecycleConfig(...) constructor would default away.
+            ss_config = self.lifecycle_config._replace(
+                education_type=edu_type, current_age=0,
                 r_path=np.ones(self.T) * r_ss, w_path=np.ones(self.T) * w_ss,
                 tau_c_path=np.ones(self.T) * (tau_c_path[0] if tau_c_path is not None else 0),
                 tau_l_path=np.ones(self.T) * (tau_l_path[0] if tau_l_path is not None else 0),
                 tau_p_path=np.ones(self.T) * (tau_p_path[0] if tau_p_path is not None else 0),
                 tau_k_path=np.ones(self.T) * (tau_k_path[0] if tau_k_path is not None else 0),
                 pension_replacement_path=np.ones(self.T) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4),
-                **_feature_kwargs,
             )
             ss_model = self._lifecycle_model_class(ss_config, verbose=False)
             ss_model.solve(verbose=False)
@@ -1098,10 +1099,12 @@ class OLGTransition:
                     if bequest_lumpsum_path is not None and birth_period in bequest_lumpsum_path
                     else 0.0
                 )
-                config = LifecycleConfig(
-                    T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
-                    education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
-                    retirement_age=self.retirement_age,
+                # Cohort config: _replace preserves all fields on lifecycle_config
+                # (edu_params, n_alpha, wage_age_profile, kappa, m_good, ...);
+                # cohort_feature_kwargs only carries fields possibly overridden by
+                # per-cohort survival (transfer_floor mutation, etc.).
+                config = self.lifecycle_config._replace(
+                    education_type=edu_type, current_age=0,
                     r_path=cohort_r, w_path=cohort_w,
                     tau_c_path=cohort_tau_c, tau_l_path=cohort_tau_l,
                     tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
@@ -1147,10 +1150,11 @@ class OLGTransition:
                         _base_tf = pre_transition_paths.get('transfer_floor')
                         if _base_tf is not None:
                             base_feature_kwargs['transfer_floor'] = float(_base_tf)
-                        base_config = LifecycleConfig(
-                            T=self.T, beta=self.beta, gamma=self.gamma, current_age=0,
-                            education_type=edu_type, n_a=self.n_a, n_y=self.n_y, n_h=self.n_h,
-                            retirement_age=self.retirement_age,
+                        # MIT baseline config: _replace also preserves edu_params,
+                        # n_alpha, etc. base_feature_kwargs carries the
+                        # transfer_floor override for the MIT baseline case.
+                        base_config = self.lifecycle_config._replace(
+                            education_type=edu_type, current_age=0,
                             r_path=base_cohort_r, w_path=base_cohort_w,
                             tau_c_path=base_cohort_tau_c, tau_l_path=base_cohort_tau_l,
                             tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,

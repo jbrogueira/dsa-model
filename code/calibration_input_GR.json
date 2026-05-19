@@ -11,10 +11,10 @@
     "n_alpha": 5,
     "a_min": 0.0,
     "a_max": 200.0,
-    "beta": 0.96,
+    "beta": 1.018,
     "gamma": 2.0,
     "labor_supply": true,
-    "nu": 68.35,
+    "nu": 37.66,
     "phi": 2.0,
     "tax_progressive": false
   },
