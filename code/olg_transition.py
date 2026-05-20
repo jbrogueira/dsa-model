@@ -170,6 +170,7 @@ class OLGTransition:
         self.economy_type = economy_type
         self.r_star = r_star
         self.r_B = float(r_B) if r_B is not None else None
+        self.r_B_path = None   # built per-call in simulate_transition()
         if B_path is not None:
             self.B_path = np.asarray(B_path, dtype=float)
         else:
@@ -1683,15 +1684,15 @@ class OLGTransition:
         debt_service = 0.0
         new_borrowing = 0.0
         if self.B_path is not None:
-            r_priv = float(self.r_path[t_idx]) if self.r_path is not None else 0.0
-            r_debt = self.r_B if self.r_B is not None else r_priv
+            r_debt = float(self.r_B_path[t_idx]) if self.r_B_path is not None else (
+                float(self.r_path[t_idx]) if self.r_path is not None else 0.0)
             B_t = float(self.B_path[t_idx]) if t_idx < len(self.B_path) else float(self.B_path[-1])
             B_next = float(self.B_path[t_idx + 1]) if t_idx + 1 < len(self.B_path) else float(self.B_path[-1])
             debt_service = r_debt * B_t
             new_borrowing = B_next - B_t
 
         total_spending = (total_ui + total_pension + total_gov_health
-                          + G_t + I_g_t + debt_service + defense_t)
+                          + G_t + I_g_t + defense_t)
         total_revenue_with_borrowing = total_revenue + new_borrowing
         primary_deficit = total_spending - total_revenue
         fiscal_deficit = total_spending - total_revenue_with_borrowing
@@ -1817,6 +1818,13 @@ class OLGTransition:
 
         # Extend r_path for cohorts born before transition
         r_path_full = np.concatenate([r_path, np.ones(self.T) * r_path[-1]])
+
+        # Sovereign rate path: scalar r_B broadcast to length T_transition; fall back to
+        # the capital path if r_B is unset, so debt service / debt accumulation default
+        # to the capital rate (prior behaviour).
+        self.r_B_path = (np.full(self.T_transition, float(self.r_B))
+                         if self.r_B is not None
+                         else np.asarray(r_path, dtype=float))
 
         # Compute wage path from production function
         if w_path is None:

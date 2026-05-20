@@ -241,12 +241,16 @@ def _extend_base_paths(base_paths: dict, n_post: int) -> dict:
 # ---------------------------------------------------------------------------
 
 def compute_debt_path(primary_deficit_path: np.ndarray,
-                      r_path: np.ndarray,
+                      r_B_path: np.ndarray,
                       B_initial: float = 0.0) -> np.ndarray:
-    """Forward-recursive debt accumulation.
+    """Forward-recursive sovereign-debt accumulation.
 
     B[0] = B_initial
-    B[t+1] = (1 + r[t]) * B[t] + PrimaryDeficit[t]
+    B[t+1] = (1 + r_B[t]) * B[t] + PrimaryDeficit[t]
+
+    The sovereign rate r_B is used, not the capital return r — these can differ
+    in SOE mode (sovereign spread).  Callers should pass base_paths['r_B_path'],
+    which `run_fiscal_scenario` populates from olg.r_B (with capital-r fallback).
 
     Returns B_path of length T_transition + 1.
     """
@@ -254,7 +258,7 @@ def compute_debt_path(primary_deficit_path: np.ndarray,
     B = np.zeros(T + 1)
     B[0] = B_initial
     for t in range(T):
-        B[t + 1] = (1.0 + float(r_path[t])) * B[t] + float(primary_deficit_path[t])
+        B[t + 1] = (1.0 + float(r_B_path[t])) * B[t] + float(primary_deficit_path[t])
     return B
 
 
@@ -582,6 +586,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
 
     ext_paths = _extend_base_paths(base_paths, n_post)
     r_path = np.asarray(ext_paths['r_path'], dtype=float)
+    r_B_path = np.asarray(ext_paths['r_B_path'], dtype=float)
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
     cf = _apply_shock(scenario, ext_paths, T_total, instrument_delta=0.0, shock_scale=1.0)
@@ -592,7 +597,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     )
 
     B_path = compute_debt_path(
-        cf_budget['primary_deficit'], r_path, B_initial=scenario.B_initial
+        cf_budget['primary_deficit'], r_B_path, B_initial=scenario.B_initial
     )
     Y_path = np.asarray(cf_macro['Y'], dtype=float)
     B_gdp  = B_path[:-1] / Y_path  # length T_total
@@ -660,13 +665,15 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
 
     ext_paths = _extend_base_paths(base_paths, n_post)
     r_path = np.asarray(ext_paths['r_path'], dtype=float)
+    r_B_path = np.asarray(ext_paths['r_B_path'], dtype=float)
     psi = _get_psi(scenario, T_total)
     cond = scenario.balance_condition
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
-    # r_terminal is the interest rate at the balance-condition period
-    r_terminal = float(np.asarray(base_paths['r_path'], dtype=float)[-1])
+    # r_terminal is the sovereign rate at the balance-condition period (used by
+    # terminal_flow_balance: PD/Y = (g − r_B)·target_debt_gdp).
+    r_terminal = float(np.asarray(base_paths['r_B_path'], dtype=float)[-1])
 
     # Period at which the balance condition is evaluated
     T_bal = T_base if n_post > 0 else None
@@ -681,7 +688,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         )
         # Get Y_path from last simulate_transition result (stored on olg)
         Y = np.asarray(olg.Y_path, dtype=float)
-        B = compute_debt_path(budget['primary_deficit'], r_path,
+        B = compute_debt_path(budget['primary_deficit'], r_B_path,
                                B_initial=scenario.B_initial)
         return _balance_residual(budget, Y, B, scenario, r_terminal, T_bal), budget, B, Y
 
@@ -827,6 +834,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
 
     ext_paths = _extend_base_paths(base_paths, n_post)
     r_path = np.asarray(ext_paths['r_path'], dtype=float)
+    r_B_path = np.asarray(ext_paths['r_B_path'], dtype=float)
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
@@ -932,7 +940,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         adj_path = Delta_star * psi
 
     B_path = compute_debt_path(
-        cf_budget_star['primary_deficit'], r_path, B_initial=scenario.B_initial
+        cf_budget_star['primary_deficit'], r_B_path, B_initial=scenario.B_initial
     )
     Y_path = np.asarray(cf_macro_star['Y'], dtype=float)
     B_gdp  = B_path[:-1] / Y_path
@@ -1009,6 +1017,15 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
         base_paths['G_path'] = olg.govt_spending_path
     if 'I_g_path' not in base_paths:
         base_paths['I_g_path'] = olg.I_g_path
+
+    # Sovereign rate path: broadcast scalar r_B, else fall back to capital r_path.
+    # Used by compute_debt_path (B law of motion) and by _balance_residual's
+    # terminal_flow_balance condition.  Adding it here lets all three financing
+    # branches (debt / tax / NFA) pick it up uniformly.
+    if 'r_B_path' not in base_paths:
+        _r_path_arr = np.asarray(base_paths['r_path'], dtype=float)
+        base_paths['r_B_path'] = (np.full(len(_r_path_arr), float(olg.r_B))
+                                  if olg.r_B is not None else _r_path_arr)
 
     # ── Run (or retrieve) baseline ───────────────────────────────────────────
     # Reuse pre_transition_paths if already in base_paths (avoids cache invalidation
