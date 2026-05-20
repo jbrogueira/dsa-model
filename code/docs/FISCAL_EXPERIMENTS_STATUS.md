@@ -145,9 +145,68 @@ Full-balance picture (including exogenous G/Ig/defense/transfers): primary balan
 
 Calibration report: `code/output/calibration/calibration_GR_20260518_184335.md`.
 
-### Open items
+### Open items (as of 2026-05-18)
 
 - **Tighten pensions further.** Model 0.221 vs target 0.16. Likely needs another small reduction in `pension_replacement_default` (0.25 → ~0.18) followed by re-calibration.
 - **Wealth-distribution residuals** (`wealth_gini = 0.38` vs 0.58, `zero_wealth_fraction = 2.9%` vs 1.1%) — Phase 9 (warm-glow bequest + initial wealth distribution).
 - **Hours overshoots +19%.** Class 3 of `docs/CALIBRATION_FIX_CHECKLIST.md` proposes adding φ (Frisch curvature) as a third free parameter to close the trade-off with A/Y.
 - **Fiscal experiments not yet re-validated.** The `run_fiscal_figures.py` smoke test should be re-run on the post-bug-fix baseline to confirm the debt path no longer explodes. Expected: debt path stable around target B/Y=1.64; bisection on τ_l for tax-financed shock should converge to plausible Δτ (~1-3 pp).
+
+---
+
+## Session 2026-05-19: cohort-config bug + workflow fix
+
+Pension tightening + delta lowering committed (`7f905cb`, `6f43d97`). Re-ran fiscal experiment, **debt still blew up to B/Y = 10,624%** in the baseline. The calibration's primary balance was sustainable (~−1% of Y), but the transition's apparent primary deficit was much larger. Two compounding causes identified.
+
+### Cause 1: workflow gap (auto-write theta to JSON)
+
+`calibrate.py` wrote SMM results only to a Markdown report; `build_olg_transition` read `calibration_input_GR.json` and picked up the *initial guesses* for `nu`, `beta`. Fiscal experiments ran at uncalibrated parameters silently.
+
+Fix (`1578e30`): on SMM convergence, `calibrate.py` now writes calibrated theta to `_derived.theta` in the JSON. `build_lifecycle_config` reads `_derived.theta` and overrides the corresponding fields. Initial guesses in `model.*` are preserved on disk for traceability and as the next SMM's starting point.
+
+### Cause 2: cohort lifecycle config built from scratch
+
+`solve_cohort_problems` constructed each cohort's `LifecycleConfig(...)` with only an enumerated subset of fields (T, beta, gamma, n_a, n_y, n_h, retirement_age, paths, `_feature_kwargs`). All unlisted fields fell back to **dataclass defaults** — most critically `edu_params`, `n_alpha`, `wage_age_profile`, `kappa`, `m_good`, `pension_avg_weight`, and the initial-condition fields.
+
+For the Greek baseline this meant cohort lifecycle models silently ran with `mu_y = {5/3, 10/3, 4.0}` (the defaults' rescaled values) and `n_alpha = 1`, producing a `y_grid` for medium edu of `[0, 21.9, 25.8, 30.4, 35.9]` instead of the Greek-calibrated `[0, 0.58, 0.83, 1.20, 1.73]`. Cohort effective_y was 5–9× the standalone lifecycle value, which is exactly what blew up the transition's primary deficit and debt path. The bug had been silent: tests built OLGTransition with a fully-populated lifecycle config and never noticed `solve_cohort_problems` discarded most of it.
+
+Fix (`f2b0e9f`): replace `LifecycleConfig(...)` with `self.lifecycle_config._replace(...)` at three sites — `ss_config` (line 1011), per-cohort `config` (line 1101), and the MIT-baseline `base_config` (line 1150). `_replace` preserves every field on the base lifecycle_config and overrides only the cohort-specific paths and feature kwargs.
+
+**Verification** (medium edu, birth_period=0, n_sim=500):
+
+| | Before fix | After fix | Standalone |
+|---|---|---|---|
+| `n_alpha` | 1 | 5 | 5 |
+| `y_grid[1]` | 21.90 | 0.577 | 0.577 |
+| cohort `l_m[0]` | 4.65 | 0.90 | 0.83 |
+
+### Post-fix fiscal experiment
+
+Re-run of G-shock fiscal experiment (`run_fiscal_figures.py --config calibration_input_GR.json --shock G --backend jax`, ~49 min on JAX/CPU, n_sim=2000):
+
+| Quantity | Pre-cohort-fix | **Post-cohort-fix** |
+|---|---|---|
+| `mean(Y)` warmup | 8.45 | **0.537** (matches calibration's per-capita 0.561) |
+| `B_initial` | 13.86 | 0.88 |
+| Baseline final B/Y | 10,624 % | **961 %** |
+| G-shock debt B/Y | 11,735 % | 2,074 % |
+| G-shock τ_l Δτ_l | +114 pp | **+6.64 pp** (plausible Greek policy) |
+| Cumulative multiplier | 0.000 | 0.000 |
+
+`mean(Y)` now matches the calibration's per-capita Y — the 16× unit mismatch is gone. The bisection produces a credible Greek fiscal-policy move (raise `τ_l` by 6.6 pp to stabilise debt).
+
+Baseline B/Y still grows to 961 % over 80 periods, but this is now a **real economic result**, not a unit bug. Back-of-envelope with `r_B = 0.021`, residual primary deficit ≈ 1.1 % of Y, and pop growth `g = −0.57 %`:
+
+```
+d_80 = (1+r_B)^80 · d_0 + deficit · [(1+r_B)^80 − 1] / r_B
+     = 5.27 · 1.64 + 0.011 · 4.27 / 0.021 ≈ 10.9   (~1090 %)
+```
+
+Observed 961 % is consistent. The residual primary deficit comes from the structural L/Y and C/Y gaps documented in `docs/CALIBRATION_FIX_CHECKLIST.md` (Class 3+) and the +38 % pension overshoot from the morning's run.
+
+### Open items going forward
+
+- **Cumulative multiplier = 0.000** — worth a 30-min check. Could be Ricardian-equivalence pattern in the lifecycle model (forward-looking agents internalise future taxes) or a computation issue in `compare_scenarios`.
+- **Close the residual primary-deficit gap** (~3 pp of Y). Sources: tax base mismatches (L/Y mechanically 0.67 vs Greek 0.36), pension overshoot, missing "Other revenues" / "Other primary spending" lines.
+- **Phase 9** (warm-glow bequest + initial wealth) remains the path for the wealth-distribution residuals.
+- **Class 3** (free φ as third SMM parameter) remains the path for closing the hours fit.
