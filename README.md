@@ -1,6 +1,48 @@
 # OLG Equilibrium Model with JAX
 
-Overlapping Generations Economy with heterogeneous agents, incomplete markets, and equilibrium prices.
+Overlapping Generations Economy with heterogeneous agents, incomplete markets, and equilibrium prices. Application: Greek fiscal transition (debt sustainability under G / I_g shocks).
+
+---
+
+## Current status (handoff 2026-05-21)
+
+Branch `main` ahead of `origin/main` by one commit (`8c45250` — sovereign-debt accounting fix). Detailed session notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md`; solver architecture in `code/docs/solver_architecture.md`.
+
+### What landed this session
+
+- **Tree 2 audit** of the fiscal-transition solver against the live code; twelve corrections to `code/docs/solver_architecture.md` (dispatcher field, NFA-floor wording, missing `defense_spending` in the budget identity, signature drift in helpers).
+- **Interest double-count fix.** `compute_government_budget` no longer adds `r_B · B` into `total_spending`, so the field labelled `primary_deficit` is now the textbook primary deficit. `compute_debt_path` accumulates `B[t+1] = (1 + r_B[t]) · B[t] + primary_deficit[t]` using a new `r_B_path` (scalar `r_B` broadcast to length `T`, capital-rate fallback). `terminal_flow_balance`'s stability condition now references `r_B` instead of capital `r`.
+- **No test changes.** With `r_B = None` in test configs `r_B_path` mirrors the capital path, preserving prior behaviour bit-for-bit.
+
+### Post-fix G-shock run (Greek config, JAX/CPU, 43 min)
+
+| Quantity | Pre-fix (2026-05-19) | Post-fix (2026-05-20) |
+|---|---|---|
+| Baseline final B/Y | +961 % | **−183 %** |
+| G-shock debt-financed final B/Y | +2,074 % | +228 % |
+| G-shock τ_l-financed Δτ_l | +6.64 pp | **+1.56 pp** |
+| Cumulative multiplier | 0.000 | 0.000 |
+
+Sign flip of baseline drift confirms the recursion is now using the right rate once. The remaining drift is a baseline-closure problem, not a law-of-motion bug.
+
+### Open question
+
+The baseline calibration (G/Y, tax rates, `B_initial`) was implicitly aligned to the previous mis-labelled `primary_deficit` field. With the corrected accounting, the implied primary surplus is ~10 pp of GDP per period — far above the stationarity requirement `(g − r_B) · b ≈ 3.4 %` for Greece. So B/Y drifts. SMM calibration of `(ν, β)` is unaffected (those moments don't depend on the budget identity).
+
+### Next-step routes
+
+1. **SS-residual instrument** (small diff). Add one fiscal lever to the baseline (residual transfer, lump-sum, or one tax rate) and pin it so `PD_primary/Y = (g − r_B) · b₀`. Baseline B/Y stationary at `b₀ = B_initial / Y[0]` by construction. Roughly ≤ 50 LOC in `olg_transition.py` + JSON entry. Success: baseline run shows B/Y ≈ 1.64 across all transition periods.
+2. **Accept drift; recalibrate `B_initial` and target `b`** (larger conceptual shift). Treat data Greece as a transition state, let the model converge, use its long-run b. Affects every downstream comparison and the tax-financed bisection target.
+3. **Diagnose cumulative multiplier 0.000** (independent, ~30 min). Inspect per-period `multiplier_path` in `code/output/fiscal_test/fiscal_results.json`; expected to be small but non-zero given SOE pins `K_domestic` via firm FOC.
+
+### Code state at end of session
+
+- `code/olg_transition.py`: `simulate_transition` builds `self.r_B_path`; `compute_government_budget` reads `r_B_path[t_idx]`; `total_spending` no longer includes `debt_service`.
+- `code/fiscal_experiments.py`: `compute_debt_path` arg renamed `r_path → r_B_path`; `run_fiscal_scenario` populates `base_paths['r_B_path']`; three financing branches and `r_terminal` use it.
+- `code/docs/solver_architecture.md`: Tree 2 rewritten to match the live code; Tree 1 unchanged from prior session.
+- Tests not run this session (per user instruction).
+
+---
 
 ## Setup Instructions
 
@@ -187,19 +229,26 @@ where:
   - 6-panel figure showing lifecycle profiles
   - Saved to `output/` directory
 - **No aggregation**: Each education type solved separately
-  - Aggregation done in `olg_equilibrium.py` with education distribution
+  - Aggregation done in `olg_transition.py` with education distribution
   - Returns dictionary: `models[edu_type]` for each education type
 
 ### File Organization
 ```
 code/
-├── lifecycle_perfect_foresight.py  # Household lifecycle problem
-├── olg_equilibrium_jax.py          # General equilibrium solver
-├── output/                          # Generated plots and results
-│   ├── education_comparison.png    # Lifecycle profiles by education
-│   └── education_comparison_test.png
-└── README.md
+├── lifecycle_perfect_foresight.py  # Lifecycle household problem (NumPy backend)
+├── lifecycle_jax.py                # Lifecycle household problem (JAX backend)
+├── olg_transition.py               # OLG transition dynamics + aggregation + budget
+├── fiscal_experiments.py           # Fiscal-scenario framework (debt/tax/NFA branches)
+├── run_fiscal_figures.py           # CLI: --shock {G, Ig, both} → figures + JSON
+├── calibrate.py                    # SMM calibration of (ν, β); JSON config I/O
+├── eval_fiscal_results.py          # Post-processing on fiscal_results.json
+├── test_*.py                       # pytest suites
+├── calibration_input_GR.json       # Greek-country JSON config
+├── docs/                           # Plan, status, audit, architecture docs
+└── output/                         # Generated figures, calibration reports, fiscal_results.json
 ```
+
+See `code/CLAUDE.md` for the full method/class index.
 
 ### Workflow
 1. **Lifecycle model** solves household problem for each education type

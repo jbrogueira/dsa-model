@@ -1,6 +1,8 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-05-18. **STATUS: ROOT CAUSE FIXED.** See `## Resolution (2026-05-18)` at end.
+Last updated: 2026-05-21. **STATUS:** double-count fix landed (commit `8c45250`); baseline calibration not yet aligned to the corrected accounting. See `## Session 2026-05-20 / 2026-05-21` at end.
+
+Earlier resolution: 2026-05-18. See `## Resolution (2026-05-18)` mid-file.
 
 Original handoff (2026-05-11) preserved below for context.
 
@@ -210,3 +212,57 @@ Observed 961 % is consistent. The residual primary deficit comes from the struct
 - **Close the residual primary-deficit gap** (~3 pp of Y). Sources: tax base mismatches (L/Y mechanically 0.67 vs Greek 0.36), pension overshoot, missing "Other revenues" / "Other primary spending" lines.
 - **Phase 9** (warm-glow bequest + initial wealth) remains the path for the wealth-distribution residuals.
 - **Class 3** (free φ as third SMM parameter) remains the path for closing the hours fit.
+
+---
+
+## Session 2026-05-20 / 2026-05-21: solver-architecture audit + sovereign-debt accounting fix
+
+### What was done
+
+1. **Tree 2 audit** of `code/docs/solver_architecture.md` against the live `fiscal_experiments.py` and `olg_transition.py`. Twelve corrections applied: dispatcher field is `scenario.financing` (not `scenario.balance`); NFA constraint is a one-sided floor (not a corridor); `fiscal_multiplier` is undiscounted; budget identity had spurious `r·NFA_gov` revenue term and a missing `defense_spending` spending line; the doc's `_simulate_sequential` was misplaced (the top-level call is `_ensure_cohort_panel_cache`); signatures of `_apply_shock`, `_extract_cohort_path`, `_compute_output_path_njit` corrected.
+2. **Interest double-count exposed.** `compute_government_budget` defined `primary_deficit = total_spending − total_revenue` where `total_spending` already included `debt_service = r_B · B_t`. `compute_debt_path` then accumulated `B[t+1] = (1+r_path[t]) · B[t] + primary_deficit[t]`, adding interest again via the `(1+r)·B` term. Sovereign rate `r_B` was scalar (default `None`, fallback to capital `r`).
+3. **Fix applied (commit `8c45250`)**:
+   - `debt_service` dropped from `total_spending`. The field labelled `primary_deficit` is now the textbook primary deficit (spending excluding interest, minus revenue). `debt_service` is still reported as a separate budget line.
+   - `r_B_path` introduced: built once per `simulate_transition()` call as the scalar `r_B` broadcast to length `T_transition`, falling back to the capital `r_path` when `r_B is None`. Lives on `OLGTransition.r_B_path`; also plumbed through `base_paths['r_B_path']` so all three financing branches (`run_debt_financed`, `run_tax_financed`, `run_nfa_constrained`) pick it up.
+   - `compute_debt_path` renamed its second positional arg `r_path → r_B_path`. Recursion is now `B[t+1] = (1 + r_B_path[t]) · B[t] + primary_deficit[t]`.
+   - `_balance_residual`'s `r_terminal` now sourced from `r_B_path[-1]`, so `terminal_flow_balance`'s `(g − r) · target` references the sovereign rate as it should.
+   - No test changes required: with `r_B = None` in test configs, `r_B_path` mirrors `r_path`, preserving exact prior behaviour. (`test_sovereign_debt_in_budget` keeps passing because `r_B_path[0] = r_path[0] = 0.04`.)
+
+### Post-fix G-shock run (Greek config, JAX/CPU, 43 min)
+
+`python run_fiscal_figures.py --config calibration_input_GR.json --shock G --backend jax`
+
+| Quantity | 2026-05-19 (pre-fix) | **2026-05-20 (post-fix)** |
+|---|---|---|
+| Baseline final B/Y | +961 % | **−183 %** |
+| G-shock debt-financed final B/Y | +2,074 % | +228 % |
+| G-shock τ_l-financed Δτ_l | +6.64 pp | **+1.56 pp** |
+| G-shock τ_l-financed final B/Y | (target 164%) | +27.6 % |
+| Cumulative fiscal multiplier | 0.000 | 0.000 |
+| mean(Y) baseline | 0.537 | 0.537 |
+
+**Sign flip of baseline drift** (+961 % → −183 %) is the diagnostic signature of the fix. Pre-fix recursion `B[t+1] ≈ (1+r+r_B)·B + PD_primary` had B compounding at the sum of two rates; post-fix `B[t+1] = (1+r_B)·B + PD_primary` correctly compounds at one rate, but the same calibration's `Spd_excl_interest − Rev` is now strongly negative (primary surplus of roughly 10 pp of GDP sustained), so B/Y falls fast instead of growing.
+
+### Diagnosis
+
+The fix is mathematically correct. What it exposed: the baseline G/Y, tax rates, and `B_initial` in `calibration_input_GR.json` were implicitly aligned against the *mis-labelled* `primary_deficit` field (which contained `r_B · B`). With debt service removed, the same parameters imply a much larger primary surplus than the stationarity identity requires.
+
+**SS stationarity** for `B/Y = b` requires `PD_primary / Y = (g − r_B) · b`. For Greece (`r_B = 0.021`, `g ≈ 0`, `b = 1.64`) this is a primary surplus of 3.4 % of GDP. The post-fix baseline is producing a primary surplus closer to 10 % of GDP — much too tight.
+
+**SMM is unaffected.** Calibrated `(ν, β)` come from matching `(avg_hours, A/Y)`; neither moment depends on how the budget is labelled or how B accumulates. No retune of `(ν, β)` required.
+
+### Open question: choose a fiscal closure
+
+- **(a) SS-residual instrument.** Add one fiscal lever (residual transfer, lump-sum, or one tax) to the baseline and pin it so the model's `PD_primary / Y` equals `(g − r_B) · b₀`. Then `b₀ = B_initial / Y[0]` is a fixed point of the law of motion and the baseline B/Y is stationary. Smallest diff. Probably ≤ 50 LOC in `olg_transition.py` + JSON.
+- **(b) Accept drift; recalibrate `B_initial` and target `b` to model long-run.** Treat data Greece as a transition state. Requires running the baseline to its long-run B/Y and using that as the data target. Conceptually heavier; affects every downstream comparison.
+
+### Cumulative multiplier 0.000
+
+Still open from 2026-05-19. The SOE pins `K_domestic = (K/L)·L` via firm FOC at exogenous `r`, so Y reacts to G only through `L` — and only if labor supply is elastic enough. Worth confirming this is "Ricardian-equivalence + SOE" by inspecting the per-period `multiplier_path` in `fiscal_results.json`, not a print-precision artifact. 30-min diagnostic.
+
+### Pointers
+
+- Solver writeup: `code/docs/solver_architecture.md` (Tree 1 = SS calibration, Tree 2 = fiscal transition; Tree 2 was rewritten this session).
+- Fix commit: `8c45250` ("Use r_B for sovereign debt law of motion; fix interest double-count").
+- Run log: `code/output/fiscal_test/run_G.log`.
+- Numerical results: `code/output/fiscal_test/fiscal_results.json`.
