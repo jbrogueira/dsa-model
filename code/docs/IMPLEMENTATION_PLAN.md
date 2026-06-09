@@ -154,6 +154,9 @@ Keep code's current explicit `τ_k` capital income tax. More general than the pa
 - [x] Implement OLG aggregation (mortality-weighted cohort sizes)
 - [x] Test (NumPy)
 - [x] Test (JAX cross-validation)
+- [x] Data-driven cohort survival from Eurostat life tables (2026-06-09) — `survival_table=(years, px)` in `OLGTransition`, opt-in via `transition.survival_data_file` → `data/survival_GR.npz` (`build_survival_GR.py`). Cohort-historical along the calendar diagonal, clamped to the data range. JAX batched solve/simulate fixed to carry survival per-cohort (`in_axes=0`).
+
+**Aggregation caveat (verified 2026-06-09):** "weight agents by survival probability in cross-sectional aggregation" (below) is realised via the **simulation**, not the weights — dead agents hold 0 and per-cohort means divide by `n_sim`, so `mean_over_n_sim = survival · E[X|alive]`. The population weights (`cohort_sizes`) are therefore **births only**. Do NOT also multiply `cohort_sizes` by cumulative survival — that double-counts mortality.
 
 **Paper:** `β · π(j) · E[V_{j+1}]` with age-dependent survival probabilities.
 **Current:** Deterministic survival (all agents live T periods).

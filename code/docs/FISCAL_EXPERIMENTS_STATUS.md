@@ -1,10 +1,207 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-05-21. **STATUS:** double-count fix landed (commit `8c45250`); baseline calibration not yet aligned to the corrected accounting. See `## Session 2026-05-20 / 2026-05-21` at end.
+Last updated: 2026-06-09. **STATUS:** SS-vs-transition gap diagnosed — the transition no-shock baseline is a steady state (flat over all 60 periods) but a *different* one from the calibration SS (Y +7.3%, every budget item/Y ~12–16% lower). It is a code-level mismatch between the two aggregation paths, not a transient. See `## Session 2026-06-09` at top.
+
+Prior: GG-accounts data audit done; plumbing fix + `other_net_spending` residual to pin the baseline primary balance. See `## Session 2026-05-26`.
+
+Prior: double-count fix landed (commit `8c45250`); baseline calibration not yet aligned to the corrected accounting. See `## Session 2026-05-20 / 2026-05-21`.
 
 Earlier resolution: 2026-05-18. See `## Resolution (2026-05-18)` mid-file.
 
 Original handoff (2026-05-11) preserved below for context.
+
+---
+
+## Session 2026-06-09 (part 2): data-driven cohort survival + correction of the weighting-norm diagnosis
+
+### What was implemented
+
+Greek cohort survival is now read from data instead of a hand-entered vector + synthetic improvement rate.
+
+- `code/build_survival_GR.py` → `data/survival_GR.npz`: Eurostat `demo_mlifetable` px (DATA_GR.xlsx 'Survival rates'), years 1961–2023, model age j ↔ real age 25+j, px (63, 60). 1960 dropped (missing).
+- `OLGTransition` gains `survival_table=(years, px)`. When set, `_survival_schedule_at_year` returns the data **period table** for the true calendar year (= internal birth_year-anchored clock + (current_year−birth_year)), clamped to [1961, 2023]. Each cohort is solved and simulated along its calendar diagonal (`_cohort_survival_schedule`) — **cohort-historical** for the past, **held at 2023** for future transition years (2024–2079). User's choice (2026-06-09): cohort-historical at t=0, hold-at-2023 forward.
+- `build_olg_transition` loads the npz via the opt-in config key `transition.survival_data_file` (only if the px age dim matches model T) and passes `survival_table`. Added to `calibration_input_GR.json`.
+- **JAX bug fixed**: `_solve_cohorts_jax_batched` / `_simulate_cohorts_jax_batched` passed `ref.survival_probs` (cohort 0's schedule) as a *shared* vmap arg (`in_axes=None`). With per-cohort survival every cohort would have used cohort 0's table. Changed `survival_probs` `in_axes` to `0` in both batched kernels (`lifecycle_jax.py`) and stack per-cohort schedules in `olg_transition.py`. Validated: a 2-cohort batched solve with survival 1.0 vs 0.7 now yields different policies (mean a_policy 17.98 vs 15.46). For the common case (all cohorts share one schedule) the stacked array is identical across cohorts → behaviour unchanged. NumPy already solved per cohort (correct but slow — 120 distinct cohort solves).
+
+### Correction to the 2026-06-09 (part 1) weighting-norm diagnosis
+
+Part 1 claimed the transition's `cohort_sizes` "missing cumulative survival" was a confirmed contributor to the ~13% SS-vs-transition item-ratio gap, and proposed forcing `cohort_sizes = age_weights`. **That is wrong** and was NOT implemented (a survival-weighted `cohort_sizes` was written, then reverted).
+
+Reason: the transition's per-cohort age means divide by **n_sim** (all agents) and **dead agents hold 0** (verified: `mean_over_n_sim(age 59) = 0.166 = 0.68·0.244 = survival · E[a|alive]`). So survival is **already baked into every transition mean**. `calibrate.py` instead weights by `births·S(j)` and averages over **alive** agents. The two are algebraically identical per age (`births·S·E[X|alive]`), so **aggregate ratios agree by construction** — the survival factor cancels. Adding survival to `cohort_sizes` would **double-count** it. The births-only weights are correct; with data cohort survival, mortality is cohort-specific in the simulation, and the time-invariant births weights remain correct.
+
+**Therefore the ~13% ratio gap is not from the weighting norm.** Remaining candidate sources (undecomposed): bequest treatment under `recompute_bequests=false`, and behavioral differences between calibrate's single stationary lifecycle solve and the transition's cohort/MIT solves.
+
+### Calibration ↔ transition norm
+
+Both already use the same effective norm (`births × survival`, taken with their respective mean conventions), so ratios agree. `calibrate.py:compute_age_weights` is unchanged; its stationary `survival_probs` vector is still the config vector (not re-sourced from the npz). Re-sourcing the base-year `survival_probs` from `survival_GR.npz` would change the SMM moments and require a recalibration — not done.
+
+Files: `build_survival_GR.py`, `lifecycle_jax.py` (2 `in_axes`), `olg_transition.py` (`survival_table`, `_survival_schedule_at_year`, per-cohort batching), `calibrate.py:build_olg_transition`, `calibration_input_GR.json`. Data: `data/survival_GR.npz`, `data_inventory.md` § 1.3.
+
+---
+
+## Session 2026-06-09 (part 1): SS-vs-transition gap — level mismatch, not a transient
+
+### Question
+
+The 2026-05-28 caveat measured the transition baseline ITEM ratios ~8–15% off the SS calibration and attributed it partly to "demographic cohort-weighting over 2020–80." But the Greek config has **no** `fertility_path` / `survival_improvement_rate`, so `cohort_sizes_path` is never built and demographics are stationary; prices are flat (`r_initial=r_final=0.04`). With stationary demographics and flat prices the no-shock baseline should reproduce the calibration SS *by construction*. The caveat compared the transition MEAN over 2020–80, which cannot distinguish a true t=0 level mismatch from a transient. This session ran the t=0 check.
+
+### Method
+
+`diag_ss_vs_transition.py` (left in `code/`): (A) SS side = `calibrate.py` stationary cross-section at the calibrated θ, age-weighted, via `run_model_moments` + `compute_fiscal_ratios`; (B) transition side = one no-shock baseline `simulate_transition` (G/I_g/defense/`other_net` wired exactly as the `run_fiscal_figures` config branch), then `compute_government_budget_path`. JAX/CPU, n_sim=3000. (Gotcha: the on-disk `_derived.K_over_L` is `None` — only `theta` is persisted — so `compute_fiscal_ratios` must be fed the dict `load_config` returns, not a fresh `json.load`, else it hits its `Y<=0` early-return.)
+
+### Finding — flat baseline at a different level (case 1, convention mismatch)
+
+The transition baseline is **flat across all 60 periods** (Y=0.5189 at t=0 and t=59; every item/Y constant to 3 decimals), so it IS at rest — not a transient. But it sits at a different steady state than the calibration:
+
+| item / Y | SS | transition t=0 | t=59 | Δ(t0−SS) |
+|---|---|---|---|---|
+| total revenue | 0.3500 | 0.3019 | 0.3025 | −13.7% |
+| consumption tax | 0.1148 | 0.0959 | 0.0959 | −16.5% |
+| labour tax | 0.0702 | 0.0616 | 0.0618 | −12.2% |
+| payroll (SSC) | 0.1294 | 0.1142 | 0.1146 | −11.7% |
+| capital tax | 0.0356 | 0.0302 | 0.0302 | −15.2% |
+| pensions | 0.1616 | 0.1392 | 0.1392 | −13.8% |
+| gov health | 0.0539 | 0.0467 | 0.0467 | −13.4% |
+| **Y level** | **0.4835** | **0.5189** | **0.5189** | **+7.3%** |
+
+Both objects are the same economy (same θ, r/w, demographics, policy), so they should coincide. The flat ~13% item offset + 7.3% higher Y localizes the discrepancy to the two aggregation code paths (`calibrate.py` stationary cross-section vs `olg_transition.py` cohort aggregation), not to demographics or a transient.
+
+### Confirmed contributor — `age_weights` ≠ `cohort_sizes`
+
+The demographic weights the two paths use are different objects:
+- `calibrate.py` `compute_age_weights`: ω(j) = (1+g)^(−j) · S(j), with cumulative survival S(j) thinning older ages.
+- `olg_transition.py` `_cohort_sizes_njit`: size(j) = exp(g·(birth_year_of_cohort − base)) — pure population-growth scaling by birth cohort, **no survival term**.
+
+They diverge up to ~30% at old ages and have **opposite shape at the top**: `age_weights` falls at old ages (0.0160→0.0145, survival-thinned), `cohort_sizes` rises (0.0192→0.0196, no thinning; under g<0 older birth cohorts get larger weight). Normalized max abs diff 0.0051. This is *a* contributor; the residual (bequest treatment under `recompute_bequests=false`, per-capita normalization in `compute_aggregates`) is not yet decomposed.
+
+### Caveat on the table
+
+The SS `primary_balance_over_Y` reported by `compute_fiscal_ratios` (+0.122) is NOT comparable to the transition primary surplus (+0.020): the SS ratio nets revenue only against pensions+UI+health and omits G/I_g/defense/`other_net`. Adding those (13+3+3−10.6 = +8.4% net spending) reconciles +12.2% → ~+3.8% ≈ transition +2.0% once the ~13% item gap is applied. So the budget lines are mutually consistent; the open issue is purely the ~13% level offset.
+
+### Implication for the baseline closure
+
+Until the two computations of the same steady state are reconciled (starting by making the demographic weights identical), "the SMM matches the base year" does NOT carry to "the transition baseline matches the base year," and the `other_net_spending_over_Y = −0.1056` plug is absorbing this code discrepancy rather than a genuine accounting residual. Next cheap step: re-run the transition aggregation forcing `cohort_sizes = age_weights` and measure how much of the 13% closes; the remainder is bequests + normalization.
+
+---
+
+## Session 2026-05-26: GG-accounts data audit + baseline fiscal closure
+
+### Data audit — which government-account lines the model omits
+
+Source: `data/DATA_GR.xlsx`, sheet `DATA`. Reference year **2023** (2024 reports zero on the itemized social-benefit lines — incomplete). All values are % of GDP.
+
+| Line (DATA sheet code) | 2023 | In model? |
+|---|---|---|
+| **Revenue (total 48.2%)** | | |
+| Taxes on consumption (23) | 17.10 | yes — `tau_c` |
+| Taxes on labour (25) | 5.93 | yes — `tau_l` |
+| Taxes on profits (26) | 2.71 | yes — `tau_k` |
+| Social security contributions (28) | 13.00 | yes — `tau_p` |
+| **Other revenues (22)** | **9.43** | **no** |
+| **Primary expenditure (46.2%)** | | |
+| Pensions (77) | 12.02 | yes |
+| Unemployment (79) | 0.61 | yes — UI |
+| Means-tested (80) | 1.11 | yes — `transfer_floor` |
+| Health, in-kind (81) | 2.33 | yes — `health_gov` |
+| **Education benefits (82)** | **1.40** | **no** |
+| Public investment (45) | 3.86 | line exists, **=0 in the run** |
+| **GG Other expenditure (30)** | **26.15** | only `G` (13%) proxies it |
+| Interest (40) | 3.39 | yes — `debt_service` |
+| **Primary balance (48)** | **+1.95** | — |
+
+(2022 primary balance −0.07%. Greek post-program target band ≈ 2.0–3.5%.)
+
+### Model baseline primary surplus
+
+Direct read of `primary_deficit/Y` from `output/fiscal_test/fiscal_results.json` (post-fix G run): **+5.2% of GDP, stable across all 60 periods** (t0 +5.16%, mean +5.19%). The 2026-05-21 "~10%" figure was a back-of-envelope from the B/Y drift; the direct measurement supersedes it.
+
+### Two separable causes of the +5.2% surplus
+
+1. **Plumbing — config lines not wired into the baseline budget (~6 pp).**
+   - `run_fiscal_figures.py` config branch (line ~84) computes `I_g_path = delta_g · K_g`. Greek config has `K_g = 0` → `I_g = 0`, so `fiscal.I_g_over_Y = 0.03` is never applied.
+   - `fiscal.defense_over_Y = 0.03` is in the JSON but `base_paths` never passes `defense_spending_path` → defense = 0.
+   - Both show as exactly `0.0000` in `base_budget`. Wiring them adds ~6 pp of primary spending → surplus +5.2% → ≈ **−0.8%**.
+
+2. **Structurally absent accounts.** Other revenues (+9.4%), most of GG Other expenditure (model `G`=13% vs data public consumption 19.4% / other-expenditure bucket 26.2%), education benefits (1.4%). Net of genuinely-absent lines ≈ −5 pp of GDP of spending; with the un-wired I_g+defense, the model omits ≈ −11 pp net spending relative to the full accounts. The residual's natural sign is *net spending*.
+
+### Debt-stabilizing surplus (model recursion)
+
+`compute_debt_path` uses `B[t+1] = (1+r_B)·B[t] + PD` (no growth term). Stationary `B/Y = b` requires primary surplus `= r_B·b = 0.021·1.64 = 3.44%`.
+
+### Residual to pin (off the model's realized surplus, not the data arithmetic)
+
+| Target primary surplus | from current baseline (+5.2%) | after wiring I_g+defense (−0.8%) |
+|---|---|---|
+| Data 2023 (+1.95%) | net spending +3.2% | net **revenue** +2.8% |
+| Debt-stabilizing (+3.44%) | net spending +1.8% | net revenue +4.2% |
+
+### Tension (the open closure choice)
+
+Matching the data surplus (+1.95%) is **below** the model's debt-stabilizing surplus (3.44%), so the baseline B/Y rises. Greek debt/GDP fell in 2022–23 mainly through high nominal GDP growth, a channel this stationary model lacks. Closure (a) = target 3.44% → stationary baseline; closure (b) = target 1.95% → accept B/Y drift.
+
+### Implementation (this session)
+
+1. **Plumbing fix.** `run_fiscal_figures.py` config branch: `I_g_path` from `fiscal.I_g_over_Y × mean(Y)`; `defense_spending_path` from `fiscal.defense_over_Y × mean(Y)`, both routed through `base_paths`.
+2. **`other_net_spending` parameter.** New exogenous net-primary-spending line = (other expenditure − other revenue), added to `total_spending` in `compute_government_budget`. Set from `fiscal.other_net_spending_over_Y × mean(Y)`. Routed through `simulate_transition` (with `_active_` override) and `fiscal_experiments` base_paths/cf, identical to `govt_spending_path`. Does **not** enter the household budget, so not added to `pre_transition_paths`. Defaults None/0 → exact prior behaviour, no test changes.
+   - `other_net_spending_over_Y` is the single knob to pin the baseline primary balance to whichever target the closure choice selects.
+
+---
+
+## Session 2026-05-27: objective reframe + labour-share / SSC investigation
+
+**Objective reframe (user).** Stationary B/Y was never a target. What matters: the government budget — its several items *and* the primary balance — match the data. So a single `other_net_spending` plug on the bottom line is insufficient; items must be reconciled. The `−0.0276` value set on 2026-05-26 is therefore provisional and will be revisited.
+
+**Regression check.** Full OLG suite (`test_olg_transition.py`, ex documented JAX/hang exclusions): **74 passed, 16 deselected** (44 min). The plumbing + `other_net_spending` changes are regression-clean. Fiscal suite 39/39.
+
+**Item-level audit** (model baseline vs Greek 2023, per Y): SSC overshoots (+9.3 pp), consumption tax short (−7.5 pp), pensions over (+4.3 pp); these are endogenous. Largest is SSC.
+
+**Labour-share / SSC investigation** (full data + Gollin adjustments recorded in `data_inventory.md` § 1.11):
+- Model `(1−α)=0.67` is the *total* return to labour; raw compensation of employees (0.35) is the wrong target because it excludes self-employed labour (mixed income B.3G = 22% of GDP). Gollin (2002) adjustments put α in [0.34, 0.45]; model α=0.33 ≈ Gollin Adj. 1. **Decision: keep α=0.33** (document as Adj. 1).
+- SSC base ≠ α. Employees pay ~32–38% (capped); self-employed pay **flat-rate categories, not income-linked** (2020 reform), effective **~8–9% on mixed income** (two convergent estimates). Employee share of labour income = 0.614.
+
+**Approach change for SSC (user).** Do **not** impose a fraction/rate. Instead **calibrate `tau_p` to match SSC/GDP** (data 0.130), then read off the implied `tau_p` and check it falls between the two group rates (~9% self-employed, ~32–38% employee), share-weighted (expected ~0.20–0.23, since SSC/Y ≈ `tau_p` × labour-base/Y and the model base/Y ≈ 0.66). This validates the labour-income/SSC structure rather than hard-coding it.
+- Note: `tau_p` enters the household budget (net wage), so it is coupled to the SMM hours target — calibration must be joint (add `tau_p` as param, `tax_p/Y` as target) or an outer fixed point, not a one-shot fiscal adjustment.
+
+**Next step:** implement the `tau_p` calibration and run it; compare implied `tau_p` to 0.09 / 0.32–0.38.
+
+### Outcome (2026-05-28)
+
+`tax_p_over_Y` added as SMM moment, `tau_p` (path `tau_p_default`) as a third SMM parameter; weights switched to percent-deviation (`1/value^2`: hours 5.949, A/Y 0.0625, SSC 59.172). First full run at `phi=2` did not converge cleanly: the (unfittable-at-phi=2) hours moment dominated and the optimizer sacrificed the A/Y and SSC matches to chase it. Diagnosis: hours has little independent leverage from `nu` once A/Y is held (separable preferences → consumption response offsets), so it needs `phi`.
+
+Set `phi = 2.0 → 1.5` (Frisch 0.5 → 0.67; justified because the model's only behavioural labour margin is intensive — the unemployment state is exogenous zero-productivity — so a single margin must carry the aggregate Frisch ~0.8, [[Chetty_AER2011]]). Full run (n_sim=10000, 29 min) **converged**:
+
+| Param | Value | | Moment | Data | Model |
+|---|---|---|---|---|---|
+| nu | 26.69 | | average_hours | 0.41 | 0.417 |
+| beta | 0.972 | | A/Y | 4.0 | 3.99 |
+| tau_p | **0.198** | | SSC/Y | 0.130 | 0.130 |
+| phi | 1.5 (fixed) | | | | |
+
+`tau_p = 0.198` lands at the labour-income-share-weighted blend of the employee (~0.38) and self-employed (~0.09) effective rates — validates the labour-income/SSC structure. Written to `_derived.theta`; `build_olg_transition` now reads calibrated taxes from `_derived.theta`, so the transition picks up `tau_p=0.198`.
+
+**Untargeted moments that shifted (worse) under the new calibration:** pensions/Y 0.192 (+3.2 pp, was ~matched — pension flow scales with the calibrated wage/earnings profile), health total 0.099 (+1.7 pp), wealth Gini 0.30 (vs 0.58). Pensions/health need `rho_pens`/`m` revisited; wealth Gini is the Phase 9 (bequest + initial wealth) item.
+
+Draft `DSA-LSA calibration.tex` updated: Table 1 params (nu, beta, tau_p, phi=1.5), baseline-moments table Model column, and the targeted/fiscal-residual/C-over-Y/distributional paragraphs. `phi=1.5` footnote + `Chetty_AER2011` and `Gollin_JPE2002` bib entries added.
+
+**Still open:** baseline fiscal closure (`other_net_spending`) — see 2026-05-28 Fix 1/2 below.
+
+### Fix 1 / Fix 2 (2026-05-28, later)
+
+**Fix 1 — pension/health overshoot.** Folded `pension_replacement_default` and `m_good` into the SMM (5 params: `nu, beta, tau_p, rho_pens, m`; 5 targets: hours, A/Y, SSC/Y, pensions/Y, health_gov/Y; percent weights). They belong in the SMM because both shift saving → A/Y, so external re-adjustment would need iteration. Converged-in-substance (params stable 180+ iters, Q=2.5e-4) but hit maxiter=400 → "Converged: False", so the auto-writer (gated on `convergence`) did not write `_derived.theta`; **theta written manually**. New SS calibration:
+
+| Param | Value | | SS moment | Data | Model |
+|---|---|---|---|---|---|
+| nu | 27.30 | | hours | 0.41 | 0.415 |
+| beta | 0.977 | | A/Y | 4.0 | 3.99 |
+| tau_p | 0.197 | | SSC/Y | 0.130 | 0.129 |
+| rho_pens | 0.147 | | pensions/Y | 0.160 | 0.161 |
+| m | 0.0393 | | health_gov/Y | 0.054 | 0.054 |
+
+All five SS moments match ≤1.2%. rho_pens, m interior (no bounds; pension floor not binding). Untargeted distributional moments worsened (wealth Gini 0.33, zero-wealth 5.7%, income Gini 0.376) — Phase 9.
+
+**Fix 2 — baseline fiscal closure.** Measured the transition baseline primary balance (build_olg_transition + one baseline sim, G/I_g/defense wired, other_net=0, n_sim=2000): **primary surplus −8.6% of Y** (a deficit). Set `other_net_spending_over_Y = -0.0861 - 0.0195 = -0.1056` so the baseline primary balance equals the Greek 2023 data value (+1.95%). `other_net` has zero household feedback (added to `total_spending` post-simulation), so the shift is exact — no re-run. Formula to re-derive: `other_net = (measured baseline primary surplus) - (target primary surplus)`.
+
+**Caveat surfaced — SS vs transition gap.** The transition baseline ITEM ratios differ from the SS calibration: transition tax_p/Y 0.114 (SS 0.129), pension/Y 0.139 (SS 0.161), gov_health/Y 0.047 (SS 0.054), total revenue 0.302 (SS 0.350). Cause: transition mean Y (~0.52) ≠ SS Y (0.483) plus demographic cohort-weighting over 2020–80. So the SMM matches items to data in the **stationary cross-section**, but the **transition** baseline (where the experiments run) is ~8–15% off, and the −10.6% closure is larger than the data's other-revenue line (9.4%) because it also absorbs this gap. Open question: whether to calibrate against transition moments (heavy — each SMM eval = full transition) or accept the SS calibration with the closure forcing only the transition primary balance to data.
 
 ---
 

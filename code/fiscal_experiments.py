@@ -476,6 +476,8 @@ def _apply_shock(scenario: FiscalScenario,
     pension = _base('pension_replacement_path')
     G       = _base('G_path')
     I_g     = _base('I_g_path')
+    defense = _base('defense_spending_path')
+    other   = _base('other_net_spending_path')
 
     cf = {}
 
@@ -487,6 +489,10 @@ def _apply_shock(scenario: FiscalScenario,
     cf['pension'] = (pension if pension is not None else np.full(T, 0.4)) + _shock(scenario.delta_pension_path)
     cf['G_path']  = (G       if G       is not None else np.zeros(T)) + _shock(scenario.delta_G_path)
     cf['I_g_path'] = (I_g    if I_g     is not None else np.zeros(T)) + _shock(scenario.delta_I_g_path)
+    # Defense and other-net spending are baseline closure lines: no shock; pass
+    # through unchanged (None → object-level fallback / zero in the budget).
+    cf['defense_spending_path']     = defense
+    cf['other_net_spending_path']   = other
 
     # Apply financing instrument adjustment
     fin = scenario.financing
@@ -533,6 +539,8 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
         pension_replacement_path=cf.get('pension'),
         I_g_path=cf.get('I_g_path'),
         govt_spending_path=cf.get('G_path'),
+        defense_spending_path=cf.get('defense_spending_path'),
+        other_net_spending_path=cf.get('other_net_spending_path'),
         transfer_floor=transfer_floor,
         n_sim=n_sim,
         verbose=verbose,

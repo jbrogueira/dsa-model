@@ -602,7 +602,7 @@ _solve_lifecycle_jax_batched = jax.jit(
         None, None,              # tax_kappa_hsv, tax_eta
         None, None,              # transfer_floor, education_subsidy_rate
         None, None,              # child_cost_profile, schooling_years
-        None, None,              # survival_probs, P_y_by_age_health
+        0, None,                 # survival_probs (per-cohort), P_y_by_age_health
         None, None, None,        # labor_supply, nu, phi
         0,                       # bequest_lumpsum (per-cohort scalar)
         None,                    # wage_age_profile (shared)
@@ -947,7 +947,7 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None, None,              # pension_min_floor, tax_progressive
         None, None,              # tax_kappa_hsv, tax_eta
         None, None,              # P_y_age_health, P_y_4d
-        None,                    # survival_probs (shared across cohorts)
+        0,                       # survival_probs (per-cohort)
         None,                    # wage_age_profile (shared)
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
         0, 0,                    # alpha_idx_sim, alpha_mult_sim (per-cohort: each cohort has its own draw)

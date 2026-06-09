@@ -62,6 +62,11 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # 1. Build OLG model
 # ---------------------------------------------------------------------------
 
+# Baseline-only fiscal lines; populated in the config branch, left None in the
+# hardcoded fast-test branch.
+defense_path = None
+other_path   = None
+
 if args.config:
     # Build from JSON config file
     import json
@@ -79,22 +84,35 @@ if args.config:
                  ['tau_c_path', 'tau_l_path', 'tau_p_path', 'tau_k_path',
                   'pension_replacement_path']}
 
-    # Compute I_g from data ratio
+    # Warmup sim to get steady-state Y. With eta_g=0 / K_g=0 (Greek config),
+    # public investment has no production feedback, so I_g=0 here is harmless;
+    # the spending paths below are sized off the resulting mean(Y).
     prod = config_data.get('production', {})
-    I_g_path = np.full(T_TR, prod.get('delta_g', 0.05) * prod.get('K_g', 0.0))
+    I_g_warmup = np.full(T_TR, prod.get('delta_g', 0.05) * prod.get('K_g', 0.0))
 
-    # Calibrate G from data ratio
-    print("Calibrating baseline G …")
+    print("Calibrating baseline fiscal paths …")
     _calib = economy.simulate_transition(
-        r_path=r_path, I_g_path=I_g_path, n_sim=50, verbose=False, **tax_paths
+        r_path=r_path, I_g_path=I_g_warmup, n_sim=50, verbose=False, **tax_paths
     )
     Y_path = np.asarray(_calib['Y'])
-    G_over_Y = paths.get('G_over_Y', 0.13)
-    G_path = np.full(T_TR, G_over_Y * Y_path.mean())
+    meanY = Y_path.mean()
+
+    # All government spending lines as constant data-ratio × mean(Y).
+    G_over_Y       = paths.get('G_over_Y', 0.13)
+    I_g_over_Y     = paths.get('I_g_over_Y', 0.03)
+    defense_over_Y = paths.get('defense_over_Y', 0.0)
+    other_over_Y   = paths.get('other_net_spending_over_Y', 0.0)
+    G_path       = np.full(T_TR, G_over_Y * meanY)
+    I_g_path     = np.full(T_TR, I_g_over_Y * meanY)
+    defense_path = np.full(T_TR, defense_over_Y * meanY)
+    other_path   = np.full(T_TR, other_over_Y * meanY)
+
     B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
-    B_initial = B_over_Y * Y_path.mean()
+    B_initial = B_over_Y * meanY
     target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
-    print(f"  mean(Y) = {Y_path.mean():.4f},  G/Y = {G_over_Y},  mean(G) = {G_path.mean():.4f}")
+    print(f"  mean(Y) = {meanY:.4f}")
+    print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
+          f"other_net/Y = {other_over_Y}")
     print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
 
 else:
@@ -156,6 +174,11 @@ else:
     print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
+# Baseline-only fiscal lines (no shock applied to them; constant across scenarios).
+if defense_path is not None:
+    base_paths['defense_spending_path'] = defense_path
+if other_path is not None:
+    base_paths['other_net_spending_path'] = other_path
 
 # ---------------------------------------------------------------------------
 # 3. Define scenarios
@@ -286,6 +309,7 @@ FISCAL_VARS = [
     'primary_deficit',
     'tax_l', 'tax_c', 'tax_p', 'tax_k',
     'ui', 'pension', 'govt_spending', 'public_investment',
+    'defense_spending', 'other_net_spending',
     'interest_payments',
 ]
 FISCAL_LABELS = {
@@ -298,6 +322,8 @@ FISCAL_LABELS = {
     'pension':           'Pensions',
     'govt_spending':     'Govt spending (G)',
     'public_investment': 'Public investment (I_g)',
+    'defense_spending':  'Defense',
+    'other_net_spending':'Other net spending',
     'interest_payments': 'Interest payments (r·B)',
 }
 

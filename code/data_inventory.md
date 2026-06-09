@@ -55,17 +55,24 @@ Annual macro time series, 1995-2024. Values normalised to output (GDP shares).
 | GG Taxes on Labour | 25 | tau_l revenue check | Validation |
 | Taxes on Profits | 26 | tau_k revenue check | Validation |
 | GG Social Security Contributions | 28 | tau_p revenue check | Validation |
+| **GG Other Revenues** | **22** | **No model counterpart** — basis for `other_net_spending` residual | Fiscal closure |
 | Social Benefits — Pensions | 77 | Pension spending / GDP | Validation |
 | Social Benefits — Unemployment | 79 | UI spending / GDP | Validation |
 | Social Benefits — Means-tested | 80/78 | `transfer_floor` calibration | Validation |
 | Social Benefits — Health | 81 | Health spending / GDP | `m_good` calibration, validation |
+| **Social Benefits — Education** | **82** | **No model counterpart** | Fiscal closure |
+| Public Investment | 45 | I_g / GDP | `I_g_over_Y` (fiscal block) |
+| **GG Other Expenditure** | **30** | **Only `G` proxies it** — basis for residual | Fiscal closure |
 | Interest Payments | 40 | Debt service | Validation |
 | GG Balance | 47 | Fiscal balance / GDP | Validation |
+| GG Primary Balance | 48 | Primary balance / GDP — **target for `other_net_spending`** | Fiscal closure |
 | Public Debt | 49 | B/Y | `B_path` calibration |
 | Share of Employed | 108 | Employment rate | Validation |
 | Share of Unemployed | 109 | Aggregate unemployment rate | Validation |
 | Average Weekly Hours Worked | 102 | Average hours | `nu` target (Step 2) |
 | Compensation of Employees | 105 | Labour share | `alpha` validation |
+
+**Fiscal closure (GG-accounts audit, 2026-05-26):** the model omits *GG Other revenues* (9.4% of GDP, 2023), most of *GG Other expenditure* (model `G`=13% vs data public consumption 19.4% / other-expenditure bucket 26.2%), and *Education benefits* (1.4%). These are not modelled line-by-line; their net is absorbed by a single `other_net_spending` parameter (`fiscal.other_net_spending_over_Y`, added to `total_spending` in `compute_government_budget`) calibrated to hit the *GG Primary Balance* (code 48: +1.95% in 2023). Full audit and residual derivation: `docs/FISCAL_EXPERIMENTS_STATUS.md` § Session 2026-05-26.
 
 ### 1.3 Survival rates sheet
 
@@ -75,6 +82,8 @@ Eurostat life table (`demo_mlifetable`): probability of surviving between exact 
 |---------|----------|
 | `survival_probs` | Step 1 (external). Extract latest year, slice to model age range (e.g., ages 25-84 for T=60). |
 | `survival_improvement_rate` | Compute from trend in px over recent decades. |
+
+**Data-driven cohort survival (2026-06-09).** `code/build_survival_GR.py` extracts this sheet → `data/survival_GR.npz` (`years` 1961–2023, `px` (63, 60), model age j ↔ real age 25+j; 1960 dropped as missing). The transition consumes it via `transition.survival_data_file` in the config: `build_olg_transition` loads `(years, px)` and passes `survival_table=` to `OLGTransition`. Each cohort uses the data period tables along its calendar diagonal (cohort-historical), clamped to [1961, 2023] — so future transition years (2024–2079) hold at the 2023 life table. The transition's per-period population weights then use the **same norm** as `calibrate.py:compute_age_weights`: entering-cohort size `(1+g)^(years since base)` × cumulative survival, normalised per period (verified identical to machine precision under a constant table, `code/diag_norm_check.py`). The calibration's stationary `survival_probs` vector is unchanged by this (still the config vector); re-sourcing it from `survival_GR.npz` at a base year would change the SMM moments and require a recalibration.
 
 ### 1.4 Population by age sheet
 
@@ -135,6 +144,47 @@ Eurostat (`hlth_sha11_hf`): health care expenditure by financing scheme, Greece,
 |---------|----------|
 | Govt/compulsory share | `kappa` cross-check (should match 66.2% from Parameters). |
 | Total health spending | `m_good` calibration: total health spending / GDP × mean income → base medical cost level. |
+
+### 1.11 Factor income shares and SSC by employment status (investigation 2026-05-27)
+
+Pulled to settle (a) the correct data counterpart for the model's labour share `(1−α)` and (b) the SSC base, since SSC fell on employees only while the model taxes the full wage bill.
+
+**Factor income, Greece 2023** (Eurostat `nama_10_gdp` + `nasa_10_nf_tr`, EUR mn, % of GDP):
+
+| Component (ESA code) | EUR mn | % GDP |
+|---|---|---|
+| Compensation of employees (D.1) | 78,620 | 0.350 |
+| — wages & salaries (D.11) | 62,100 | 0.276 |
+| — employers' social contributions (D.12) | 16,520 | 0.074 |
+| Mixed income (B.3G) — self-employed | 49,395 | **0.220** |
+| Operating surplus (B.2G) | 64,975 | 0.289 |
+| — of which household/housing (S.14) | 19,014 | 0.085 |
+| Net taxes on production (D.2−D.3) | 31,697 | 0.141 |
+
+The Parameters-sheet "capital share 0.503" is raw GOS+MI/GDP (0.509) — it lumps self-employed labour (mixed income, 22% of GDP) into capital, so it is not a clean capital share. Mixed income is among the largest in the EU (high Greek self-employment, ~28–30%).
+
+**Labour share — Gollin (2002, JPE 110(2):458–474) adjustments, factor cost:**
+
+| Method | Labour share | implied α |
+|---|---|---|
+| Naive (employees only) | 0.407 | 0.593 |
+| Gollin Adj. 1 — all mixed income = labour | 0.663 | 0.337 |
+| Gollin Adj. 2 — impute avg employee wage | 0.570 | 0.430 |
+| Gollin Adj. 3 — corporate split | 0.548 | 0.452 |
+| **Current model** | **0.670** | **0.330** |
+
+Conclusion: model `α=0.33` (labour share 0.67) ≈ Gollin Adj. 1 (all mixed income treated as labour) — defensible, at the labour-favorable end. The data put α in a band 0.34 (Adj.1) – 0.45 (Adj.3); 0.43 is the common imputed-wage value. Decision (2026-05-27): keep α=0.33, documented as Gollin Adj. 1.
+
+**SSC by employment status** — the base differs by group, so the model's flat `tau_p` on the full wage bill overstates SSC:
+- **Employees**: combined employer+employee ≈ 35–38% on capped wages (PwC 2025: 13.37% + 21.79% = 35.16%; data-sheet effective 38.3%); cap €7,127/month (2023). Effective on CoE ≈ 0.111/0.35 = 0.32.
+- **Self-employed/freelancers**: since the 2020 reform, **flat-rate contribution categories, not income-linked**. 2023 monthly: primary pension €155–€500 (cat 1–6; young €93), supplementary €39–61, lump-sum €26–37, plus health; lowest/most-common ≈ €230–250/month (~€3,000/yr). Regressive.
+- **Self-employed effective rate ≈ 8–9% of mixed income** — two convergent estimates: NA residual (SSC 0.130 − employer 0.074 − employee 0.037 = 0.019, /MI 0.220 = 8.7%) and headcount (~1.15M × ~€3–4k = €3.5–4.8bn, /49.4bn = 7–10%). ~¼ of the employee rate. (Estimate, not an official published figure.)
+- **Employee share of labour income** = D.1/(D.1+B.3G) = 78,620/128,015 = **0.614**.
+- **Blended effective SSC on total labour income** = 0.130/(CoE+MI = 0.57) ≈ **0.23**.
+
+**Modelling decision (2026-05-27):** rather than impose a fraction/rate, **calibrate `tau_p` to match SSC/GDP** and validate that the result lands between the two group rates (~9% self-employed, ~32–38% employee), share-weighted (~0.20–0.23). See `docs/FISCAL_EXPERIMENTS_STATUS.md` § Session 2026-05-27.
+
+Sources: Eurostat `nama_10_gdp`, `nasa_10_nf_tr`; [Gollin (2002)](https://www.journals.uchicago.edu/doi/10.1086/338747); [Greek Ministry of Labour — contributions](https://ypergasias.gov.gr/en/social-security/insured-persons/insurance-contributions/); [PwC Greece — other taxes](https://taxsummaries.pwc.com/greece/individual/other-taxes).
 
 ---
 

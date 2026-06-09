@@ -123,9 +123,18 @@ class OLGTransition:
                  S_pens_initial=0.0,
                  # Defense spending (Feature #19, simplified)
                  defense_spending_path=None,
+                 # Other net primary spending residual (baseline fiscal closure):
+                 # (other expenditure - other revenue) not modelled elsewhere.
+                 other_net_spending_path=None,
                  # Population aging (Feature #21)
                  fertility_path=None,              # (T + T_transition,) relative entering cohort sizes
                  survival_improvement_rate=0.0,    # annual multiplicative improvement in survival probs
+                 # Data-driven cohort survival: period life tables by calendar year.
+                 # Tuple (years, px) with years (Ny,) ascending and px (Ny, T) [or (Ny, T, n_h)],
+                 # px[i, j] = survival prob at model age j (real age entry+j) in calendar years[i].
+                 # When set, overrides survival_improvement_rate: each cohort uses the data
+                 # period tables along its calendar diagonal, clamped to [years[0], years[-1]].
+                 survival_table=None,
                  # Initial asset distribution opt-in
                  use_initial_distribution=False,   # use ss asset distribution as initial conditions
                  # Backend selection
@@ -203,6 +212,15 @@ class OLGTransition:
         else:
             self.defense_spending_path = None
 
+        # Other net primary spending residual (baseline fiscal closure).
+        # Represents (other expenditure - other revenue) absent from the
+        # explicit tax/transfer/spending lines; a constant share of Y is the
+        # single knob used to pin the baseline primary balance to a target.
+        if other_net_spending_path is not None:
+            self.other_net_spending_path = np.asarray(other_net_spending_path, dtype=float)
+        else:
+            self.other_net_spending_path = None
+
         # Output directory
         self.output_dir = output_dir
         if not os.path.exists(output_dir):
@@ -225,6 +243,8 @@ class OLGTransition:
         self.birth_cohort_solutions = None
         self._active_I_g_path = None           # effective I_g used in last simulate_transition
         self._active_govt_spending_path = None  # effective G used in last simulate_transition
+        self._active_defense_spending_path = None    # effective defense used in last simulate_transition
+        self._active_other_net_spending_path = None  # effective other-net spending used in last simulate_transition
 
         # Backend selection ('numpy' or 'jax')
         self.backend = backend
@@ -235,6 +255,24 @@ class OLGTransition:
         # Population aging parameters (Feature #21)
         self.fertility_path = np.asarray(fertility_path, dtype=float) if fertility_path is not None else None
         self.survival_improvement_rate = float(survival_improvement_rate)
+
+        # Data-driven cohort survival (period life tables by calendar year).
+        # Stored as ascending years and px reshaped to (Ny, T, n_h).
+        self._surv_years = None
+        self._surv_px = None
+        if survival_table is not None:
+            yrs, px = survival_table
+            yrs = np.asarray(yrs, dtype=int).ravel()
+            px = np.asarray(px, dtype=float)
+            if px.ndim == 2:                       # (Ny, T) -> (Ny, T, n_h)
+                px = np.repeat(px[:, :, None], self.n_h, axis=2)
+            if px.shape[0] != yrs.shape[0] or px.shape[1] != self.T:
+                raise ValueError(
+                    f"survival_table px shape {px.shape} incompatible with "
+                    f"(n_years={yrs.shape[0]}, T={self.T}, n_h={self.n_h})")
+            order = np.argsort(yrs)
+            self._surv_years = yrs[order]
+            self._surv_px = px[order]
 
         # Initial asset distribution opt-in
         self.use_initial_distribution = bool(use_initial_distribution)
@@ -421,6 +459,13 @@ class OLGTransition:
             P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
             bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
                                           for b in birth_periods])
+            # Per-cohort survival schedules (in_axes=0). Cohorts may have distinct
+            # schedules (data cohort-historical survival or survival_improvement_rate);
+            # fall back to ones (no mortality) where a model has none.
+            _ones_surv = jnp.ones((ref.T, self.n_h))
+            surv_paths = jnp.stack([
+                (m.survival_probs if getattr(m, 'survival_probs', None) is not None
+                 else _ones_surv) for m in model_list])
             n_cohorts = len(model_list)
             chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
@@ -429,7 +474,7 @@ class OLGTransition:
             # n_alpha>1 we'd need to outer-loop over alpha here and stack results;
             # see Phase 8.5b for the per-agent simulation side.
             alpha_mult_jax = 1.0
-            def _solve_chunk(w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c):
+            def _solve_chunk(w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c, surv_c):
                 return _solve_lifecycle_jax_batched(
                     ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                     ref.P_y_2d, ref.P_h,
@@ -441,7 +486,7 @@ class OLGTransition:
                     ref.tax_kappa_hsv, ref.tax_eta,
                     ref.transfer_floor, ref.education_subsidy_rate,
                     ref.child_cost_profile, ref.schooling_years,
-                    ref.survival_probs, P_y_4d_arg,
+                    surv_c, P_y_4d_arg,
                     ref.labor_supply, ref.nu, ref.phi,
                     beq_c,
                     ref.wage_age_profile,
@@ -451,7 +496,7 @@ class OLGTransition:
 
             batched_arrays = (w_at_rets, r_paths, w_paths,
                               tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
-                              pension_paths, bequest_lumpsums)
+                              pension_paths, bequest_lumpsums, surv_paths)
 
             if chunk_size >= n_cohorts:
                 V_b, a_b, c_b, l_b = _solve_chunk(*batched_arrays)
@@ -663,6 +708,12 @@ class OLGTransition:
 
             P_y_4d_sim = ref.P_y_4d if ref.P_y_age_health else None
 
+            # Per-cohort survival schedules (in_axes=0 in the batched simulate kernel).
+            _ones_surv = jnp.ones((ref.T, self.n_h))
+            surv_paths_sim = jnp.stack([
+                (m.survival_probs if getattr(m, 'survival_probs', None) is not None
+                 else _ones_surv) for m in model_list])
+
             # Per-cohort arrays indexed along axis 0 — group them for easy slicing.
             per_cohort_arrs = (
                 a_policies, c_policies, l_policies,
@@ -673,6 +724,7 @@ class OLGTransition:
                 batch_i_a, batch_i_y, batch_i_h, batch_i_y_last,
                 batch_avg_earn, batch_n_years,
                 batch_alpha_idx, batch_alpha_mult,  # Phase 8 per-cohort FE arrays
+                surv_paths_sim,
             )
 
             for chunk_start in range(0, n_cohorts, chunk_size):
@@ -693,7 +745,7 @@ class OLGTransition:
                  cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                  ckeys,
                  ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
-                 calpha_idx, calpha_mult) = (s(a) for a in per_cohort_arrs)
+                 calpha_idx, calpha_mult, csurv) = (s(a) for a in per_cohort_arrs)
 
                 chunk_results = _simulate_lifecycle_jax_batched(
                     ca_pol, cc_pol, cl_pol,
@@ -710,7 +762,7 @@ class OLGTransition:
                     ref.pension_min_floor, ref.tax_progressive,
                     ref.tax_kappa_hsv, ref.tax_eta,
                     ref.P_y_age_health, P_y_4d_sim,
-                    ref.survival_probs,
+                    csurv,
                     ref.wage_age_profile,
                     ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
                     calpha_idx, calpha_mult,
@@ -873,7 +925,23 @@ class OLGTransition:
         return self.cohort_sizes
 
     def _survival_schedule_at_year(self, cal_year):
-        """Return survival probabilities adjusted for longevity improvement at a given calendar year."""
+        """Return the survival-prob age profile (T, n_h) for a given internal-clock year.
+
+        `cal_year` is the birth_year-anchored clock used by `_cohort_survival_schedule`
+        (cal_year = birth_year + birth_period + j), NOT the true calendar year.
+
+        Data path (`survival_table` set): convert to the true calendar year
+        true_cal = cal_year + (current_year - birth_year), clamp to the data range,
+        and return that period life table. This is cohort-historical for past years
+        and holds at the last data year for the future.
+
+        Legacy path: scale the base schedule by the longevity-improvement factor.
+        """
+        if self._surv_px is not None:
+            true_cal = int(cal_year) + (int(self.current_year) - int(self.birth_year))
+            true_cal = int(np.clip(true_cal, int(self._surv_years[0]), int(self._surv_years[-1])))
+            idx = int(np.searchsorted(self._surv_years, true_cal))
+            return self._surv_px[idx]                       # (T, n_h)
         base = self.lifecycle_config.survival_probs
         if base is None:
             return None
@@ -887,8 +955,7 @@ class OLGTransition:
         Returns shape (T, n_h): entry [j, :] is the survival probability at age j
         using the calendar-year-adjusted schedule for that cohort at that age.
         """
-        base = self.lifecycle_config.survival_probs
-        if base is None:
+        if self._surv_px is None and self.lifecycle_config.survival_probs is None:
             return None
         T = self.T
         n_h = self.n_h
@@ -1004,8 +1071,9 @@ class OLGTransition:
 
         # Check if per-cohort survival schedules are needed
         _use_per_cohort_survival = (
-            self.survival_improvement_rate != 0.0 and
-            self.lifecycle_config.survival_probs is not None
+            self._surv_px is not None or
+            (self.survival_improvement_rate != 0.0 and
+             self.lifecycle_config.survival_probs is not None)
         )
 
         for edu_type in self.education_shares.keys():
@@ -1678,7 +1746,8 @@ class OLGTransition:
 
         G_t   = _at(self._active_govt_spending_path if self._active_govt_spending_path is not None else self.govt_spending_path)
         I_g_t = _at(self._active_I_g_path          if self._active_I_g_path          is not None else self.I_g_path)
-        defense_t = _at(self.defense_spending_path)
+        defense_t = _at(self._active_defense_spending_path if self._active_defense_spending_path is not None else self.defense_spending_path)
+        other_t   = _at(self._active_other_net_spending_path if self._active_other_net_spending_path is not None else self.other_net_spending_path)
 
         # Feature #9: Sovereign debt service
         debt_service = 0.0
@@ -1692,7 +1761,7 @@ class OLGTransition:
             new_borrowing = B_next - B_t
 
         total_spending = (total_ui + total_pension + total_gov_health
-                          + G_t + I_g_t + defense_t)
+                          + G_t + I_g_t + defense_t + other_t)
         total_revenue_with_borrowing = total_revenue + new_borrowing
         primary_deficit = total_spending - total_revenue
         fiscal_deficit = total_spending - total_revenue_with_borrowing
@@ -1709,6 +1778,7 @@ class OLGTransition:
             "govt_spending": G_t,
             "public_investment": I_g_t,
             "defense_spending": defense_t,
+            "other_net_spending": other_t,
             "debt_service": debt_service,
             "new_borrowing": new_borrowing,
             "total_spending": total_spending,
@@ -1759,6 +1829,8 @@ class OLGTransition:
                            tau_p_path=None, tau_k_path=None,
                            pension_replacement_path=None,
                            I_g_path=None, govt_spending_path=None,
+                           defense_spending_path=None,
+                           other_net_spending_path=None,
                            transfer_floor=None,
                            n_sim=10000, verbose=True,
                            pop_growth_path=None,
@@ -1792,8 +1864,14 @@ class OLGTransition:
         # Resolve effective paths for this run (explicit args override object attributes)
         _I_g = np.asarray(I_g_path, dtype=float) if I_g_path is not None else self.I_g_path
         _G   = np.asarray(govt_spending_path, dtype=float) if govt_spending_path is not None else self.govt_spending_path
+        _defense = (np.asarray(defense_spending_path, dtype=float)
+                    if defense_spending_path is not None else self.defense_spending_path)
+        _other   = (np.asarray(other_net_spending_path, dtype=float)
+                    if other_net_spending_path is not None else self.other_net_spending_path)
         self._active_I_g_path = _I_g
         self._active_govt_spending_path = _G
+        self._active_defense_spending_path = _defense
+        self._active_other_net_spending_path = _other
 
         # Handle transfer_floor override (used in lifecycle config during cohort solves)
         _orig_tf = None
@@ -1961,7 +2039,14 @@ class OLGTransition:
             # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
             self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
 
-        # Feature #21: Build population weights from fertility + survival
+        # Feature #21: Build population weights from fertility + survival.
+        # NOTE: population weights are births only (pop-growth cohort sizes); they must
+        # NOT include cumulative survival. Per-cohort survival enters aggregation via the
+        # simulation: dead agents hold 0 and per-age means divide by n_sim, so the
+        # survival/alive fraction is already baked into every per-cohort mean. Adding
+        # survival to the weights would double-count it. With data cohort survival the
+        # mortality is cohort-specific in the sim, so the time-invariant births weights
+        # (existing cohort_sizes) remain correct.
         if self.fertility_path is not None or self.survival_improvement_rate != 0.0:
             self._build_population_weights()
 
@@ -2098,7 +2183,7 @@ class OLGTransition:
         budget_keys = [
             'tax_c', 'tax_l', 'tax_p', 'tax_k', 'total_revenue',
             'ui', 'pension', 'gov_health', 'govt_spending',
-            'public_investment', 'defense_spending',
+            'public_investment', 'defense_spending', 'other_net_spending',
             'debt_service', 'new_borrowing',
             'total_spending', 'primary_deficit', 'fiscal_deficit',
             'bequest_tax', 'bequest_transfers', 'total_bequests',

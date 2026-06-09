@@ -631,6 +631,12 @@ def _moment_health_gov_over_Y(panels, spec):
     return agg['gov_health'] / agg['Y'] if agg['Y'] > 0 else 0.0
 
 
+def _moment_tax_p_over_Y(panels, spec):
+    """Payroll / social-security-contribution revenue / SS output (SSC/GDP)."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['tax_p'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
 MOMENT_DISPATCH = {
     'wealth_gini': _moment_wealth_gini,
     'zero_wealth_fraction': _moment_zero_wealth_fraction,
@@ -653,6 +659,7 @@ MOMENT_DISPATCH = {
     'pensions_over_Y': _moment_pensions_over_Y,
     'ui_over_Y': _moment_ui_over_Y,
     'health_gov_over_Y': _moment_health_gov_over_Y,
+    'tax_p_over_Y': _moment_tax_p_over_Y,
 }
 
 
@@ -1105,6 +1112,25 @@ def build_olg_transition(config_data, backend='numpy'):
     ext = config_data.get('external_params', {})
     T_tr = trans.get('T_transition', 60)
 
+    # Data-driven cohort survival: load (years, px) sidecar if configured/present.
+    # Path is resolved relative to this file's directory (code/), so callers can run
+    # from anywhere. Default to data/survival_GR.npz one level up.
+    survival_table = None
+    surv_file = trans.get('survival_data_file')        # opt-in via config key
+    if surv_file:
+        surv_path = surv_file if os.path.isabs(surv_file) else \
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), surv_file)
+        if os.path.exists(surv_path):
+            _sd = np.load(surv_path)
+            _yrs, _px = _sd['years'], _sd['px']
+            if _px.shape[1] == lifecycle_config.T:     # only if age dim matches model T
+                survival_table = (_yrs, _px)
+            else:
+                print(f"  [build_olg_transition] survival_data_file age dim {_px.shape[1]} "
+                      f"!= model T {lifecycle_config.T}; skipping data survival.")
+        else:
+            print(f"  [build_olg_transition] survival_data_file not found: {surv_path}")
+
     # Build OLGTransition
     economy = OLGTransition(
         lifecycle_config=lifecycle_config,
@@ -1120,6 +1146,7 @@ def build_olg_transition(config_data, backend='numpy'):
         pop_growth=ext.get('pop_growth', 0.0),
         birth_year=trans.get('birth_year', 1960),
         current_year=trans.get('current_year', 2020),
+        survival_table=survival_table,
         education_shares=config_data.get('education_shares'),
         backend=backend,
         jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,
@@ -1133,19 +1160,29 @@ def build_olg_transition(config_data, backend='numpy'):
     t = np.arange(T_tr)
     r_path = r_f + (r_i - r_f) * np.exp(-t / r_decay) if r_i != r_f else np.full(T_tr, r_i)
 
+    # Calibrated values written to _derived.theta (e.g. tau_p) override the
+    # external_params disk values for the transition paths, so post-SMM runs use
+    # the calibrated tax rates. theta keys are param names mapped via the field
+    # map (e.g. JSON param 'tau_p' -> field 'tau_p_default'); here we key by the
+    # external_params name directly.
+    derived_theta = config_data.get('_derived', {}).get('theta', {})
+    def _tax(name, default):
+        return derived_theta.get(name, ext.get(name, default))
     paths = {
         'r_path': r_path,
-        'tau_c_path': np.full(T_tr, ext.get('tau_c', 0.20)),
-        'tau_l_path': np.full(T_tr, ext.get('tau_l', 0.10)),
-        'tau_p_path': np.full(T_tr, ext.get('tau_p', 0.20)),
-        'tau_k_path': np.full(T_tr, ext.get('tau_k', 0.20)),
-        'pension_replacement_path': np.full(T_tr, ext.get('pension_replacement_default', 0.50)),
+        'tau_c_path': np.full(T_tr, _tax('tau_c', 0.20)),
+        'tau_l_path': np.full(T_tr, _tax('tau_l', 0.10)),
+        'tau_p_path': np.full(T_tr, _tax('tau_p', 0.20)),
+        'tau_k_path': np.full(T_tr, _tax('tau_k', 0.20)),
+        'pension_replacement_path': np.full(T_tr, _tax('pension_replacement_default', 0.50)),
     }
 
     # G and I_g paths (constant at data ratios × steady-state Y, will be rescaled after first sim)
     fiscal = config_data.get('fiscal', {})
     paths['G_over_Y'] = fiscal.get('G_over_Y', 0.13)
     paths['I_g_over_Y'] = fiscal.get('I_g_over_Y', 0.03)
+    paths['defense_over_Y'] = fiscal.get('defense_over_Y', 0.0)
+    paths['other_net_spending_over_Y'] = fiscal.get('other_net_spending_over_Y', 0.0)
     paths['B_over_Y'] = fiscal.get('B_over_Y', 0.0)
 
     return economy, paths, T_tr

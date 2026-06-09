@@ -4,43 +4,43 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-05-21)
+## Current status (handoff 2026-06-09)
 
-Branch `main` ahead of `origin/main` by one commit (`8c45250` — sovereign-debt accounting fix). Detailed session notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md`; solver architecture in `code/docs/solver_architecture.md`.
+This commit bundles uncommitted work from several sessions since `942eddc` (2026-05-21): the 2026-05-26→28 baseline-closure / SMM work and the 2026-06-09 SS-vs-transition diagnostic + data-driven cohort survival. Detailed notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md`.
 
-### What landed this session
+### What landed (2026-05-26 → 28, previously uncommitted)
 
-- **Tree 2 audit** of the fiscal-transition solver against the live code; twelve corrections to `code/docs/solver_architecture.md` (dispatcher field, NFA-floor wording, missing `defense_spending` in the budget identity, signature drift in helpers).
-- **Interest double-count fix.** `compute_government_budget` no longer adds `r_B · B` into `total_spending`, so the field labelled `primary_deficit` is now the textbook primary deficit. `compute_debt_path` accumulates `B[t+1] = (1 + r_B[t]) · B[t] + primary_deficit[t]` using a new `r_B_path` (scalar `r_B` broadcast to length `T`, capital-rate fallback). `terminal_flow_balance`'s stability condition now references `r_B` instead of capital `r`.
-- **No test changes.** With `r_B = None` in test configs `r_B_path` mirrors the capital path, preserving prior behaviour bit-for-bit.
+- **Plumbing + `other_net_spending`.** Wired `I_g_path` / `defense_spending_path` into the baseline budget (were silently 0); added an exogenous `other_net_spending` net-primary-spending line to pin the baseline primary balance.
+- **5-parameter SMM.** Calibrated `(ν, β, τ_p, ρ_pens, m)` to (hours, A/Y, SSC/Y, pensions/Y, health_gov/Y), all matching ≤1.2%. `_derived.theta`: ν=27.30, β=0.977, τ_p=0.197, ρ_pens=0.147, m=0.0393.
+- **Baseline fiscal closure.** `other_net_spending_over_Y = −0.1056` so the transition baseline primary balance equals Greek 2023 (+1.95%).
 
-### Post-fix G-shock run (Greek config, JAX/CPU, 43 min)
+### What landed (2026-06-09)
 
-| Quantity | Pre-fix (2026-05-19) | Post-fix (2026-05-20) |
-|---|---|---|
-| Baseline final B/Y | +961 % | **−183 %** |
-| G-shock debt-financed final B/Y | +2,074 % | +228 % |
-| G-shock τ_l-financed Δτ_l | +6.64 pp | **+1.56 pp** |
-| Cumulative multiplier | 0.000 | 0.000 |
+- **SS-vs-transition diagnostic.** The transition no-shock baseline is flat over all 60 periods (a steady state) but at a different level than the calibration SS (Y +7.3%, budget items/Y ~12–16% lower). It is a level mismatch, not a transient.
+- **Data-driven cohort survival.** Greek Eurostat life tables (`demo_mlifetable` px, 1961–2023, real ages 25–84) → `data/survival_GR.npz` via `build_survival_GR.py`. `OLGTransition` gains `survival_table=(years, px)`, opt-in via `transition.survival_data_file`. Each cohort is solved/simulated along its calendar diagonal — cohort-historical for the past, held at 2023 for future transition years.
+- **JAX per-cohort survival bug fixed.** The batched solve/simulate passed cohort-0's survival as a shared vmap arg; now `in_axes=0` (per-cohort). Validated: 2-cohort solve with survival 1.0 vs 0.7 gives distinct policies. No regressions (14 JAX tests pass; 2 failures are pre-existing, confirmed by stashing).
 
-Sign flip of baseline drift confirms the recursion is now using the right rate once. The remaining drift is a baseline-closure problem, not a law-of-motion bug.
+### Correction recorded this session
+
+The 2026-06-09 part-1 claim that the transition's `cohort_sizes` "missing survival" caused the ~13% gap is **wrong** and was not committed. The transition bakes survival into its per-cohort means (dead agents hold 0; means divide by `n_sim`), so `mean = survival · E[X|alive]` — algebraically identical to calibrate's `births·S · E[X|alive]`. Aggregate **ratios already agree**; adding survival to the weights double-counts. The ~13% gap is therefore behavioral (bequests; calibrate's single stationary solve vs the transition's cohort/MIT solves), not a weighting-norm bug.
 
 ### Open question
 
-The baseline calibration (G/Y, tax rates, `B_initial`) was implicitly aligned to the previous mis-labelled `primary_deficit` field. With the corrected accounting, the implied primary surplus is ~10 pp of GDP per period — far above the stationarity requirement `(g − r_B) · b ≈ 3.4 %` for Greece. So B/Y drifts. SMM calibration of `(ν, β)` is unaffected (those moments don't depend on the budget identity).
+What drives the ~13% SS-vs-transition item-ratio gap, now that the weighting norm is excluded? Candidates: bequest treatment under `recompute_bequests=false`, and the lifecycle-solve difference (calibrate's single stationary cohort vs the transition's MIT-stitched cohorts).
 
 ### Next-step routes
 
-1. **SS-residual instrument** (small diff). Add one fiscal lever to the baseline (residual transfer, lump-sum, or one tax rate) and pin it so `PD_primary/Y = (g − r_B) · b₀`. Baseline B/Y stationary at `b₀ = B_initial / Y[0]` by construction. Roughly ≤ 50 LOC in `olg_transition.py` + JSON entry. Success: baseline run shows B/Y ≈ 1.64 across all transition periods.
-2. **Accept drift; recalibrate `B_initial` and target `b`** (larger conceptual shift). Treat data Greece as a transition state, let the model converge, use its long-run b. Affects every downstream comparison and the tax-financed bisection target.
-3. **Diagnose cumulative multiplier 0.000** (independent, ~30 min). Inspect per-period `multiplier_path` in `code/output/fiscal_test/fiscal_results.json`; expected to be small but non-zero given SOE pins `K_domestic` via firm FOC.
+1. **Decompose the 13% gap** (~1–2 h). Compare calibrate's stationary panel item-by-item against the transition's t=0 cross-section with bequests on vs off; isolate the bequest contribution from the solve-path contribution. Success: the gap attributed to named sources summing to ~13%.
+2. **Re-source calibration survival from data** (small diff, triggers recalibration). Set the calibration's base-year `survival_probs` from `survival_GR.npz`; re-run the 5-param SMM. Success: calibration and transition draw survival from one source.
+3. **Cumulative multiplier 0.000** (independent, ~30 min). Still open from prior sessions; inspect `multiplier_path` in `code/output/fiscal_test/fiscal_results.json`.
 
 ### Code state at end of session
 
-- `code/olg_transition.py`: `simulate_transition` builds `self.r_B_path`; `compute_government_budget` reads `r_B_path[t_idx]`; `total_spending` no longer includes `debt_service`.
-- `code/fiscal_experiments.py`: `compute_debt_path` arg renamed `r_path → r_B_path`; `run_fiscal_scenario` populates `base_paths['r_B_path']`; three financing branches and `r_terminal` use it.
-- `code/docs/solver_architecture.md`: Tree 2 rewritten to match the live code; Tree 1 unchanged from prior session.
-- Tests not run this session (per user instruction).
+- `code/olg_transition.py`: `survival_table` param; `_survival_schedule_at_year` data branch (calendar-clock offset + clamp); per-cohort survival stacked into JAX batched solve/simulate; population weights left births-only (survival NOT added — see the in-code note).
+- `code/lifecycle_jax.py`: `survival_probs` `in_axes` `None → 0` in both batched kernels.
+- `code/calibrate.py`: `build_olg_transition` loads `survival_table` from `transition.survival_data_file` (shape-guarded); `compute_age_weights` unchanged.
+- `data/survival_GR.npz` committed (config references it); `build_survival_GR.py` regenerates it from `DATA_GR.xlsx`.
+- Diagnostic kept: `code/diag_ss_vs_transition.py`.
 
 ---
 

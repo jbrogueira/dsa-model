@@ -1,7 +1,6 @@
 {
   "country": "GR",
-  "description": "Greece — income process from LIS Greek pool GR03-GR21 (n=76,255 emp_fyft); AR(1) baseline rho=0.95, sigma_y per-edu from MD fit on var(u) age profile",
-
+  "description": "Greece \u2014 income process from LIS Greek pool GR03-GR21 (n=76,255 emp_fyft); AR(1) baseline rho=0.95, sigma_y per-edu from MD fit on var(u) age profile",
   "model": {
     "T": 60,
     "retirement_age": 39,
@@ -15,26 +14,27 @@
     "gamma": 2.0,
     "labor_supply": true,
     "nu": 68.35,
-    "phi": 2.0,
+    "phi": 1.5,
     "tax_progressive": false
   },
-
   "_derived": {
     "theta": {
-      "nu": 37.66,
-      "beta": 1.018
+      "nu": 27.296724,
+      "beta": 0.977036,
+      "tau_p": 0.196775,
+      "pension_replacement_default": 0.146547,
+      "m_good": 0.039307
     },
     "theta_metadata": {
-      "calibration_date": "2026-05-19T10:31:35",
-      "source_report": "output/calibration/calibration_GR_20260519_103135.md"
+      "calibration_date": "2026-05-28T17:37:29",
+      "source_report": "output/calibration/calibration_GR_20260528_173729.md",
+      "note": "5-param SMM; hit maxiter (params stable for 180+ iters, Q=2.5e-4); theta written manually since the auto-write gates on Converged=True"
     }
   },
-
   "prices": {
     "r": 0.04,
     "r_B": 0.021
   },
-
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
@@ -43,10 +43,9 @@
     "eta_g": 0.0,
     "delta_g": 0.0
   },
-
   "external_params": {
     "tau_c": 0.1818,
-    "tau_l": 0.10,
+    "tau_l": 0.1,
     "tau_p": 0.34,
     "tau_k": 0.2236,
     "pension_replacement_default": 0.18,
@@ -55,50 +54,224 @@
     "transfer_floor": 0.0,
     "kappa": 0.662,
     "m_good": 0.048,
-    "job_finding_rate": 0.50,
-    "max_job_separation_rate": 0.10,
+    "job_finding_rate": 0.5,
+    "max_job_separation_rate": 0.1,
     "pop_growth": -0.00573
   },
-
   "edu_params": {
-    "low":    {"mu_y": -0.1529, "unemployment_rate": 0.1645, "rho_y": 0.95, "sigma_y": 0.0538, "sigma_alpha": 0.367},
-    "medium": {"mu_y":  0.0000, "unemployment_rate": 0.1580, "rho_y": 0.95, "sigma_y": 0.0858, "sigma_alpha": 0.259},
-    "high":   {"mu_y":  0.2590, "unemployment_rate": 0.1005, "rho_y": 0.95, "sigma_y": 0.0750, "sigma_alpha": 0.318}
+    "low": {
+      "mu_y": -0.1529,
+      "unemployment_rate": 0.1645,
+      "rho_y": 0.95,
+      "sigma_y": 0.0538,
+      "sigma_alpha": 0.367
+    },
+    "medium": {
+      "mu_y": 0.0,
+      "unemployment_rate": 0.158,
+      "rho_y": 0.95,
+      "sigma_y": 0.0858,
+      "sigma_alpha": 0.259
+    },
+    "high": {
+      "mu_y": 0.259,
+      "unemployment_rate": 0.1005,
+      "rho_y": 0.95,
+      "sigma_y": 0.075,
+      "sigma_alpha": 0.318
+    }
   },
-
   "education_shares": {
     "low": 0.2343,
     "medium": 0.4705,
     "high": 0.2952
   },
-
   "survival_probs": [
-    0.99965, 0.99960, 0.99965, 0.99958, 0.99965, 0.99966, 0.99958, 0.99948, 0.99954, 0.99952,
-    0.99956, 0.99947, 0.99948, 0.99940, 0.99949, 0.99931, 0.99932, 0.99926, 0.99925, 0.99917,
-    0.99903, 0.99902, 0.99895, 0.99868, 0.99858, 0.99866, 0.99842, 0.99822, 0.99825, 0.99782,
-    0.99778, 0.99754, 0.99691, 0.99652, 0.99635, 0.99581, 0.99550, 0.99506, 0.99451, 0.99439,
-    0.99372, 0.99309, 0.99217, 0.99195, 0.99109, 0.99015, 0.98953, 0.98851, 0.98683, 0.98590,
-    0.98484, 0.98346, 0.98135, 0.98047, 0.97891, 0.97556, 0.97151, 0.96825, 0.96586, 0.96046
+    0.99965,
+    0.9996,
+    0.99965,
+    0.99958,
+    0.99965,
+    0.99966,
+    0.99958,
+    0.99948,
+    0.99954,
+    0.99952,
+    0.99956,
+    0.99947,
+    0.99948,
+    0.9994,
+    0.99949,
+    0.99931,
+    0.99932,
+    0.99926,
+    0.99925,
+    0.99917,
+    0.99903,
+    0.99902,
+    0.99895,
+    0.99868,
+    0.99858,
+    0.99866,
+    0.99842,
+    0.99822,
+    0.99825,
+    0.99782,
+    0.99778,
+    0.99754,
+    0.99691,
+    0.99652,
+    0.99635,
+    0.99581,
+    0.9955,
+    0.99506,
+    0.99451,
+    0.99439,
+    0.99372,
+    0.99309,
+    0.99217,
+    0.99195,
+    0.99109,
+    0.99015,
+    0.98953,
+    0.98851,
+    0.98683,
+    0.9859,
+    0.98484,
+    0.98346,
+    0.98135,
+    0.98047,
+    0.97891,
+    0.97556,
+    0.97151,
+    0.96825,
+    0.96586,
+    0.96046
   ],
-
   "wage_age_profile": [
-    0.8516, 0.8639, 0.8759, 0.8875, 0.8987, 0.9095, 0.9200, 0.9301, 0.9399, 0.9493,
-    0.9583, 0.9670, 0.9753, 0.9832, 0.9908, 0.9980, 1.0048, 1.0113, 1.0174, 1.0231,
-    1.0285, 1.0335, 1.0382, 1.0424, 1.0463, 1.0499, 1.0531, 1.0559, 1.0584, 1.0604,
-    1.0622, 1.0635, 1.0645, 1.0652, 1.0654, 1.0653, 1.0649, 1.0640, 1.0628, 1.0000,
-    1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000,
-    1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000
+    0.8516,
+    0.8639,
+    0.8759,
+    0.8875,
+    0.8987,
+    0.9095,
+    0.92,
+    0.9301,
+    0.9399,
+    0.9493,
+    0.9583,
+    0.967,
+    0.9753,
+    0.9832,
+    0.9908,
+    0.998,
+    1.0048,
+    1.0113,
+    1.0174,
+    1.0231,
+    1.0285,
+    1.0335,
+    1.0382,
+    1.0424,
+    1.0463,
+    1.0499,
+    1.0531,
+    1.0559,
+    1.0584,
+    1.0604,
+    1.0622,
+    1.0635,
+    1.0645,
+    1.0652,
+    1.0654,
+    1.0653,
+    1.0649,
+    1.064,
+    1.0628,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
   ],
-
   "m_age_profile": [
-    0.3401, 0.3401, 0.3401, 0.3608, 0.3814, 0.4020, 0.4227, 0.4433, 0.4555, 0.4678,
-    0.4800, 0.4922, 0.5045, 0.4968, 0.4892, 0.4815, 0.4739, 0.4662, 0.4800, 0.4938,
-    0.5075, 0.5213, 0.5350, 0.5595, 0.5839, 0.6084, 0.6329, 0.6573, 0.6940, 0.7307,
-    0.7674, 0.8041, 0.8408, 0.8820, 0.9233, 0.9646, 1.0059, 1.0471, 1.0953, 1.1434,
-    1.1916, 1.2397, 1.2879, 1.3437, 1.3995, 1.4553, 1.5111, 1.5669, 1.6380, 1.7090,
-    1.7801, 1.8512, 1.9223, 2.0155, 2.1088, 2.2020, 2.2953, 2.3885, 2.3885, 2.3885
+    0.3401,
+    0.3401,
+    0.3401,
+    0.3608,
+    0.3814,
+    0.402,
+    0.4227,
+    0.4433,
+    0.4555,
+    0.4678,
+    0.48,
+    0.4922,
+    0.5045,
+    0.4968,
+    0.4892,
+    0.4815,
+    0.4739,
+    0.4662,
+    0.48,
+    0.4938,
+    0.5075,
+    0.5213,
+    0.535,
+    0.5595,
+    0.5839,
+    0.6084,
+    0.6329,
+    0.6573,
+    0.694,
+    0.7307,
+    0.7674,
+    0.8041,
+    0.8408,
+    0.882,
+    0.9233,
+    0.9646,
+    1.0059,
+    1.0471,
+    1.0953,
+    1.1434,
+    1.1916,
+    1.2397,
+    1.2879,
+    1.3437,
+    1.3995,
+    1.4553,
+    1.5111,
+    1.5669,
+    1.638,
+    1.709,
+    1.7801,
+    1.8512,
+    1.9223,
+    2.0155,
+    2.1088,
+    2.202,
+    2.2953,
+    2.3885,
+    2.3885,
+    2.3885
   ],
-
   "fiscal": {
     "B_over_Y": 1.64,
     "G_over_Y": 0.13,
@@ -110,21 +283,81 @@
     "health_oop_over_Y": 0.028,
     "health_total_over_Y": 0.082,
     "transfers_over_Y": 0.011,
-    "tax_revenue_over_Y": 0.40,
-    "interest_over_Y": 0.034
+    "tax_revenue_over_Y": 0.4,
+    "interest_over_Y": 0.034,
+    "other_net_spending_over_Y": -0.1056
   },
-
   "calibration": {
     "params": [
-      {"name": "nu",   "path": "nu",   "lower": 0.1,  "upper": 200.0, "initial": 68.35},
-      {"name": "beta", "path": "beta", "lower": 0.90, "upper": 1.10, "initial": 0.96}
+      {
+        "name": "nu",
+        "path": "nu",
+        "lower": 0.1,
+        "upper": 200.0,
+        "initial": 68.35
+      },
+      {
+        "name": "beta",
+        "path": "beta",
+        "lower": 0.9,
+        "upper": 1.1,
+        "initial": 0.96
+      },
+      {
+        "name": "tau_p",
+        "path": "tau_p_default",
+        "lower": 0.05,
+        "upper": 0.45,
+        "initial": 0.34
+      },
+      {
+        "name": "pension_replacement_default",
+        "path": "pension_replacement_default",
+        "lower": 0.05,
+        "upper": 0.40,
+        "initial": 0.18
+      },
+      {
+        "name": "m_good",
+        "path": "m_good",
+        "lower": 0.01,
+        "upper": 0.10,
+        "initial": 0.048
+      }
     ],
     "targets": [
-      {"name": "average_hours", "value": 0.41, "weight": 1.0, "compute_key": "average_hours"},
-      {"name": "A_over_Y",      "value": 4.0,  "weight": 1.0, "compute_key": "A_over_Y"}
+      {
+        "name": "average_hours",
+        "value": 0.41,
+        "weight": 5.949,
+        "compute_key": "average_hours"
+      },
+      {
+        "name": "A_over_Y",
+        "value": 4.0,
+        "weight": 0.0625,
+        "compute_key": "A_over_Y"
+      },
+      {
+        "name": "tax_p_over_Y",
+        "value": 0.13,
+        "weight": 59.172,
+        "compute_key": "tax_p_over_Y"
+      },
+      {
+        "name": "pensions_over_Y",
+        "value": 0.16,
+        "weight": 39.062,
+        "compute_key": "pensions_over_Y"
+      },
+      {
+        "name": "health_gov_over_Y",
+        "value": 0.054,
+        "weight": 342.94,
+        "compute_key": "health_gov_over_Y"
+      }
     ]
   },
-
   "untargeted": {
     "wealth_gini": 0.58,
     "income_gini": 0.318,
@@ -137,12 +370,10 @@
     "mean_assets": null,
     "median_wealth_to_income": null
   },
-
   "simulation": {
     "n_sim": 10000,
     "seed": 42
   },
-
   "transition": {
     "T_transition": 60,
     "birth_year": 1960,
@@ -152,8 +383,9 @@
     "r_decay": 5,
     "G_over_Y": 0.13,
     "I_g_over_Y": 0.03,
-    "B_over_Y": 1.70,
+    "B_over_Y": 1.7,
     "n_sim": 2000,
-    "recompute_bequests": false
+    "recompute_bequests": false,
+    "survival_data_file": "../data/survival_GR.npz"
   }
 }

@@ -127,10 +127,12 @@ In `olg_transition.py`:
 - Net foreign assets accounting (NFA) in SOE mode
 - Pension trust fund (`S_pens_initial` in OLGTransition)
 - Defense spending (`defense_spending_path` in OLGTransition)
+- Other net primary spending residual (`other_net_spending_path` in OLGTransition) — exogenous (other expenditure − other revenue) line absent from explicit tax/transfer/spending; added to `total_spending`, no household-side effect. Baseline fiscal closure: `fiscal.other_net_spending_over_Y` pins the baseline primary balance to a target. Defaults None/0.
 - Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge; production CLI defaults to `True`, test CLI defaults to `False` (opt-in via `--recompute-bequests`)
 - Bequest taxation with revenue accounting (`tau_beq` in OLGTransition budget)
 - Simulation mortality draws with bequest tracking (`alive_sim`, `bequest_sim` — 21-tuple output)
 - Population aging: fertility path + longevity improvement (`fertility_path`, `survival_improvement_rate` in OLGTransition)
+- Data-driven cohort survival (`survival_table=(years, px)` in OLGTransition; opt-in via `transition.survival_data_file` → `data/survival_GR.npz`, built by `build_survival_GR.py`) — each cohort solved/simulated along its calendar diagonal of period life tables, clamped to the data range (cohort-historical past, held at last year for the future). Population weights stay births-only: survival is already baked into per-cohort means (dead agents hold 0, means divide by `n_sim`), so it must NOT also enter the weights. JAX batched solve/simulate carry survival per-cohort (`in_axes=0`).
 - Per-cohort survival schedules (`_cohort_survival_schedule`, `_build_population_weights`)
 - Heterogeneous initial wealth distribution (`initial_asset_distribution` in LifecycleConfig)
 - Education-based heterogeneity
