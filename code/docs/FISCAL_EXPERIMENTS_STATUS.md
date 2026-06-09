@@ -1,6 +1,6 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-09. **STATUS:** SS-vs-transition gap diagnosed — the transition no-shock baseline is a steady state (flat over all 60 periods) but a *different* one from the calibration SS (Y +7.3%, every budget item/Y ~12–16% lower). It is a code-level mismatch between the two aggregation paths, not a transient. See `## Session 2026-06-09` at top.
+Last updated: 2026-06-09. **STATUS:** recalibrated the 5-param SMM against the data 2020 life table (was a hand-entered survival vector). Converged, all 5 moments match. New θ: ν=28.67, β=0.985, τ_p=0.198, ρ_pens=0.161, m=0.0416. Data survival is lower at old ages (px₈₄ 0.923 vs old 0.960) → β, ρ_pens, m rose. See `## Session 2026-06-09 (part 3)` at top. Prior parts: data cohort survival wiring (part 2), SS-vs-transition diagnostic (part 1).
 
 Prior: GG-accounts data audit done; plumbing fix + `other_net_spending` residual to pin the baseline primary balance. See `## Session 2026-05-26`.
 
@@ -9,6 +9,26 @@ Prior: double-count fix landed (commit `8c45250`); baseline calibration not yet 
 Earlier resolution: 2026-05-18. See `## Resolution (2026-05-18)` mid-file.
 
 Original handoff (2026-05-11) preserved below for context.
+
+---
+
+## Session 2026-06-09 (part 3): recalibrate against data 2020 life table
+
+The calibration's stationary `survival_probs` was a hand-entered vector differing from the Eurostat data by up to 0.037 (highest at old ages: px₈₄ old 0.960 vs data 0.923). Re-sourced it from `data/survival_GR.npz` year **2020** (= transition `current_year`, the "initial equilibrium" year; 2020 vs 2023 differ only in the 3rd–4th decimal). Both calibration uses of survival pick it up from the JSON array (`build_lifecycle_config` → lifecycle solve; `compute_age_weights` → cross-section weights). Warm-started the optimizer from the prior 5-param optimum.
+
+5-param SMM (ν, β, τ_p, ρ_pens, m), JAX/CPU, n_sim=10000, **Converged: True** (objective 0.0, 8828 s), theta auto-written:
+
+| Param | prior (hand-entered surv) | **new (data 2020 surv)** | | Moment | Data | Model |
+|---|---|---|---|---|---|---|
+| ν | 27.30 | **28.67** | | average_hours | 0.41 | 0.410 |
+| β | 0.977 | **0.985** | | A/Y | 4.0 | 4.000 |
+| τ_p | 0.197 | **0.198** | | SSC/Y | 0.130 | 0.130 |
+| ρ_pens | 0.147 | **0.161** | | pensions/Y | 0.160 | 0.160 |
+| m | 0.0393 | **0.0416** | | health_gov/Y | 0.054 | 0.054 |
+
+Direction as expected from lower old-age survival: more end-of-life mortality risk lowers effective discounting (β·π), so β rises to hold A/Y=4.0; fewer survivors reach pension/high-medical ages, so ρ_pens and m rise to hold pensions/Y and health_gov/Y. τ_p and ν roughly unchanged. Report: `output/calibration/calibration_GR_20260609_183208.md`.
+
+**Not yet done:** re-run the transition baseline + fiscal experiments under the new θ and data survival; the `other_net_spending_over_Y = −0.1056` closure was measured under the old calibration and should be re-measured. Then decompose the ~13% SS-vs-transition gap (part 1 open question) — now both sides draw survival from the same 2020 source, so the demographic contribution to the gap is removed and any residual isolates the behavioral (bequest / cohort-MIT-solve) sources.
 
 ---
 
