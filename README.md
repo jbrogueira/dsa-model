@@ -6,7 +6,7 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ## Current status (handoff 2026-06-09)
 
-This commit bundles uncommitted work from several sessions since `942eddc` (2026-05-21): the 2026-05-26→28 baseline-closure / SMM work and the 2026-06-09 SS-vs-transition diagnostic + data-driven cohort survival. Detailed notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md`.
+Two commits this session: `42778ae` (bundles the 2026-05-26→28 baseline-closure / SMM work + the 2026-06-09 SS-vs-transition diagnostic and data-driven cohort survival) and `023bdfa` (recalibrate against the data 2020 life table). Detailed notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md`.
 
 ### What landed (2026-05-26 → 28, previously uncommitted)
 
@@ -19,6 +19,7 @@ This commit bundles uncommitted work from several sessions since `942eddc` (2026
 - **SS-vs-transition diagnostic.** The transition no-shock baseline is flat over all 60 periods (a steady state) but at a different level than the calibration SS (Y +7.3%, budget items/Y ~12–16% lower). It is a level mismatch, not a transient.
 - **Data-driven cohort survival.** Greek Eurostat life tables (`demo_mlifetable` px, 1961–2023, real ages 25–84) → `data/survival_GR.npz` via `build_survival_GR.py`. `OLGTransition` gains `survival_table=(years, px)`, opt-in via `transition.survival_data_file`. Each cohort is solved/simulated along its calendar diagonal — cohort-historical for the past, held at 2023 for future transition years.
 - **JAX per-cohort survival bug fixed.** The batched solve/simulate passed cohort-0's survival as a shared vmap arg; now `in_axes=0` (per-cohort). Validated: 2-cohort solve with survival 1.0 vs 0.7 gives distinct policies. No regressions (14 JAX tests pass; 2 failures are pre-existing, confirmed by stashing).
+- **Recalibrated against the data 2020 life table** (`023bdfa`). The prior `survival_probs` was hand-entered, off the Eurostat data by up to 0.037 (px₈₄ 0.960 vs data 0.923). Re-sourced from `survival_GR.npz` (year 2020 = transition `current_year`); both calibration uses (lifecycle solve, `compute_age_weights`) read the JSON array. 5-param SMM converged, all moments match. New `_derived.theta`: **ν=28.67, β=0.985, τ_p=0.198, ρ_pens=0.161, m=0.0416** (was 27.30 / 0.977 / 0.197 / 0.147 / 0.0393). Lower old-age survival raises β (weaker effective discounting β·π) and ρ_pens / m (fewer survivors reach pension / high-medical ages).
 
 ### Correction recorded this session
 
@@ -26,16 +27,17 @@ The 2026-06-09 part-1 claim that the transition's `cohort_sizes` "missing surviv
 
 ### Open question
 
-What drives the ~13% SS-vs-transition item-ratio gap, now that the weighting norm is excluded? Candidates: bequest treatment under `recompute_bequests=false`, and the lifecycle-solve difference (calibrate's single stationary cohort vs the transition's MIT-stitched cohorts).
+What drives the ~13% SS-vs-transition item-ratio gap, now that (i) the weighting norm is excluded and (ii) both sides draw survival from the same 2020 source? Remaining candidates: bequest treatment under `recompute_bequests=false`, and the lifecycle-solve difference (calibrate's single stationary cohort vs the transition's MIT-stitched cohorts).
 
 ### Next-step routes
 
-1. **Decompose the 13% gap** (~1–2 h). Compare calibrate's stationary panel item-by-item against the transition's t=0 cross-section with bequests on vs off; isolate the bequest contribution from the solve-path contribution. Success: the gap attributed to named sources summing to ~13%.
-2. **Re-source calibration survival from data** (small diff, triggers recalibration). Set the calibration's base-year `survival_probs` from `survival_GR.npz`; re-run the 5-param SMM. Success: calibration and transition draw survival from one source.
+1. **Re-run the transition baseline under the new θ** (~1 h, must run first). The `other_net_spending_over_Y = −0.1056` closure was set under the old calibration; re-measure the transition baseline primary balance with `_derived.theta` = {ν=28.67, β=0.985, τ_p=0.198, ρ_pens=0.161, m=0.0416} and reset the closure. Success: baseline primary balance = Greek 2023 (+1.95%) under the new calibration.
+2. **Decompose the 13% gap** (~1–2 h). Compare calibrate's stationary panel item-by-item against the transition's t=0 cross-section with bequests on vs off; isolate the bequest contribution from the solve-path contribution. Now demographically controlled (same 2020 survival both sides). Success: the gap attributed to named sources summing to ~13%.
 3. **Cumulative multiplier 0.000** (independent, ~30 min). Still open from prior sessions; inspect `multiplier_path` in `code/output/fiscal_test/fiscal_results.json`.
 
 ### Code state at end of session
 
+- Calibration is live at `_derived.theta` = {ν=28.67, β=0.985, τ_p=0.198, ρ_pens=0.161, m=0.0416}, survival from the data 2020 life table. Working tree clean; both commits pushed.
 - `code/olg_transition.py`: `survival_table` param; `_survival_schedule_at_year` data branch (calendar-clock offset + clamp); per-cohort survival stacked into JAX batched solve/simulate; population weights left births-only (survival NOT added — see the in-code note).
 - `code/lifecycle_jax.py`: `survival_probs` `in_axes` `None → 0` in both batched kernels.
 - `code/calibrate.py`: `build_olg_transition` loads `survival_table` from `transition.survival_data_file` (shape-guarded); `compute_age_weights` unchanged.
