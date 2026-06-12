@@ -60,21 +60,16 @@ The transition bakes survival into its per-cohort means (dead agents hold 0; mea
 
 ## Setup Instructions
 
-### 1. Create a new conda environment
+### 1. Create the virtual environment (once per machine)
 ```bash
-conda create -n olg python=3.10 -y
-conda activate olg
+bash make_venv.sh
 ```
+Creates `.venv/` in the project root. Installs `jax[cuda12]` on Linux, plain `jax` on macOS, plus `requirements.txt`.
 
-### 2. Install dependencies
+### 2. Activate before each coding session
 ```bash
-pip install -r requirements.txt
+source .venv/bin/activate
 ```
-
-### 3. Select the environment in VS Code
-- Open Command Palette (Cmd+Shift+P)
-- Type "Python: Select Interpreter"
-- Select the olg environment
 
 ## Running the Models
 
@@ -349,8 +344,9 @@ Make sure all dependencies are installed:
 pip install -r requirements.txt
 ```
 
-## Note for Apple Silicon Macs
-This uses CPU-only JAX. The Metal backend line is commented out to ensure compatibility across all machines.
+## JAX backends by platform
+- **Linux + NVIDIA GPU**: `make_venv.sh` installs `jax[cuda12]`; JAX runs on CUDA automatically.
+- **macOS (Apple Silicon or Intel)**: `make_venv.sh` installs plain `jax`; JAX runs on CPU. Metal/MPS is not enabled.
 
 ## Technical Details
 
