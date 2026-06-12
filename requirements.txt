@@ -2,3 +2,6 @@ jax
 numpy
 matplotlib
 scipy
+numba
+quantecon
+pytest
