@@ -1,6 +1,110 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-09. **STATUS:** recalibrated the 5-param SMM against the data 2020 life table (was a hand-entered survival vector). Converged, all 5 moments match. New θ: ν=28.67, β=0.985, τ_p=0.198, ρ_pens=0.161, m=0.0416. Data survival is lower at old ages (px₈₄ 0.923 vs old 0.960) → β, ρ_pens, m rose. See `## Session 2026-06-09 (part 3)` at top. Prior parts: data cohort survival wiring (part 2), SS-vs-transition diagnostic (part 1).
+Last updated: 2026-06-12. **STATUS:** the SS-vs-transition gap is RESOLVED — a multi-agent code audit found four bugs/mismatches (K/L/C unpack swap since 2026-03-04; L-units 1/w convention; JAX batched α inconsistency; MIT-stitching staleness), all fixed and verified same day. Item ratios now match the calibration SS to ±0.6%; closure reset to `other_net_spending_over_Y = −0.0889`. Suites green (39/39 fiscal, 73/17-deselected OLG). See `## Session 2026-06-12`. **All transition-based results produced between 2026-03-04 and 2026-06-12 (fiscal figures, closure values, diagnostics) are invalid and need re-running.**
+
+---
+
+## Session 2026-06-12: code audit of the SS-vs-transition gap (4 independent auditors + 3 adversarial verifiers; no runs)
+
+Audit design: two blind formula-extraction agents (one per pipeline), one solver-input parity agent, one free-range hunter — none shown prior hypotheses, run results, docs, or git history. Surviving candidates were each re-verified by a fresh agent instructed to refute. Findings, in order of importance:
+
+### Bug 1 — K/L/C unpack swap in `simulate_transition` (since `9496ee1`, 2026-03-04)
+
+`_aggregate_capital_labor_njit` returns `(K, C, L)` (`olg_transition.py:838`), but `simulate_transition` unpacks `K_path[t], L_path[t], C_path[t] = ...` (`olg_transition.py:2072`). So **`L_path` carries aggregate consumption and `C_path` carries the wage-valued labor aggregate**; `Y_path`, `K_domestic`, and `NFA_path` are all built from the consumption aggregate (`olg_transition.py:2090–2100`). `compute_aggregates` (`olg_transition.py:1684–1691`) handles the same return correctly (`K, C, L = ...; return K, L, C`); the bug entered when `9496ee1` inlined the njit call for speed but kept the `compute_aggregates`-style unpack order. Affects every `simulate_transition` since 2026-03-04 (both backends): fiscal figures, the 2026-05-28 and 2026-06-11 closure measurements, the SS-vs-transition diagnostics. Found by an adversarial verifier while refuting the 1/w claim below.
+
+### Bug 2 — JAX batched α-fixed-effect inconsistency (transition JAX backend only)
+
+`_solve_cohorts_jax_batched` solves only the `alpha_mult=1.0` policy and stores it with a singleton α axis (`olg_transition.py:472–476, 545–548`), while `_simulate_cohorts_jax_batched` draws per-agent α indices over the full `n_alpha=5` grid and scales wages/UI/pensions by `exp(α)` (`olg_transition.py:688–701, 748, 768`). The kernel lookup `a_policy[alpha_idx, ...]` (`lifecycle_jax.py:661–663`) clamps the out-of-bounds index to 0 (JAX gather semantics, verified with a minimal snippet), so all agents follow the α-neutral policy while incomes carry heterogeneous multipliers. No gate, fallback, or repair path exists. Affected: every `OLGTransition` run with `backend='jax'` and `n_alpha>1` (the GR config). Not affected: NumPy transitions; the standalone `LifecycleModelJAX` used by the SMM calibration (loops all α correctly) — **the recalibrated θ is clean**.
+
+### Convention mismatch — L units (exact 1/w wedge, survives even after Bug 1 is fixed)
+
+`compute_fiscal_ratios` converts the aggregated wage bill to efficiency labor (`L = agg['labor_income'] / w`, `calibrate.py:1260`, also `:570`) before `Y = A·(K_over_L·L)^α·L^(1−α)`. The transition never divides by w: the per-agent `effective_y_sim` is wage-valued (`w·κ(j)·y·l·exp(α) + UI`, `lifecycle_perfect_foresight.py:1174–1175`) and flows into `L_path` → `K_domestic` → `Y_path` unscaled. Y is linear in L on both sides with the same coefficient, so after fixing Bug 1 the transition item/Y ratios would still be exactly 1/w (= 0.787 at this config, w = 1.2706) times the SS ratios — a uniform −21.3%. Reconciling requires choosing one convention (equation-level change; not applied).
+
+### Verified small / excluded
+
+- **Survival source**: SS uses the static 2020 table everywhere; the transition gives each cohort its calendar diagonal clamped to [1961, 2023] (cohort born at t=0 gets 2020 at age 0, then 2021/2022/2023-clamped; cohorts born t≥3 get pure 2023). Real but quantitatively small: diagonal cumulative survival to age 59 is 0.504 (oldest cohort) vs 0.523 (2020 table); cross-section age-share differences ~0.3% total variation. Cannot explain a ~12% gap.
+- **Population-weight normalization** (births-only vs survival-inclusive, alive-conditional vs all-n_sim means): cancels in item/Y ratios because Y is linear in L — confirmed independently by two agents. The 2026-06-09 part-1 correction stands.
+
+### Secondary findings (recorded, not pursued)
+
+- SMM internal inconsistency: pooled moments (e.g. `average_hours`, ginis) weight alive observations by `s_e·ω(t)/n_sim` where ω(t) already contains cumulative survival — survival enters twice (ω(t)·S(t) effectively), unlike the ratio moments which count it once (`calibrate.py:333–344` vs `:543–561`).
+- MIT stitching overwrites only the 5-D `a_policy/c_policy/l_policy` (`olg_transition.py:1247–1254, 1308–1315`) while both simulate paths read `*_policy_alpha` — whether the stitched arrays are ever consumed (NumPy views may save this; JAX arrays are immutable) needs a dedicated check.
+- `_at` zero-fills exogenous spending paths beyond their length while `B_path` clamps to its last value (`olg_transition.py:1745–1759`); `bequest_transfers` enters neither `total_spending` nor (with the loop off) household income; `transfer_floor` outlays have no budget line (inactive at floor 0); `fiscal.B_over_Y`=1.64 vs `transition.B_over_Y`=1.7 in the JSON, only the former read; `transition.recompute_bequests` in the JSON is never read by `run_from_config` (CLI flag only).
+
+### Implications
+
+- The ~12% common-factor gap is consistent in sign and rough size with Bug 1 (Y built from C instead of w·L: the wedge becomes the data-dependent factor ≈ L_SS/C_transition ≈ 0.26/0.30), with Bug 2 adding item-specific distortions on JAX runs; exact attribution requires re-running after fixes.
+- Contaminated and to be re-measured after fixes: `other_net_spending_over_Y` (−0.1042 and the earlier −0.1056), the 2026-06-11 decomposition table, all fiscal figures since 2026-03-04, all JAX-backend transition output.
+- Unaffected: the SMM θ (standalone pipeline, both bugs absent); the multiplier-0.000 structural diagnosis (a debt-financed G shock has no household channel regardless of which aggregate enters Y).
+
+**No code changes applied** — fixes to `olg_transition.py:2072` (unpack order), the L/w convention, and the JAX batched α path await user decision.
+
+### Fixes applied (same day, user-approved "fix all")
+
+1. **Unpack swap**: `K_path[t], C_path[t], L_path[t] = self._aggregate_capital_labor_njit(...)` — matches the njit's `(K, C, L)` return; comment added.
+2. **L units**: after aggregation, `L_path = L_path / w_path` — converts the wage-valued `effective_y_sim` aggregate to efficiency units before production, same convention as `calibrate.py` (`L = labor_income / w`). `results['L']` is now in efficiency units. `compute_aggregates()` still returns the raw wage-valued labor mean (no external callers; not changed).
+3. **JAX batched α solve**: `_solve_cohorts_jax_batched` now outer-loops the permanent-FE grid (one batched sweep per α node, `alpha_mult` is a traced vmap arg so no retracing), stacks `(n_alpha, T, ...)` per-α policies on each model, scalar attributes alias α=0 — mirroring `LifecycleModelPerfectForesight.solve` and `LifecycleModelJAX.solve`. Verified: batched per-α policies bitwise-identical (0.0 max diff) to the standalone JAX solve, distinct across α nodes.
+4. **MIT stitching staleness (4th bug, found while fixing 3)**: both simulate paths read `*_policy_alpha` (`lifecycle_perfect_foresight.py:1126,1132,1211`; `olg_transition.py:599-601` via `_as_alpha_indexed`), but stitching rebound only the scalar 5-D `a_policy/c_policy/l_policy` — a no-op for the simulation on BOTH backends (the scalar arrays alias α=0 only until rebound by `.copy()`/setattr). Fixed: both stitching blocks (NumPy `olg_transition.py:~1247`, JAX `~1308`) now also stitch `a_policy_alpha/c_policy_alpha/l_policy_alpha` over `[:, :pre]`. The 2026-03-08 "A[0] verified" note predates Phase 8's switch of the simulate read path to the α arrays.
+
+Verification: fiscal suite **39/39**, OLG suite **73 passed / 17 deselected** (documented exclusions only, 45 min) — regression-clean. `olg_transition.py --test` passes on both backends, agreeing to MC noise. New check script `check_a0_predetermination.py`: τ_l-shock fiscal scenario with n_alpha=3, σ_α>0 — A[0] diff exactly 0.0 on both backends (the old code fails this by construction).
+
+### Post-fix closure re-measurement and gap validation
+
+**Closure** (`measure_baseline_closure.py`, JAX, n_sim=2000, other_net=0): baseline primary surplus **−6.94% of Y** (mean; t=0 −6.83%; was −8.47% under the bugs). New value, config updated:
+
+```
+other_net_spending_over_Y = −0.0694 − 0.0195 = −0.0889   (was −0.1042; pre-audit −0.1056)
+```
+
+The plug is now below the data's other-revenue line (9.4%), which the old −10.6% exceeded. Log: `output/closure_remeasure_postfix.log`.
+
+**Gap validation** (`diag_ss_vs_transition.py`, JAX, n_sim=3000): every item ratio now agrees between the calibration SS and the transition baseline to **±0.6%** (was −9.5 to −14.6%): tax_p/Y 0.1300 vs 0.1300, pensions/Y 0.1592 vs 0.1602, health_gov/Y 0.0539 vs 0.0539, total revenue/Y 0.3477 vs 0.3480. Transition t=0 primary surplus +2.03% with the new closure (target +1.95%; n_sim difference). The transition baseline now reproduces the calibrated steady state — "the SMM matches the base year" carries to the transition. The remaining **Y-level** difference (transition 0.4368 vs SS 0.4936, −11.5%) is the per-birth vs per-living normalization, which cancels in all ratios — expected, not a bug. Log: `output/ss_vs_transition_postfix.log`.
+
+The 2026-06-09 part-1 open question and the 2026-06-11 route-2 decomposition are thereby superseded: the gap was Bug 1 + the L-units convention, not bequests or behavior. **STATUS:** baseline fiscal closure re-measured under the new θ (`other_net_spending_over_Y = −0.1042`, was −0.1056); cumulative-multiplier-0.000 diagnosed as structural (debt-financed G shock has no household channel in SOE mode, ΔY ≡ 0). See `## Session 2026-06-11` at top. Prior: 2026-06-09 recalibration against the data 2020 life table (part 3).
+
+---
+
+## Session 2026-06-11: closure re-measured under new θ + multiplier-0.000 diagnosis
+
+### Route 1 — baseline fiscal closure reset (done)
+
+Re-measured the transition baseline primary balance under `_derived.theta` = {ν=28.67, β=0.985, τ_p=0.198, ρ_pens=0.161, m=0.0416} with `other_net_spending = 0` (script: `measure_baseline_closure.py`, JAX, n_sim=2000, G/I_g/defense wired as in the config branch). Result: **primary surplus −8.47% of Y** (mean over the flat 60-period path; t=0 −8.43%; was −8.6% under the old θ). New closure, same formula as 2026-05-28 Fix 2:
+
+```
+other_net_spending_over_Y = −0.0847 − 0.0195 = −0.1042   (config updated; was −0.1056)
+```
+
+The shift is exact (no household feedback), so the baseline primary balance now equals the Greek 2023 value (+1.95%) by construction; no re-run needed. Warmup mean(Y) = 0.5011.
+
+### Route 3 — cumulative multiplier 0.000 (diagnosed, structural)
+
+Inspected `output/fiscal_test/fiscal_results.json` (G shock, file of 2026-05-20). `fiscal_multiplier()` compares the no-shock baseline scenario against `debt_financed`. In the debt-financed run, ΔG = 0.0107 per period but **every household-relevant path is bit-identical** between baseline and counterfactual: max |Δr| = |Δw| = |Δτ_l| = |Δτ_c| = |Δτ_p| = |Δτ_k| = 0, hence ΔL = ΔA = ΔC = ΔK_domestic = ΔY = 0 exactly. Only B/GDP (ends 228% vs −183%) and NFA differ.
+
+This is the model structure, not a numerical bug: in SOE mode r is exogenous, w is pinned by the firm FOC given (r, K_g), a G goods shock does not enter the household budget or production, and debt financing leaves all tax paths unchanged over the horizon — so the debt-financed G multiplier is exactly 0 by construction. Cross-check: `tax_financed` shows ΔY ≠ 0 (max 0.005), since τ_l moves. An I_g shock would also give ΔY ≠ 0 (K_g enters production and w). Whether to report the multiplier off a different scenario/shock is an open modeling choice.
+
+### Route 2 — SS-vs-transition gap decomposition (run done; bequests are NOT the driver)
+
+Script `diag_bequest_decomp.py` (JAX, n_sim=3000, new θ, same 2020 survival both sides): (A) SS stationary cross-section vs transition baseline with (B) `recompute_bequests=False` and (C) `=True`. Per-item gaps at t=0: B−A = solve-path difference (stationary single-cohort solve vs MIT-stitched cohort solves), C−B = bequest-redistribution contribution. Log: `output/bequest_decomp.log`.
+
+| item | SS(A) | off(B) | on(C) | B−A % | C−B % | C−A % |
+|---|---|---|---|---|---|---|
+| tax_revenue/Y | 0.3480 | 0.3076 | 0.3029 | −11.6 | −1.5 | −13.0 |
+| tax_c/Y | 0.1123 | 0.0959 | 0.0959 | −14.6 | −0.0 | −14.6 |
+| tax_l/Y | 0.0700 | 0.0629 | 0.0615 | −10.1 | −2.2 | −12.1 |
+| tax_p/Y | 0.1300 | 0.1177 | 0.1147 | −9.5 | −2.5 | −11.8 |
+| pensions/Y | 0.1602 | 0.1407 | 0.1392 | −12.2 | −1.0 | −13.1 |
+| ui/Y | 0.0128 | 0.0114 | 0.0113 | −11.2 | −1.0 | −12.0 |
+| health_gov/Y | 0.0539 | 0.0476 | 0.0471 | −11.8 | −1.0 | −12.7 |
+| **Y level** | 0.4936 | 0.4944 | 0.4994 | **+0.2** | +1.0 | +1.2 |
+
+Findings (observed, this run):
+
+1. **The Y-level gap is gone under the new θ**: SS Y 0.4936 vs transition 0.4944 (+0.2%; was +7.3% under the old θ per the 2026-06-09 part-1 diagnostic). The remaining gap is entirely in the item numerators relative to Y.
+2. **Bequest redistribution explains only −1.0 to −2.5 pp** of the per-item gap (C−B), and it moves the transition *away* from the SS, not toward it.
+3. **The solve-path difference (B−A) carries the gap**: −9.5 to −14.6% across items with bequests off on both sides and identical survival. All items are low by a similar factor (~−12%) while Y and (by the firm FOC) the K/L ratio agree, which is consistent with a composition/weighting difference in how the two sides aggregate item numerators — not yet isolated.
+4. Bequest loop: converged in 2 iterations; iteration-2 max change exactly 0.00e+00 (assets live on a discrete grid, so unchanged grid choices give bit-identical bequests; recipients of the period-t lumpsum are cohorts born at t, most of whose deaths fall outside the 60-period window). Not verified further.
+
+**Open (next step for route 2):** isolate the remaining B−A item gap. Y levels agree but every item/Y is ~12% lower in the transition; candidates are the cross-section weighting of item numerators (calibrate `age_weights` vs transition per-cohort means with births-only weights — see the part-1/part-2 correction: ratios were argued to agree algebraically, which this run contradicts at the item level) and per-item composition (e.g., wage-weighted vs head-count L). A per-item, per-age comparison of the two cross-sections would localize it.
 
 Prior: GG-accounts data audit done; plumbing fix + `other_net_spending` residual to pin the baseline primary balance. See `## Session 2026-05-26`.
 
