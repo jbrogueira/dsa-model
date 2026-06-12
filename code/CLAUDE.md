@@ -149,6 +149,7 @@ In `olg_transition.py`:
 - `w_at_retirement` is cached in `__init__` (not recomputed per period)
 - `n_sim` controls Monte Carlo simulation size
 - Output plots saved to `output/` directory
+- `simulate_transition` `results['L']` is in efficiency units (wage-valued `effective_y_sim` aggregate divided by `w_path`), matching calibrate.py's `L = labor_income / w`; `_aggregate_capital_labor_njit` returns `(K, C, L)` — keep unpack order aligned
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
 - Fiscal G/I_g shocks pass `govt_spending_path=` and `I_g_path=` as explicit args to `simulate_transition()`; `transfer_floor=` (absolute value) is also an explicit arg — no external mutation needed
@@ -161,5 +162,6 @@ In `olg_transition.py`:
 - Uses `jax_enable_x64=True` for float64 precision (matches NumPy reference within ~1e-14)
 - Different PRNG (ThreeFry vs MT19937): simulation paths differ individually but match distributionally
 - `OLGTransition(backend='jax')` uses JAX for all cohort solves and simulations
+- Batched cohort solve outer-loops the permanent-FE grid (`n_alpha` sweeps, one per α node); per-α policies stacked as `*_policy_alpha` with shape `(n_alpha, T, ...)`, scalar policies alias α=0. MIT stitching must write the `*_policy_alpha` arrays — both simulate paths read them, not the scalar 5-D policies
 - Aggregation stays in NumPy (already fast with Numba, not a bottleneck)
 - macOS ARM: use native ARM Python (x86 Python via Rosetta hits AVX issues with jaxlib); Linux x86_64: use `jax[cuda12]` for GPU or `jax[cpu]` for CPU-only

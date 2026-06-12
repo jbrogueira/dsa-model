@@ -469,12 +469,14 @@ class OLGTransition:
             n_cohorts = len(model_list)
             chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
-            # Phase 8: alpha_mult is shared across cohorts within one solve sweep.
-            # 8.5a only supports the n_alpha=1 batched path (alpha_mult=1.0). For
-            # n_alpha>1 we'd need to outer-loop over alpha here and stack results;
-            # see Phase 8.5b for the per-agent simulation side.
-            alpha_mult_jax = 1.0
-            def _solve_chunk(w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c, surv_c):
+            # Phase 8: alpha_mult is shared across cohorts within one solve sweep,
+            # so the permanent-FE grid is handled by an outer loop over alpha
+            # nodes — one batched solve sweep per node — mirroring the per-alpha
+            # loops in LifecycleModelPerfectForesight.solve and
+            # LifecycleModelJAX.solve. The per-agent simulation side draws alpha
+            # indices over the full grid (Phase 8.5b), so the solve must supply
+            # matching per-alpha policies.
+            def _solve_chunk(alpha_mult_jax, w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c, surv_c):
                 return _solve_lifecycle_jax_batched(
                     ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                     ref.P_y_2d, ref.P_h,
@@ -498,54 +500,62 @@ class OLGTransition:
                               tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                               pension_paths, bequest_lumpsums, surv_paths)
 
-            if chunk_size >= n_cohorts:
-                V_b, a_b, c_b, l_b = _solve_chunk(*batched_arrays)
-                # Move everything to CPU to free GPU memory
-                V_batch = np.asarray(V_b)
-                a_pol_batch = np.asarray(a_b)
-                c_pol_batch = np.asarray(c_b)
-                l_pol_batch = np.asarray(l_b)
-            else:
-                V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
-                for start in range(0, n_cohorts, chunk_size):
-                    end = min(start + chunk_size, n_cohorts)
-                    actual = end - start
-                    pad = chunk_size - actual
-                    sliced = tuple(arr[start:end] for arr in batched_arrays)
-                    if pad > 0:
-                        sliced = tuple(
-                            jnp.concatenate([s, jnp.repeat(s[-1:], pad, axis=0)])
-                            for s in sliced
-                        )
-                    V_b, a_b, c_b, l_b = _solve_chunk(*sliced)
-                    # Move everything to CPU immediately to free GPU memory
-                    V_chunks.append(np.asarray(V_b[:actual]))
-                    a_chunks.append(np.asarray(a_b[:actual]))
-                    c_chunks.append(np.asarray(c_b[:actual]))
-                    l_chunks.append(np.asarray(l_b[:actual]))
-                V_batch = np.concatenate(V_chunks)
-                a_pol_batch = np.concatenate(a_chunks)
-                c_pol_batch = np.concatenate(c_chunks)
-                l_pol_batch = np.concatenate(l_chunks)
+            n_alpha = ref.n_alpha
+            V_alpha_sweeps, a_alpha_sweeps, c_alpha_sweeps, l_alpha_sweeps = [], [], [], []
+            for alpha_idx in range(n_alpha):
+                alpha_mult_jax = float(np.exp(np.asarray(ref.alpha_grid)[alpha_idx]))
+                if chunk_size >= n_cohorts:
+                    V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *batched_arrays)
+                    # Move everything to CPU to free GPU memory
+                    V_batch = np.asarray(V_b)
+                    a_pol_batch = np.asarray(a_b)
+                    c_pol_batch = np.asarray(c_b)
+                    l_pol_batch = np.asarray(l_b)
+                else:
+                    V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
+                    for start in range(0, n_cohorts, chunk_size):
+                        end = min(start + chunk_size, n_cohorts)
+                        actual = end - start
+                        pad = chunk_size - actual
+                        sliced = tuple(arr[start:end] for arr in batched_arrays)
+                        if pad > 0:
+                            sliced = tuple(
+                                jnp.concatenate([s, jnp.repeat(s[-1:], pad, axis=0)])
+                                for s in sliced
+                            )
+                        V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *sliced)
+                        # Move everything to CPU immediately to free GPU memory
+                        V_chunks.append(np.asarray(V_b[:actual]))
+                        a_chunks.append(np.asarray(a_b[:actual]))
+                        c_chunks.append(np.asarray(c_b[:actual]))
+                        l_chunks.append(np.asarray(l_b[:actual]))
+                    V_batch = np.concatenate(V_chunks)
+                    a_pol_batch = np.concatenate(a_chunks)
+                    c_pol_batch = np.concatenate(c_chunks)
+                    l_pol_batch = np.concatenate(l_chunks)
+                V_alpha_sweeps.append(V_batch)
+                a_alpha_sweeps.append(a_pol_batch)
+                c_alpha_sweeps.append(c_pol_batch)
+                l_alpha_sweeps.append(l_pol_batch)
 
             # Don't cache policy arrays on GPU — with limited VRAM, the simulation
             # will re-upload per chunk from CPU-resident model objects.
             self._jax_policy_batch = {}
 
-            # Inject results into individual model objects (CPU arrays)
+            # Inject results into individual model objects (CPU arrays).
+            # Per-alpha policies on a leading (n_alpha, T, ...) axis; scalar
+            # attributes alias alpha=0, matching LifecycleModelJAX.solve and
+            # LifecycleModelPerfectForesight.solve conventions.
             for ci, b in enumerate(birth_periods):
                 model = models_dict[b]
-                model.V = np.asarray(V_batch[ci])
-                model.a_policy = np.asarray(a_pol_batch[ci])
-                model.c_policy = np.asarray(c_pol_batch[ci])
-                model.l_policy = np.asarray(l_pol_batch[ci])
-                # Phase 8: simulate paths read 6-D policies. With the batched
-                # solve restricted to n_alpha=1 (alpha_mult=1.0), the alpha-indexed
-                # arrays are just the scalar policies wrapped on a singleton axis.
-                model.V_alpha = model.V[None, ...]
-                model.a_policy_alpha = model.a_policy[None, ...]
-                model.c_policy_alpha = model.c_policy[None, ...]
-                model.l_policy_alpha = model.l_policy[None, ...]
+                model.V_alpha = np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0)
+                model.a_policy_alpha = np.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
+                model.c_policy_alpha = np.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
+                model.l_policy_alpha = np.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
+                model.V = model.V_alpha[0]
+                model.a_policy = model.a_policy_alpha[0]
+                model.c_policy = model.c_policy_alpha[0]
+                model.l_policy = model.l_policy_alpha[0]
 
     def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False):
         """Batched simulation of all cohorts in one vmapped XLA call per education type."""
@@ -1244,13 +1254,21 @@ class OLGTransition:
                     #  NumPy stitching happens here immediately.)
                     if self.backend != 'jax' and bcs_key in self._mit_baseline_cache:
                         base_model = self._mit_baseline_cache[bcs_key]
-                        for attr in ('a_policy', 'c_policy', 'l_policy'):
+                        # Stitch the per-alpha arrays too: both simulate paths
+                        # read *_policy_alpha (the scalar arrays alias alpha=0
+                        # only), so stitching the scalars alone never reaches
+                        # the simulation.
+                        for attr in ('a_policy', 'c_policy', 'l_policy',
+                                     'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
                             base_arr = getattr(base_model, attr, None)
                             cf_arr   = getattr(model, attr, None)
                             if base_arr is None or cf_arr is None:
                                 continue
                             arr = np.asarray(cf_arr).copy()
-                            arr[:pre] = np.asarray(base_arr)[:pre]
+                            if attr.endswith('_alpha'):
+                                arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                            else:
+                                arr[:pre] = np.asarray(base_arr)[:pre]
                             setattr(model, attr, arr)
 
                 # DEBUG: Print asset policy for cohorts born during transition
@@ -1305,13 +1323,20 @@ class OLGTransition:
                     base_m = self._mit_baseline_cache[bcs_key]
                     jax_m  = birth_cohort_solutions[edu_type_jax][bp]
                     pre    = -bp
-                    for attr in ('a_policy', 'c_policy', 'l_policy'):
+                    # Stitch the per-alpha arrays too: the batched simulate
+                    # reads *_policy_alpha, so stitching the scalar arrays
+                    # alone never reaches the simulation.
+                    for attr in ('a_policy', 'c_policy', 'l_policy',
+                                 'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
                         base_arr = getattr(base_m, attr, None)
                         jax_arr  = getattr(jax_m, attr, None)
                         if base_arr is None or jax_arr is None:
                             continue
                         arr = np.asarray(jax_arr).copy()
-                        arr[:pre] = np.asarray(base_arr)[:pre]
+                        if attr.endswith('_alpha'):
+                            arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                        else:
+                            arr[:pre] = np.asarray(base_arr)[:pre]
                         setattr(jax_m, attr, arr)
             # Invalidate ALL cached pre-stitching JAX policy arrays so that
             # _simulate_cohorts_jax_batched re-reads from the (now stitched)
@@ -2069,9 +2094,16 @@ class OLGTransition:
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
             cohort_sizes_t = self._cohort_weights(t)
-            K_path[t], L_path[t], C_path[t] = self._aggregate_capital_labor_njit(
+            # njit returns (K, C, L) — keep the unpack order aligned with that return
+            K_path[t], C_path[t], L_path[t] = self._aggregate_capital_labor_njit(
                 assets_all[t], consum_all[t], labor_all[t], cohort_sizes_t, _edu_shares_arr
             )
+
+        # L is aggregated from effective_y_sim, which is wage-valued
+        # (w·κ(j)·y·l·exp(α) + UI).  Convert to efficiency units before using it
+        # as the production-function labor input — same convention as
+        # calibrate.py (L = labor_income / w).
+        L_path = L_path / w_path
 
         # Feature #9: Compute K_domestic before Y — Y must use domestic capital, not household wealth.
         # K_path = A = total household wealth (aggregated from simulation).
