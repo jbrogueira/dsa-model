@@ -380,11 +380,7 @@
     "r_initial": 0.04,
     "r_final": 0.04,
     "r_decay": 5,
-    "G_over_Y": 0.13,
-    "I_g_over_Y": 0.03,
-    "B_over_Y": 1.7,
     "n_sim": 2000,
-    "recompute_bequests": false,
     "survival_data_file": "../data/survival_GR.npz"
   }
 }

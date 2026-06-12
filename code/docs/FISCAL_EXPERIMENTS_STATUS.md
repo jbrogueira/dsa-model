@@ -60,7 +60,29 @@ The plug is now below the data's other-revenue line (9.4%), which the old −10.
 
 **Gap validation** (`diag_ss_vs_transition.py`, JAX, n_sim=3000): every item ratio now agrees between the calibration SS and the transition baseline to **±0.6%** (was −9.5 to −14.6%): tax_p/Y 0.1300 vs 0.1300, pensions/Y 0.1592 vs 0.1602, health_gov/Y 0.0539 vs 0.0539, total revenue/Y 0.3477 vs 0.3480. Transition t=0 primary surplus +2.03% with the new closure (target +1.95%; n_sim difference). The transition baseline now reproduces the calibrated steady state — "the SMM matches the base year" carries to the transition. The remaining **Y-level** difference (transition 0.4368 vs SS 0.4936, −11.5%) is the per-birth vs per-living normalization, which cancels in all ratios — expected, not a bug. Log: `output/ss_vs_transition_postfix.log`.
 
-The 2026-06-09 part-1 open question and the 2026-06-11 route-2 decomposition are thereby superseded: the gap was Bug 1 + the L-units convention, not bequests or behavior. **STATUS:** baseline fiscal closure re-measured under the new θ (`other_net_spending_over_Y = −0.1042`, was −0.1056); cumulative-multiplier-0.000 diagnosed as structural (debt-financed G shock has no household channel in SOE mode, ΔY ≡ 0). See `## Session 2026-06-11` at top. Prior: 2026-06-09 recalibration against the data 2020 life table (part 3).
+The 2026-06-09 part-1 open question and the 2026-06-11 route-2 decomposition are thereby superseded: the gap was Bug 1 + the L-units convention, not bequests or behavior.
+
+### Pre-counterfactual reconciliation check (same day)
+
+Checked the fiscal pipeline wiring before re-running counterfactuals:
+
+- `transition.B_over_Y = 1.7` was **dead config** — nothing read it. The pipeline uses `fiscal.B_over_Y = 1.64` for `B_initial` and the tax-financed return target, so baseline interest = r_B·1.64 = 3.44% of Y, matching the 2023 data (3.4%) by construction. (Earlier statement that the transition used 1.7 was wrong.)
+- `transition.G_over_Y` / `transition.I_g_over_Y` were also dead (live values come from the `fiscal` block); `transition.recompute_bequests` was never read (CLI flag only). All four dead keys removed from the JSON.
+- Post-horizon paths: `_extend_base_paths` clamp-extends all spending paths over `n_post`, and `run_fiscal_figures` puts G/I_g/defense/other into `base_paths` — the `_at` zero-fill footgun never triggers on this pipeline.
+- Closure consistency: `run_fiscal_figures` uses the same n_sim (2000), warmup-mean(Y) scaling, and spending shares as the closure measurement, so −0.0889 carries over. Standing condition: closure measured with the bequest circuit open (what the fiscal pipeline runs); re-measure if bequests are switched on there.
+- Multiplier: nothing to decide — ΔY ≡ 0 for debt-financed G is the model's theoretical implication and the 0.000 line in the output is simply that fact. Dropped as an open item.
+
+### Code cleanup (same day)
+
+Dead code/config eliminated; output verified bit-identical pre/post (test-mode Deficit/GDP −25.66986% NumPy / −25.74057% JAX; A[0] check values unchanged to the last digit):
+
+- **JSON**: removed dead `transition.{B_over_Y, G_over_Y, I_g_over_Y, recompute_bequests}` keys.
+- **`olg_transition.py`**: removed the SS-profiles block in `solve_cohort_problems` (3 full lifecycle solves + sims per call; outputs `ss_asset_profiles`/`ss_earnings_profiles`/`ss_asset_distributions` had no consumers) — a per-call speedup; removed the dead `use_initial_distribution` param and `_jax_policy_batch` (assigned `{}` in 3 places, never read since the batched simulate reads model objects); removed dead locals.
+- **`compute_aggregates()`**: now converts L to efficiency units via `self.w_path[t]` (consistent with `simulate_transition`); raises if called before a transition has set `w_path`.
+- **`calibrate.py`**: removed unused `import sys`, dead locals (`ret_age`, `n_sim`, `w`), and the never-filled `'transfer'` key in `compute_fiscal_ratios`.
+- **`fiscal_experiments.py` / `run_fiscal_figures.py` / `lifecycle_jax.py` / `lifecycle_perfect_foresight.py` / `eval_fiscal_results.py`**: pyflakes-driven removal of unused imports and dead locals. Pyflakes now clean (f-string style warnings left).
+
+Verification of the cleanup: smoke tests bit-identical on both backends (test-mode Deficit/GDP and A[0] check values unchanged to the last digit); config loads with `B_over_Y = 1.64`, `other = −0.0889`; fiscal suite re-run **39/39**; pyflakes clean. **The OLG and calibrate suites were NOT re-run after the cleanup** (the run was killed to free CPU for an interactive fiscal-figures run) — re-run `pytest test_olg_transition.py -k "not (TestJAXBackend or TestNewFeaturesJAX or TestLaborSupplyJAX or TestEndogenousRetirementJAX or test_l_sim_in_output or test_public_capital_increases_output)"` and `pytest test_calibrate.py` before relying on the cleanup commit. Expected clean: the cleanup only removed code verified dead (no consumers) and outputs are bit-identical. **STATUS:** baseline fiscal closure re-measured under the new θ (`other_net_spending_over_Y = −0.1042`, was −0.1056); cumulative-multiplier-0.000 diagnosed as structural (debt-financed G shock has no household channel in SOE mode, ΔY ≡ 0). See `## Session 2026-06-11` at top. Prior: 2026-06-09 recalibration against the data 2020 life table (part 3).
 
 ---
 

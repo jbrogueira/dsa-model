@@ -1056,9 +1056,6 @@ class LifecycleModelPerfectForesight:
         alive_sim = np.zeros((T_sim, n_sim), dtype=bool)
         bequest_sim = np.zeros((T_sim, n_sim))
 
-        # avg_earnings tracking kept for diagnostics (not used for pension)
-        avg_earnings_at_retirement = np.zeros(n_sim)
-
         # Phase 8: draw permanent productivity fixed effect alpha for each agent.
         # When n_alpha == 1 (FE off), alpha_idx is all zeros and alpha_mult is 1.0,
         # which reduces to prior behavior because c_policy_alpha[0] aliases c_policy.

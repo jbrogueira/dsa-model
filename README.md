@@ -24,11 +24,16 @@ A multi-agent code audit (4 blind auditors + 3 adversarial verifiers, code-only)
 - **Multiplier 0.000 diagnosed — structural, not numerical.** A debt-financed G shock leaves every household-relevant path (r, w, taxes) unchanged in SOE mode, so ΔY ≡ 0 by construction; only B/GDP and NFA move. `tax_financed` and I_g shocks give ΔY ≠ 0. Which scenario/shock to report a multiplier from is an open modeling decision. (Unaffected by the bugs.)
 - Secondary audit findings recorded in the status doc: the SMM's pooled moments (e.g. `average_hours`) double-count survival relative to its ratio moments; `_at` zero-fills exogenous spending paths beyond length while `B_path` clamps; `transition.recompute_bequests` in the JSON is never read (CLI flag only).
 
+### Pre-counterfactual reconciliation + cleanup (2026-06-12, second pass)
+
+- **Pipeline wiring checked, ready for counterfactual runs**: `fiscal.B_over_Y = 1.64` is the live debt input everywhere (baseline interest = 3.44% of Y, matching 2023 data); post-horizon spending paths clamp-extend correctly; the closure −0.0889 carries over to `run_fiscal_figures` as measured (same n_sim, scaling, shares; bequest circuit open on both).
+- **Multiplier item dropped**: ΔY ≡ 0 for debt-financed G is the model's theoretical implication (exogenous r, wasteful G, foreign borrowing); the 0.000 output line is that fact, nothing to decide.
+- **Dead code/config eliminated**, output verified bit-identical pre/post: dead `transition.{B_over_Y, G_over_Y, I_g_over_Y, recompute_bequests}` JSON keys; the unconsumed SS-profiles block in `solve_cohort_problems` (3 lifecycle solves per call — speedup); `use_initial_distribution`; `_jax_policy_batch`; `compute_aggregates()` L now in efficiency units; pyflakes-driven unused-import/dead-local removal across all modules.
+
 ### Next steps
 
 1. **Re-run fiscal figures** under the fixed code and new closure (`run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`) — all existing output in `code/output/fiscal_test/` predates the fixes.
-2. Decide the multiplier reporting convention (which scenario/shock).
-3. Optional cleanups: SMM pooled-moment survival double-count; `compute_aggregates()` still returns wage-valued L (no external callers).
+2. Optional: SMM pooled-moment survival double-count (e.g. `average_hours` weights alive observations by survival-inclusive ω(t) — survival enters twice relative to the ratio moments).
 
 ### What landed (2026-05-26 → 28, previously uncommitted)
 

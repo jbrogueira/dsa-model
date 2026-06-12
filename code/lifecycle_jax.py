@@ -109,10 +109,6 @@ def compute_budget_jax(
     -------
     budget : array, shape (n_a, n_y, n_h, n_y)
     """
-    n_a = a_grid.shape[0]
-    n_y = y_grid.shape[0]
-    n_h = h_grid.shape[0]
-
     # Broadcast grids: a(n_a,1,1,1), y(1,n_y,1,1), h(1,1,n_h,1), y_last(1,1,1,n_y)
     a = a_grid[:, None, None, None]           # (n_a,1,1,1)
     y = y_grid[None, :, None, None]           # (1,n_y,1,1)
@@ -379,8 +375,6 @@ def _solve_terminal_period_jax(
     c = jnp.maximum(budget / (1.0 + tau_c_T), 1e-10)
 
     # Labor supply FOC at terminal period
-    n_y = y_grid.shape[0]
-    n_h = h_grid.shape[0]
     y_4d = y_grid[None, :, None, None]       # (1, n_y, 1, 1)
     h_4d = h_grid[None, None, :, None]       # (1, 1, n_h, 1)
     # Phase 8: effective wage scales with permanent FE multiplier
@@ -445,8 +439,6 @@ def solve_lifecycle_jax(
     c_policy : (T, n_a, n_y, n_h, n_y)
     l_policy : (T, n_a, n_y, n_h, n_y)
     """
-    n_a = a_grid.shape[0]
-    n_y = y_grid.shape[0]
     n_h = h_grid.shape[0]
 
     # Default wage_age_profile to ones
@@ -1152,7 +1144,6 @@ class LifecycleModelJAX:
         edu_unemployment_rate = self.config.edu_params[self.config.education_type]['unemployment_rate']
 
         if edu_unemployment_rate < 1e-10:
-            n_employed = self.n_y - 1
             # Uniform over employed states
             key, subkey = jax.random.split(key)
             initial_i_y = jax.random.choice(subkey, jnp.arange(1, self.n_y), shape=(n_sim,)).astype(jnp.int32)

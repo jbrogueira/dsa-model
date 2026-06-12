@@ -19,7 +19,6 @@ import json
 import sys
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Tolerances
@@ -438,7 +437,6 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type):
 
     # Shock path check
     delta_G  = params.get('delta_G_path')
-    delta_Ig = params.get('delta_Ig_path')
     if shock_type == 'G' and delta_G is not None and scenario_key != 'baseline':
         results.append(chk_shock_g_path(base_bud, cf_bud, delta_G, label))
 

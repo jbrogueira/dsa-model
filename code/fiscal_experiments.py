@@ -30,7 +30,6 @@ Usage
 
 from __future__ import annotations
 
-import copy
 import numpy as np
 import matplotlib.pyplot as plt
 from dataclasses import dataclass, field
@@ -593,7 +592,6 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     T_total = T_base + n_post
 
     ext_paths = _extend_base_paths(base_paths, n_post)
-    r_path = np.asarray(ext_paths['r_path'], dtype=float)
     r_B_path = np.asarray(ext_paths['r_B_path'], dtype=float)
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
@@ -669,10 +667,8 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
     n_post  = scenario.n_post
     T_total = T_base + n_post
-    T       = T_total  # alias used throughout this function
 
     ext_paths = _extend_base_paths(base_paths, n_post)
-    r_path = np.asarray(ext_paths['r_path'], dtype=float)
     r_B_path = np.asarray(ext_paths['r_B_path'], dtype=float)
     psi = _get_psi(scenario, T_total)
     cond = scenario.balance_condition
@@ -838,10 +834,8 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
     n_post  = scenario.n_post
     T_total = T_base + n_post
-    T       = T_total  # alias used throughout this function
 
     ext_paths = _extend_base_paths(base_paths, n_post)
-    r_path = np.asarray(ext_paths['r_path'], dtype=float)
     r_B_path = np.asarray(ext_paths['r_B_path'], dtype=float)
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)

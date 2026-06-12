@@ -18,7 +18,6 @@ import argparse
 import copy
 import json
 import os
-import sys
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -1105,7 +1104,6 @@ def build_olg_transition(config_data, backend='numpy'):
     from olg_transition import OLGTransition
 
     lifecycle_config, eq_prices = build_lifecycle_config(config_data)
-    w = eq_prices['w']
     r = config_data['prices']['r']
     prod = config_data.get('production', {})
     trans = config_data.get('transition', {})
@@ -1212,8 +1210,6 @@ def compute_fiscal_ratios(panels, spec, config_data):
     production function parameters from config_data.
     """
     T = spec.base_config.T
-    ret_age = spec.base_config.retirement_age
-    n_sim = spec.n_sim
     r = spec.r
     w = spec.w
 
@@ -1224,8 +1220,7 @@ def compute_fiscal_ratios(panels, spec, config_data):
     # For each variable, compute age-weighted cross-sectional mean
     agg = {k: 0.0 for k in ['labor_income', 'consumption', 'assets',
                               'pension', 'ui', 'oop_health', 'gov_health',
-                              'tax_c', 'tax_l', 'tax_p', 'tax_k',
-                              'transfer']}
+                              'tax_c', 'tax_l', 'tax_p', 'tax_k']}
     for edu, panel in panels.items():
         share = spec.education_shares[edu]
         alive = panel.alive_sim.astype(bool)

@@ -135,8 +135,6 @@ class OLGTransition:
                  # When set, overrides survival_improvement_rate: each cohort uses the data
                  # period tables along its calendar diagonal, clamped to [years[0], years[-1]].
                  survival_table=None,
-                 # Initial asset distribution opt-in
-                 use_initial_distribution=False,   # use ss asset distribution as initial conditions
                  # Backend selection
                  backend='numpy',
                  # JAX simulation chunk size (None = all cohorts at once; set e.g. 10 to avoid GPU OOM)
@@ -273,9 +271,6 @@ class OLGTransition:
             order = np.argsort(yrs)
             self._surv_years = yrs[order]
             self._surv_px = px[order]
-
-        # Initial asset distribution opt-in
-        self.use_initial_distribution = bool(use_initial_distribution)
 
         # NEW: remember last Monte Carlo size used in simulate_transition()
         self._last_n_sim: Optional[int] = None
@@ -538,9 +533,8 @@ class OLGTransition:
                 c_alpha_sweeps.append(c_pol_batch)
                 l_alpha_sweeps.append(l_pol_batch)
 
-            # Don't cache policy arrays on GPU — with limited VRAM, the simulation
-            # will re-upload per chunk from CPU-resident model objects.
-            self._jax_policy_batch = {}
+            # Policy arrays are not cached on GPU — with limited VRAM, the simulation
+            # re-uploads per chunk from the CPU-resident model objects below.
 
             # Inject results into individual model objects (CPU arrays).
             # Per-alpha policies on a leading (n_alpha, T, ...) axis; scalar
@@ -1052,13 +1046,6 @@ class OLGTransition:
             print("\nSolving cohort lifecycle problems with perfect foresight...")
             print(f"  Education types: {list(self.education_shares.keys())}")
 
-        # --- STEADY-STATE PROFILES (for initial conditions) ---
-        if verbose: print("  Computing initial steady-state profiles...")
-        r_ss = r_path[0]
-        w_ss = w_path[0]
-        self.ss_asset_profiles = {}
-        self.ss_earnings_profiles = {}
-
         # Feature flags from lifecycle_config — forwarded to all per-cohort configs
         _lc = self.lifecycle_config
         _feature_kwargs = dict(
@@ -1085,31 +1072,6 @@ class OLGTransition:
             (self.survival_improvement_rate != 0.0 and
              self.lifecycle_config.survival_probs is not None)
         )
-
-        for edu_type in self.education_shares.keys():
-            # Build SS config by replacing only the cohort-specific paths on the
-            # base lifecycle_config — this preserves edu_params, n_alpha,
-            # wage_age_profile, pension_avg_weight, kappa, m_good, ... that the
-            # bare LifecycleConfig(...) constructor would default away.
-            ss_config = self.lifecycle_config._replace(
-                education_type=edu_type, current_age=0,
-                r_path=np.ones(self.T) * r_ss, w_path=np.ones(self.T) * w_ss,
-                tau_c_path=np.ones(self.T) * (tau_c_path[0] if tau_c_path is not None else 0),
-                tau_l_path=np.ones(self.T) * (tau_l_path[0] if tau_l_path is not None else 0),
-                tau_p_path=np.ones(self.T) * (tau_p_path[0] if tau_p_path is not None else 0),
-                tau_k_path=np.ones(self.T) * (tau_k_path[0] if tau_k_path is not None else 0),
-                pension_replacement_path=np.ones(self.T) * (pension_replacement_path[0] if pension_replacement_path is not None else 0.4),
-            )
-            ss_model = self._lifecycle_model_class(ss_config, verbose=False)
-            ss_model.solve(verbose=False)
-            results = ss_model.simulate(T_sim=self.T, n_sim=100, seed=42)
-            self.ss_asset_profiles[edu_type] = np.mean(results[0], axis=1)
-            self.ss_earnings_profiles[edu_type] = np.mean(results[15], axis=1)
-            if not hasattr(self, 'ss_asset_distributions'):
-                self.ss_asset_distributions = {}
-            self.ss_asset_distributions[edu_type] = results[0]  # (T, n_ss_sim)
-            if verbose:
-                print(f"    {edu_type}: age {self.retirement_age} assets = {self.ss_asset_profiles[edu_type][self.retirement_age]:.4f}, avg_earnings = {self.ss_earnings_profiles[edu_type][self.retirement_age]:.4f}")
 
         # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
@@ -1338,12 +1300,6 @@ class OLGTransition:
                         else:
                             arr[:pre] = np.asarray(base_arr)[:pre]
                         setattr(jax_m, attr, arr)
-            # Invalidate ALL cached pre-stitching JAX policy arrays so that
-            # _simulate_cohorts_jax_batched re-reads from the (now stitched)
-            # model objects instead of the stale batch-solve output.
-            # BUG-010 fix: previously only cleared the last edu_type_jax from the loop.
-            self._jax_policy_batch = {}
-
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
 
@@ -1538,7 +1494,6 @@ class OLGTransition:
                          ui_sim, m_sim, oop_m_sim, gov_m_sim,
                          tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                          pension_sim, retired_sim, l_sim) = panel_data
-                        alive_sim = np.ones_like(a_sim, dtype=bool)
                         bequest_sim = np.zeros_like(a_sim)
 
                     (a_mean, c_mean, labor_mean,
@@ -1647,7 +1602,6 @@ class OLGTransition:
                              ui_sim, m_sim, oop_m_sim, gov_m_sim,
                              tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
                              pension_sim, retired_sim, l_sim) = panel_data
-                            alive_sim = np.ones_like(a_sim, dtype=bool)
                             bequest_sim = np.zeros_like(a_sim)
 
                         (a_m, c_m, l_m, tc_m, tl_m, tp_m, tk_m,
@@ -1713,6 +1667,11 @@ class OLGTransition:
             px["cohort_sizes_t"],
             px["education_shares_array"],
         )
+        # Same units as simulate_transition's L_path: the labor mean is
+        # wage-valued (effective_y_sim), so convert to efficiency units.
+        if self.w_path is None:
+            raise ValueError("w_path is not set — run simulate_transition() first.")
+        L = L / float(np.asarray(self.w_path)[int(t)])
         return K, L, C
 
     def compute_government_budget(self, t, n_sim: Optional[int] = None):
@@ -1828,8 +1787,6 @@ class OLGTransition:
         if n_sim is None:
             n_sim = int(self._last_n_sim)
         tau_beq = float(getattr(self.lifecycle_config, 'tau_beq', 0.0))
-        min_bp = 1 - self.T
-        max_bp = self.T_transition - 1
         result = {}
         for t in range(self.T_transition):
             px = self._period_cross_section(t=t, n_sim=int(n_sim))
@@ -1980,7 +1937,6 @@ class OLGTransition:
         # _policy_version so stale panels are never reused.
         if not hasattr(self, '_cohort_panel_cache'):
             self._cohort_panel_cache = {}
-        self._jax_policy_batch = {}
 
         # MIT shock baseline-solution cache: keyed by (edu_type, birth_period).
         # Valid while pre_transition_paths is the same object across calls (bisection

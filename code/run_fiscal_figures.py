@@ -16,7 +16,6 @@ import argparse
 import functools
 import json
 import os
-import sys
 import platform
 if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')  # avoid Metal backend on macOS
@@ -69,7 +68,6 @@ other_path   = None
 
 if args.config:
     # Build from JSON config file
-    import json
     from calibrate import build_olg_transition
 
     with open(args.config) as f:
