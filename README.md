@@ -4,9 +4,31 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-06-12)
+## Current status (handoff 2026-06-14)
 
-Sessions 2026-06-11/12 (uncommitted). Detailed notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-12` and `## Session 2026-06-11`).
+### Labor-supply FOC fixed + recalibrated (2026-06-14)
+
+The one-period labor "spike" at transition t=1 (seen in the fiscal figures) was traced to the labor-supply FOC, fixed in both backends, and the SMM recalibrated under the corrected solver. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-14`).
+
+- **Cause:** the 2-iteration Newton labor solver was seeded in a region where implied consumption is negative (clamped), freezing it at a spurious non-root — hours off by up to ~0.4 at borrowing-constrained ages; MIT alignment turned each cohort's onset wobble into the aggregate t=1 spike. An independent audit (theorist + code-extractor) also found the FOC equation itself wrong three ways: additive tax wedge `(1−τ_l−τ_p)` instead of the budget's `(1−τ_p)(1−τ_l)`, κ(t) omitted in NumPy, and the `1/(1+τ_c)` consumption-tax wedge omitted; plus a spurious labor disutility charged to retired/unemployed agents.
+- **Fix:** robust **projected-Newton** root-find on the monotone residual, bracketed to the feasible region, targeting the corrected FOC `ν·l^φ = c^{−γ}·MW/(1+τ_c)` with `MW = w·κ(t)·y·h·e^α·(1−τ_p)(1−τ_l)`; disutility only for working-age employed. `lifecycle_jax.py: solve_labor_robust_jax` (8 iters, vectorized), `lifecycle_perfect_foresight.py: _solve_labor_newton` (scalar, early-break).
+- **Verified:** both solvers match an exact bracketing root-finder to ~1e-14; A[0] predetermination exact; NumPy and JAX agree to MC-noise; the t=1 spike is gone (per-age deviation now mixed-sign noise vs the old uniform lift); suites green (fiscal 39/39, OLG 73 passed/17 deselected).
+- **Recalibrated:** SMM re-run under the corrected solver; converged (obj ≈ 2e-8), all five moments match targets to ≤0.01%. New θ in `calibration_input_GR.json._derived.theta`:
+
+  | param | new | old (pre-fix) |
+  |---|---|---|
+  | ν | 36.907 | 28.670 |
+  | β | 0.94317 | 0.98541 |
+  | τ_p | 0.19776 | 0.19786 |
+  | ρ_pens | 0.16629 | 0.16122 |
+  | m | 0.04277 | 0.04162 |
+
+  ν +29% and β −4.2pp are the FOC corrections propagating (ν up to still hit 0.41 hours, β down to still hit A/Y = 4).
+- **STILL STALE — next steps:** `other_net_spending_over_Y = −0.0889` was measured under the old θ → re-measure (`python measure_baseline_closure.py jax 2000`); then re-run the fiscal figures (`python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`). Everything in `output/fiscal_test/` predates both the fix and the recalibration.
+
+### Prior session (2026-06-11/12)
+
+Detailed notes in `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-12` and `## Session 2026-06-11`).
 
 ### SS-vs-transition gap RESOLVED (2026-06-12)
 

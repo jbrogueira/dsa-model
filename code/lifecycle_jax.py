@@ -53,24 +53,44 @@ def solve_labor_hours_jax(c, net_wage, nu, phi, gamma):
     return jnp.clip(l, 0.0, 1.0)  # time endowment is 1
 
 
-def newton_labor_jax(c_guess, net_wage_nd, nu, phi, gamma, tau_c_t, n_iters=2):
-    """Newton's method on F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0
-    where c(l) = c_guess + net_wage · (l - 1) / (1 + τ_c).
+def solve_labor_robust_jax(c_guess, mw, nu, phi, gamma, tau_c_t, n_iters=8):
+    """Robust labor-hours solve, consistent with the budget (1+τ_c)·c = resources.
 
-    Converges quadratically; 2 iterations suffice for typical parameters.
-    c_guess and net_wage_nd must be broadcast-compatible.
+    Intratemporal FOC (working, employed):
+        ν·l^φ = c^{-γ} · MW / (1+τ_c),   c(l) = c_guess + MW·(l-1)/(1+τ_c),
+    where MW is the marginal after-tax labor income per unit of l (effective wage
+    × the after-tax wedge; see callers). The residual
+        G(l) = ν·l^φ·(1+τ_c) − c(l)^{-γ}·MW
+    is monotonically increasing on the feasible region c(l)>0, so the root is
+    unique. Solved by safeguarded Newton–bisection (rtsafe), bracketed to
+    [l_lo, 1] with l_lo = max(0, 1 − c_guess·(1+τ_c)/MW) (the l where c(l)=0).
+    Newton steps are taken only when they stay inside the bracket, else a
+    bisection step — robust against the consumption-floor region that traps a
+    plain Newton iteration started from an infeasible guess. Branchless
+    (where-selects) for vmap/XLA. Returns l∈[0,1]; 0 when MW≤0 (no productive
+    labor, e.g. unemployment).
     """
-    dc_dl = net_wage_nd / (1.0 + tau_c_t)
-    exponent = gamma / phi
-    A_l = (jnp.maximum(net_wage_nd, 0.0) / nu) ** (1.0 / phi)
-    l = solve_labor_hours_jax(jnp.maximum(c_guess, 1e-10), net_wage_nd, nu, phi, gamma)
+    onetc = 1.0 + tau_c_t
+    mws = jnp.maximum(mw, 1e-12)
+    lo = jnp.maximum(0.0, 1.0 - c_guess * onetc / mws)
+    hi = jnp.ones_like(lo)
+    l = 0.5 * (lo + hi)
     for _ in range(n_iters):
-        c_l = jnp.maximum(c_guess + net_wage_nd * (l - 1.0) / (1.0 + tau_c_t), 1e-10)
-        l_foc = A_l * c_l ** (-exponent)
-        F = l - l_foc
-        Fp = 1.0 + exponent * (l_foc / c_l) * dc_dl
-        l = jnp.clip(l - F / Fp, 0.0, 1.0)
-    return l
+        c_l = jnp.maximum(c_guess + mw * (l - 1.0) / onetc, 1e-12)
+        G = nu * jnp.maximum(l, 0.0) ** phi * onetc - c_l ** (-gamma) * mw
+        Gp = (nu * phi * jnp.maximum(l, 1e-12) ** (phi - 1.0) * onetc
+              + gamma * c_l ** (-gamma - 1.0) * mw * (mw / onetc))
+        lo = jnp.where(G < 0.0, l, lo)
+        hi = jnp.where(G > 0.0, l, hi)
+        l_newton = l - G / Gp
+        # Projected Newton: clip the step into the bracket [lo, hi] (rather than
+        # falling back to bisection). Interior states get full Newton speed;
+        # corner states (l*→1 or l*→l_lo) snap to the bound in ~2 steps instead
+        # of crawling at the bisection rate. Bisection-midpoint fallback only
+        # when the Newton step is non-finite (Gp→0).
+        l = jnp.where(jnp.isfinite(l_newton),
+                      jnp.clip(l_newton, lo, hi), 0.5 * (lo + hi))
+    return jnp.where(mw > 1e-12, jnp.clip(l, 0.0, 1.0), 0.0)
 
 
 def labor_disutility_jax(l, nu, phi):
@@ -252,31 +272,33 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
     a_next = a_grid[None, None, None, None, :]
     c_all = (budget[..., None] - a_next) / (1.0 + tau_c_t)
 
-    # 2b. Labor supply FOC (when labor_supply=True)
-    # Compute net wage for FOC: effective_wage * (1 - tau_eff)
-    # y: (1, n_y, 1, 1), h: (1, 1, n_h, 1)
+    # 2b. Labor supply FOC (when labor_supply=True).
+    # Marginal after-tax labor income per unit of l, consistent with the budget:
+    # income tax falls on income net of payroll, so the wedge is multiplicative
+    #   flat:        MW = effective_wage·(1−τ_p)(1−τ_l)
+    #   progressive: MW ≈ effective_wage·(1−τ_p)   (HSV marginal handled separately)
     y_5d = y_grid[None, :, None, None, None]       # (1, n_y, 1, 1, 1)
     h_5d = h_grid[None, None, :, None, None]       # (1, 1, n_h, 1, 1)
-    # Phase 8: effective wage scales with permanent FE multiplier
     effective_wage = w_t * kappa_wage_t * y_5d * h_5d * alpha_mult  # (1, n_y, n_h, 1, 1)
-    tau_eff = jnp.where(tax_progressive, tau_p_t, tau_l_t + tau_p_t)
-    net_wage_5d = effective_wage * (1.0 - tau_eff)  # (1, n_y, n_h, 1, 1)
+    wedge = jnp.where(tax_progressive, 1.0 - tau_p_t, (1.0 - tau_p_t) * (1.0 - tau_l_t))
+    mw_5d = effective_wage * wedge  # (1, n_y, n_h, 1, 1)
 
-    # l_star via Newton on F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0.
-    # Converges quadratically in 2 iterations vs 5 for fixed-point.
     is_unemployed_5d = (y_5d == 0.0)                # (1, n_y, 1, 1, 1)
-    l_star = newton_labor_jax(c_all, net_wage_5d, nu, phi, gamma, tau_c_t)
+    l_star = solve_labor_robust_jax(c_all, mw_5d, nu, phi, gamma, tau_c_t)
     l_star = jnp.where(is_unemployed_5d | is_retired, 1.0, l_star)
 
-    # When not labor_supply, delta=0 and l=1
-    delta_budget = effective_wage * (l_star - 1.0) * (1.0 - tau_eff)
-    delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
+    # Budget adjustment for l≠1 uses the same marginal after-tax wage MW.
+    delta_budget = jnp.where(labor_supply, mw_5d * (l_star - 1.0), 0.0)
     l_all = jnp.where(labor_supply, l_star, 1.0)
 
     c_all = (budget[..., None] + delta_budget - a_next) / (1.0 + tau_c_t)
 
-    # Labor disutility
-    v_labor = jnp.where(labor_supply, labor_disutility_jax(l_all, nu, phi), 0.0)
+    # Labor disutility — only working-age EMPLOYED agents work (retired and
+    # unemployed bear no labor disutility; l_all is held at 1.0 for them only
+    # to zero delta_budget, not because they work).
+    work_employed = (~is_retired) & (y_5d > 0.0)
+    v_labor = jnp.where(labor_supply & work_employed,
+                        labor_disutility_jax(l_all, nu, phi), 0.0)
 
     # 3. Expected continuation value
     EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, V_next)
@@ -374,26 +396,26 @@ def _solve_terminal_period_jax(
     )
     c = jnp.maximum(budget / (1.0 + tau_c_T), 1e-10)
 
-    # Labor supply FOC at terminal period
+    # Labor supply FOC at terminal period (a'=0). Same corrected marginal
+    # after-tax wage MW and (1+τ_c) wedge as the non-terminal solve.
     y_4d = y_grid[None, :, None, None]       # (1, n_y, 1, 1)
     h_4d = h_grid[None, None, :, None]       # (1, 1, n_h, 1)
-    # Phase 8: effective wage scales with permanent FE multiplier
     effective_wage = w_T * kappa_wage_T * y_4d * h_4d * alpha_mult
-    tau_eff = jnp.where(tax_progressive, tau_p_T, tau_l_T + tau_p_T)
-    net_wage_4d = effective_wage * (1.0 - tau_eff)
+    wedge = jnp.where(tax_progressive, 1.0 - tau_p_T, (1.0 - tau_p_T) * (1.0 - tau_l_T))
+    mw_4d = effective_wage * wedge
 
     is_unemployed_4d = (y_4d == 0.0)
-    # Newton on F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0; terminal: a'=0.
-    l_star = newton_labor_jax(c, net_wage_4d, nu, phi, gamma, tau_c_T)
+    l_star = solve_labor_robust_jax(c, mw_4d, nu, phi, gamma, tau_c_T)
     l_star = jnp.where(is_unemployed_4d | is_retired_T, 1.0, l_star)
     l_pol = jnp.where(labor_supply, l_star, 1.0)
 
     # Final budget and consumption with converged labor hours
-    delta_budget = effective_wage * (l_pol - 1.0) * (1.0 - tau_eff)
-    delta_budget = jnp.where(labor_supply, delta_budget, 0.0)
+    delta_budget = jnp.where(labor_supply, mw_4d * (l_pol - 1.0), 0.0)
     c = jnp.maximum((budget + delta_budget) / (1.0 + tau_c_T), 1e-10)
 
-    v_labor = jnp.where(labor_supply, labor_disutility_jax(l_pol, nu, phi), 0.0)
+    work_employed = (~is_retired_T) & (y_4d > 0.0)
+    v_labor = jnp.where(labor_supply & work_employed,
+                        labor_disutility_jax(l_pol, nu, phi), 0.0)
     V = utility_jax(c, gamma) - v_labor
     a_pol = jnp.zeros_like(V, dtype=jnp.int32)
     return V, a_pol, c, l_pol

@@ -19,11 +19,11 @@
   },
   "_derived": {
     "theta": {
-      "nu": 28.670375657881056,
-      "beta": 0.9854100266171678,
-      "tau_p": 0.1978620127633392,
-      "pension_replacement_default": 0.16121942925666838,
-      "m_good": 0.041623167233435704
+      "nu": 36.906928,
+      "beta": 0.94317,
+      "tau_p": 0.197757,
+      "pension_replacement_default": 0.166291,
+      "m_good": 0.042774
     },
     "theta_metadata": {
       "calibration_date": "2026-06-09T18:32:08",

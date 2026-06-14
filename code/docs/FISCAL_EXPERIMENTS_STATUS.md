@@ -1,6 +1,57 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-12. **STATUS:** the SS-vs-transition gap is RESOLVED — a multi-agent code audit found four bugs/mismatches (K/L/C unpack swap since 2026-03-04; L-units 1/w convention; JAX batched α inconsistency; MIT-stitching staleness), all fixed and verified same day. Item ratios now match the calibration SS to ±0.6%; closure reset to `other_net_spending_over_Y = −0.0889`. Suites green (39/39 fiscal, 73/17-deselected OLG). See `## Session 2026-06-12`. **All transition-based results produced between 2026-03-04 and 2026-06-12 (fiscal figures, closure values, diagnostics) are invalid and need re-running.**
+Last updated: 2026-06-14. **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). Still stale and to redo next: the baseline closure (`other_net_spending_over_Y`) and the fiscal figures, both under the new θ. See `## Session 2026-06-14` at top.
+
+---
+
+## Session 2026-06-14: labor-supply FOC audit + fix
+
+The one-period aggregate-labor spike at transition t=1 in the tax-financed counterfactual (flagged from the fiscal figures) was diagnosed, then audited independently (a macro-theorist deriving the correct conditions from the budget/utility primitives + a code-extractor reporting the implemented formulas, both blind to the hypothesis), and fixed.
+
+### Root cause(s)
+
+The household problem has exactly one FOC (labor-leisure; assets are grid-enumerated, retirement is a discrete max, UI/pension/schooling are accounting). It had five defects:
+
+1. **Solver non-convergence (the spike).** The 2-iteration Newton (`newton_labor_jax`, `_solve_labor_newton`) seeded its guess where the implied `c(l)` is negative → clamped to 1e-10 → derivative explodes → iteration frozen at a spurious non-root. Hours under-stated by up to ~0.4; more iterations did not help. At young, borrowing-constrained ages this gave erratic labor; MIT alignment turned each cohort's onset wobble into the aggregate t=0 dip / t=1 overshoot. Pre-existing (persisted at n_alpha=1; lives in the per-agent sim, not the aggregation fixed on 2026-06-12).
+2. **Tax wedge (both backends).** FOC `net_wage` used additive `(1−τ_l−τ_p)`; the budget taxes labor income net of payroll, so the correct marginal after-tax wage is multiplicative `(1−τ_p)(1−τ_l)`.
+3. **κ(t) omitted (NumPy only).** NumPy FOC `net_wage` dropped the wage-age profile κ(t) its own budget includes; JAX included it. Made NumPy ≠ JAX.
+4. **Missing 1/(1+τ_c) (both backends).** Correct FOC `ν·l^φ = c^{−γ}·MW/(1+τ_c)`; solver targeted `ν·l^φ = c^{−γ}·net_wage` (the `dc_dl=net_wage/(1+τ_c)` term entered only Newton's step, not the root). Biased hours high by ~(1+τ_c)^{1/φ}≈1.12.
+5. **Spurious retired/unemployed disutility (both backends).** Retired/unemployed carry `l=1.0` (to zero `delta_budget`), so the objective subtracted `ν/(1+φ)` of disutility they don't incur — biasing value levels feeding the retirement-window choice and EV.
+
+### Fix (applied; both backends)
+
+Corrected FOC `ν·l^φ = c^{−γ}·MW/(1+τ_c)`, `MW = w·κ(t)·y·h·e^α·(1−τ_p)(1−τ_l)` (flat; progressive keeps `(1−τ_p)`), `c(l)=c_guess+MW·(l−1)/(1+τ_c)`, `delta_budget=MW·(l−1)`. Solved by **projected-Newton** on the monotone residual `G(l)=ν·l^φ·(1+τ_c)−c(l)^{−γ}·MW`, bracketed to `c(l)>0`, Newton steps clipped into the bracket (corners snap to the bound; interior gets Newton speed). Vectorized/branchless JAX (`solve_labor_robust_jax`, 8 iters → ~1e-11); scalar with early-break NumPy (`_solve_labor_newton`). Disutility applied only to working-age employed states.
+
+### Verification
+
+- Both solvers match an independent bracketing root-finder for the corrected FOC to ~1e-14.
+- A[0] predetermination still exact (0.0) on both backends.
+- `olg_transition.py --test` runs on both backends; they now agree to MC-noise (~0.4%) where the κ omission previously separated them.
+- The t=1 spike is gone: the per-age t=1 labor deviation, previously a uniform +0.001…+0.0016 across all ages, is now mixed-sign MC noise (±0.0004).
+
+### Recalibration (done, same session)
+
+Defects 2–4 change labor supply, so the SMM was re-run under the corrected solver (`calibrate.py --config … --backend jax`, n_sim=10000, Nelder-Mead). Converged to obj ≈ 2e-8 (MC floor), all five moments matching targets to ≤0.01%:
+
+| param | new (corrected FOC) | old (pre-fix) |
+|---|---|---|
+| ν | 36.907 | 28.670 |
+| β | 0.94317 | 0.98541 |
+| τ_p | 0.19776 | 0.19786 |
+| ρ_pens | 0.16629 | 0.16122 |
+| m | 0.04277 | 0.04162 |
+
+Moment fits at new θ: average_hours 0.4100/0.41, A/Y 4.0004/4.0, tax_p/Y 0.1300/0.130, pensions/Y 0.1600/0.160, health_gov/Y 0.0540/0.054 (max gap 0.01%). The big moves (ν +29%, β −4.2pp) are the FOC corrections propagating: the corrected wedge + 1/(1+τ_c) changed labor supply, so ν rose to still hit hours and β fell to still hit A/Y. New θ written to `calibration_input_GR.json._derived.theta`.
+
+Mechanics note: I stopped the optimizer once θ was frozen to 5 sig figs (it was grinding the simplex toward an absolute xatol=1e-6 on ν≈37, ~7 sig figs, which MC discretization makes slow); θ was parsed from the converged log line, written to the config, and re-validated by an independent moment eval (table above). The script's auto-write fires only on scipy `success`, which the early stop bypassed — hence the manual (but validated) write.
+
+### Still stale — next steps
+
+`other_net_spending_over_Y = −0.0889` was measured under the OLD θ, so it must be re-measured under the new θ (`measure_baseline_closure.py`), then the fiscal figures re-run (`run_fiscal_figures.py --config … --shock both --backend jax`). The fiscal figures in `output/fiscal_test/` predate both the FOC fix and the recalibration.
+
+---
+
+Prior (2026-06-12): SS-vs-transition gap RESOLVED — a multi-agent code audit found four bugs/mismatches (K/L/C unpack swap since 2026-03-04; L-units 1/w convention; JAX batched α inconsistency; MIT-stitching staleness), all fixed and verified. Item ratios match the calibration SS to ±0.6%; closure was reset to `other_net_spending_over_Y = −0.0889` (now stale again after the 2026-06-14 FOC fix). Detail below.
 
 ---
 

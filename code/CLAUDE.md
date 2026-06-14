@@ -94,7 +94,7 @@ In `olg_transition.py`:
 - `_simulate_sequential()`: Monte Carlo forward simulation of agent paths.
 - `_get_P_y()` / `_get_P_y_row()`: Index into 2D or 4D P_y (age-dependent transitions).
 - `_survival_prob()`: Returns survival probability π(j,s), or 1.0 if no survival risk.
-- `_solve_labor_hours()`: FOC-based optimal labor hours given consumption and wages.
+- `_solve_labor_newton()` (NumPy) / `solve_labor_robust_jax()` (JAX): robust projected-Newton solve of the intratemporal labor FOC `ν·l^φ = c^{−γ}·MW/(1+τ_c)`, `MW = w·κ(j)·y·h·e^α·(1−τ_p)(1−τ_l)`, bracketed to the feasible region `c(l)>0`. (Replaced a 2-iter Newton that froze at the consumption clamp; see FISCAL_EXPERIMENTS_STATUS 2026-06-14.) `_solve_labor_hours()` (NumPy) is a legacy closed-form helper, not on the live path.
 - `_print_income_diagnostics()`: Verbose income process diagnostics (called from `__init__` when `verbose=True`).
 - `simulate_transition()`: Accepts `recompute_bequests=False`, `bequest_tol=1e-4`, `max_bequest_iters=5` — runs a fixed-point bequest loop when `recompute_bequests=True` and `survival_probs` is set; stores `_bequest_converged` and `_bequest_iter_count` on `self`.
 - `run_fiscal_scenario()` (`fiscal_experiments.py`): dispatcher — runs baseline + counterfactual via Type A/B/C experiment.

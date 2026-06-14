@@ -813,32 +813,56 @@ class LifecycleModelPerfectForesight:
         l_star = (c ** (-self.gamma) * net_wage / self.nu) ** (1.0 / self.phi)
         return min(max(l_star, 0.0), 1.0)  # clamp to [0, 1] — time endowment is 1
 
-    def _solve_labor_newton(self, c_guess, w_t, y, h, tau_l_t, tau_p_t, tau_c_t, n_iters=3):
-        """Solve for mutually consistent (c*, l*) via Newton's method on
-        F(l) = l - (c(l)^{-γ} · net_wage / ν)^{1/φ} = 0
-        where c(l) = c_guess + net_wage · (l - 1) / (1 + τ_c).
+    def _solve_labor_newton(self, c_guess, w_t, kappa_t, y, h, tau_l_t, tau_p_t, tau_c_t,
+                            n_iters=60):
+        """Solve for mutually consistent (c*, l*), consistent with the budget
+        (1+τ_c)·c = resources.
 
-        Newton converges quadratically; 2–3 iterations suffice.
-        Returns (c*, l*).
+        Intratemporal FOC (working, employed):
+            ν·l^φ = c^{-γ} · MW / (1+τ_c),   c(l) = c_guess + MW·(l-1)/(1+τ_c),
+        with the marginal after-tax labor income per unit of l
+            MW = w·κ(t)·y·h·exp(α)·(1−τ_p)(1−τ_l)   [flat]
+               = w·κ(t)·y·h·exp(α)·(1−τ_p)            [progressive, HSV separate]
+        (income tax falls on income net of payroll → multiplicative wedge; the
+        κ(t) wage-age profile and the (1+τ_c) consumption wedge both enter, to
+        match _compute_budget). The residual
+            G(l) = ν·l^φ·(1+τ_c) − c(l)^{-γ}·MW
+        is monotone increasing on the feasible region c(l)>0 (unique root),
+        solved by safeguarded Newton–bisection bracketed to [l_lo, 1] with
+        l_lo = max(0, 1 − c_guess·(1+τ_c)/MW). Robust against the
+        consumption-floor region that traps plain Newton. Returns (c*, l*).
         """
         if y <= 0:
+            return c_guess, 1.0   # unemployed: no wage income; labor is moot
+        eff_wage = w_t * kappa_t * y * h * self._alpha_mult
+        wedge = (1.0 - tau_p_t) if self.tax_progressive else (1.0 - tau_p_t) * (1.0 - tau_l_t)
+        mw = eff_wage * wedge
+        if mw <= 0.0 or c_guess <= 0.0:
             return c_guess, 1.0
-        tau_eff = tau_p_t if self.tax_progressive else tau_l_t + tau_p_t
-        # Phase 8: wage scales with the permanent fixed effect
-        net_wage = w_t * y * h * self._alpha_mult * (1.0 - tau_eff)
-        if net_wage <= 0.0 or c_guess <= 0.0:
-            return c_guess, 1.0
-        dc_dl = net_wage / (1.0 + tau_c_t)
-        exponent = self.gamma / self.phi
-        A_l = (net_wage / self.nu) ** (1.0 / self.phi)
-        l = min(max(A_l * max(c_guess, 1e-10) ** (-exponent), 0.0), 1.0)
+        onetc = 1.0 + tau_c_t
+        g, phi, nu = self.gamma, self.phi, self.nu
+        lo = max(0.0, 1.0 - c_guess * onetc / mw)
+        hi = 1.0
+        l = 0.5 * (lo + hi)
         for _ in range(n_iters):
-            c_l = max(c_guess + net_wage * (l - 1.0) / (1.0 + tau_c_t), 1e-10)
-            l_foc = A_l * c_l ** (-exponent)
-            F = l - l_foc
-            Fp = 1.0 + exponent * (l_foc / c_l) * dc_dl
-            l = min(max(l - F / Fp, 0.0), 1.0)
-        c = max(c_guess + net_wage * (l - 1.0) / (1.0 + tau_c_t), 1e-10)
+            c_l = max(c_guess + mw * (l - 1.0) / onetc, 1e-12)
+            G = nu * l ** phi * onetc - c_l ** (-g) * mw
+            Gp = (nu * phi * max(l, 1e-12) ** (phi - 1.0) * onetc
+                  + g * c_l ** (-g - 1.0) * mw * (mw / onetc))
+            if G < 0.0:
+                lo = l
+            else:
+                hi = l
+            l_newton = l - G / Gp
+            # projected Newton: clip into the bracket (corner states snap to the
+            # bound; interior states get full Newton speed)
+            l_next = min(max(l_newton, lo), hi)
+            if abs(l_next - l) < 1e-12:
+                l = l_next
+                break
+            l = l_next
+        l = min(max(l, 0.0), 1.0)
+        c = max(c_guess + mw * (l - 1.0) / onetc, 1e-10)
         return c, l
 
     def _labor_disutility(self, l):
@@ -900,11 +924,15 @@ class LifecycleModelPerfectForesight:
             is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
             a, y, h, i_y, i_y_last, i_h)
 
+        kappa_t = self.wage_age_profile[t]
         if is_terminal:
             c_guess = max(budget / (1 + tau_c_t), 1e-10)
             if self.labor_supply and not is_retired:
-                c, l = self._solve_labor_newton(c_guess, w_t, y, h, tau_l_t, tau_p_t, tau_c_t)
-                val = self.utility(c, self.gamma) - self._labor_disutility(l)
+                c, l = self._solve_labor_newton(c_guess, w_t, kappa_t, y, h,
+                                                tau_l_t, tau_p_t, tau_c_t)
+                # disutility only for the employed (y>0); unemployed do not work
+                dis = self._labor_disutility(l) if y > 0 else 0.0
+                val = self.utility(c, self.gamma) - dis
             else:
                 c = c_guess
                 l = 1.0
@@ -921,7 +949,8 @@ class LifecycleModelPerfectForesight:
                 c_guess = (budget - a_next) / (1 + tau_c_t)
                 if c_guess <= 0:
                     continue
-                c, l = self._solve_labor_newton(c_guess, w_t, y, h, tau_l_t, tau_p_t, tau_c_t)
+                c, l = self._solve_labor_newton(c_guess, w_t, kappa_t, y, h,
+                                                tau_l_t, tau_p_t, tau_c_t)
             else:
                 l = 1.0
                 c = (budget - a_next) / (1 + tau_c_t)
@@ -948,8 +977,12 @@ class LifecycleModelPerfectForesight:
             if not np.isfinite(EV):
                 continue
 
-            # Feature #2: survival risk multiplies continuation value
-            val = self.utility(c, self.gamma) - self._labor_disutility(l) + self.beta * survival * EV
+            # Feature #2: survival risk multiplies continuation value.
+            # Labor disutility only for working-age EMPLOYED agents (retired and
+            # unemployed do not work; l is held at 1.0 for them only so the
+            # budget is unaffected, not because they supply labor).
+            dis = self._labor_disutility(l) if (self.labor_supply and not is_retired and y > 0) else 0.0
+            val = self.utility(c, self.gamma) - dis + self.beta * survival * EV
 
             if val > max_val:
                 max_val = val
