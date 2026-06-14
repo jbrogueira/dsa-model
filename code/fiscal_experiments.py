@@ -486,12 +486,35 @@ def _apply_shock(scenario: FiscalScenario,
     cf['tau_k']   = (tau_k   if tau_k   is not None else np.zeros(T)) + _shock(scenario.delta_tau_k_path)
     cf['tau_p']   = (tau_p   if tau_p   is not None else np.zeros(T)) + _shock(scenario.delta_tau_p_path)
     cf['pension'] = (pension if pension is not None else np.full(T, 0.4)) + _shock(scenario.delta_pension_path)
-    cf['G_path']  = (G       if G       is not None else np.zeros(T)) + _shock(scenario.delta_G_path)
-    cf['I_g_path'] = (I_g    if I_g     is not None else np.zeros(T)) + _shock(scenario.delta_I_g_path)
-    # Defense and other-net spending are baseline closure lines: no shock; pass
-    # through unchanged (None → object-level fallback / zero in the budget).
-    cf['defense_spending_path']     = defense
-    cf['other_net_spending_path']   = other
+
+    # GDP-share spending mode: when base_paths carries *_over_Y ratios, the
+    # spending lines (and their shocks) are shares of Y(t); the budget multiplies
+    # by each run's realized Y_path, so levels move with output and the SS ratios
+    # are preserved. delta_G_path / delta_I_g_path are then ratio deltas.
+    ratio_mode = any(k in base_paths for k in
+                     ('G_over_Y', 'I_g_over_Y', 'defense_over_Y', 'other_net_over_Y'))
+    if ratio_mode:
+        def _rbase(key):
+            v = base_paths.get(key)
+            if v is None:
+                return np.zeros(T)
+            arr = np.atleast_1d(np.asarray(v, dtype=float))
+            if len(arr) < T:
+                arr = np.concatenate([arr, np.full(T - len(arr), arr[-1])])
+            return arr[:T]
+        cf['G_over_Y']         = _rbase('G_over_Y')   + _shock(scenario.delta_G_path)
+        cf['I_g_over_Y']       = _rbase('I_g_over_Y') + _shock(scenario.delta_I_g_path)
+        cf['defense_over_Y']   = _rbase('defense_over_Y')      # baseline line, no shock
+        cf['other_net_over_Y'] = _rbase('other_net_over_Y')    # baseline closure, no shock
+        cf['G_path'] = cf['I_g_path'] = None
+        cf['defense_spending_path'] = cf['other_net_spending_path'] = None
+    else:
+        cf['G_path']  = (G       if G       is not None else np.zeros(T)) + _shock(scenario.delta_G_path)
+        cf['I_g_path'] = (I_g    if I_g     is not None else np.zeros(T)) + _shock(scenario.delta_I_g_path)
+        # Defense and other-net spending are baseline closure lines: no shock; pass
+        # through unchanged (None → object-level fallback / zero in the budget).
+        cf['defense_spending_path']     = defense
+        cf['other_net_spending_path']   = other
 
     # Apply financing instrument adjustment
     fin = scenario.financing
@@ -540,6 +563,10 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
         govt_spending_path=cf.get('G_path'),
         defense_spending_path=cf.get('defense_spending_path'),
         other_net_spending_path=cf.get('other_net_spending_path'),
+        G_over_Y=cf.get('G_over_Y'),
+        I_g_over_Y=cf.get('I_g_over_Y'),
+        defense_over_Y=cf.get('defense_over_Y'),
+        other_net_over_Y=cf.get('other_net_over_Y'),
         transfer_floor=transfer_floor,
         n_sim=n_sim,
         verbose=verbose,

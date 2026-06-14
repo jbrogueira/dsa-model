@@ -6,6 +6,15 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ## Current status (handoff 2026-06-14)
 
+### Baseline closure pinned at the initial SS + spending as GDP shares (2026-06-14, later passes)
+
+Two consistency changes to the baseline fiscal setup, both under the recalibrated θ. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-14 (cont.)` and `(cont. 2)`).
+
+- **Closure pinned at the initial steady state (no transition).** `other_net_spending_over_Y` is now a structural constant that makes the initial-point government budget match `fiscal.primary_balance_target_over_Y = 0.0195`; the baseline transition takes it as given and its t=0 primary balance need not equal the target exactly. Computed from the stationary calibration panels — one solve, no transition — via `pin_baseline_closure.py` (replaces the transition-based `measure_baseline_closure.py`). `compute_fiscal_ratios` now also returns `primary_balance_full_over_Y` and `closure_other_over_Y`. Value: `other_net_spending_over_Y = −0.091122` (was −0.0889, the transition-t=0 value; the gap is the SS-vs-t=0 cross-section difference, documented in the status doc).
+- **Exogenous spending lines are fixed shares of Y(t).** G, I_g, defense, and other-net were fixed levels (`ratio × meanY`); they are now `ratio × Y(t)`, so the SS shares are held and levels track each run's realized output. Decisions: each scenario indexes to its **own** Y(t); G/I_g shocks are **2% of Y(t)**; `B_initial = B_over_Y · Y(0)`; **gov_health unchanged** (real per-agent medical cost, not an imposed GDP share). Additive implementation (`G_over_Y/I_g_over_Y/defense_over_Y/other_net_over_Y` kwargs on `simulate_transition`; budget forms `level = ratio · Y_path[t]`); ratios default None → exact level-path behavior. `I_g_over_Y` rejected when `eta_g ≠ 0` (I_g→K_g→Y simultaneity).
+- **Verified:** ratio mode gives G/Y exactly the target share each period; debt-financed G shock leaves Y unchanged (no SOE feedback); A[0] predetermination exact; level mode unchanged; `test_fiscal_experiments.py` 39/39 pass.
+- **STILL STALE — next step:** re-run the fiscal figures under new θ + SS-pinned closure + GDP-share spending: `python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`. Everything in `output/fiscal_test/` predates these.
+
 ### Labor-supply FOC fixed + recalibrated (2026-06-14)
 
 The one-period labor "spike" at transition t=1 (seen in the fiscal figures) was traced to the labor-supply FOC, fixed in both backends, and the SMM recalibrated under the corrected solver. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-14`).
@@ -24,7 +33,7 @@ The one-period labor "spike" at transition t=1 (seen in the fiscal figures) was 
   | m | 0.04277 | 0.04162 |
 
   ν +29% and β −4.2pp are the FOC corrections propagating (ν up to still hit 0.41 hours, β down to still hit A/Y = 4).
-- **STILL STALE — next steps:** `other_net_spending_over_Y = −0.0889` was measured under the old θ → re-measure (`python measure_baseline_closure.py jax 2000`); then re-run the fiscal figures (`python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`). Everything in `output/fiscal_test/` predates both the fix and the recalibration.
+- **Follow-up (done in later passes this session):** the closure was re-pinned under the new θ — now at the initial SS via `pin_baseline_closure.py` (see the section above), giving `other_net_spending_over_Y = −0.091122`. The fiscal figures remain to be re-run.
 
 ### Prior session (2026-06-11/12)
 

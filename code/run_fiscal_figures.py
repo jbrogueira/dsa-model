@@ -93,24 +93,23 @@ if args.config:
         r_path=r_path, I_g_path=I_g_warmup, n_sim=50, verbose=False, **tax_paths
     )
     Y_path = np.asarray(_calib['Y'])
-    meanY = Y_path.mean()
+    Y0 = float(Y_path[0])
 
-    # All government spending lines as constant data-ratio × mean(Y).
+    # Government spending lines are fixed shares of Y(t): pass the SS-calibrated
+    # ratios and let the budget multiply by each run's realized Y_path, so levels
+    # move with output and the shares stay at their SS values (GDP-share mode).
     G_over_Y       = paths.get('G_over_Y', 0.13)
     I_g_over_Y     = paths.get('I_g_over_Y', 0.03)
     defense_over_Y = paths.get('defense_over_Y', 0.0)
     other_over_Y   = paths.get('other_net_spending_over_Y', 0.0)
-    G_path       = np.full(T_TR, G_over_Y * meanY)
-    I_g_path     = np.full(T_TR, I_g_over_Y * meanY)
-    defense_path = np.full(T_TR, defense_over_Y * meanY)
-    other_path   = np.full(T_TR, other_over_Y * meanY)
+    G_path = I_g_path = defense_path = other_path = None  # ratio mode → no levels
 
     B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
-    B_initial = B_over_Y * meanY
+    B_initial = B_over_Y * Y0          # initial debt level pins B/Y at t=0
     target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
-    print(f"  mean(Y) = {meanY:.4f}")
+    print(f"  Y(0) = {Y0:.4f}  (warmup n_sim=50)")
     print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
-          f"other_net/Y = {other_over_Y}")
+          f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
     print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
 
 else:
@@ -172,11 +171,19 @@ else:
     print(f"  mean(Y) = {Y_path.mean():.4f},  mean(G) = {G_path.mean():.4f}")
 
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
-# Baseline-only fiscal lines (no shock applied to them; constant across scenarios).
-if defense_path is not None:
-    base_paths['defense_spending_path'] = defense_path
-if other_path is not None:
-    base_paths['other_net_spending_path'] = other_path
+if args.config:
+    # GDP-share mode: spending lines are ratios of Y(t) (constant shares across
+    # scenarios; each scenario's budget multiplies by its own Y_path).
+    base_paths['G_over_Y']         = G_over_Y
+    base_paths['I_g_over_Y']       = I_g_over_Y
+    base_paths['defense_over_Y']   = defense_over_Y
+    base_paths['other_net_over_Y'] = other_over_Y
+else:
+    # Baseline-only fiscal lines (no shock applied to them; constant across scenarios).
+    if defense_path is not None:
+        base_paths['defense_spending_path'] = defense_path
+    if other_path is not None:
+        base_paths['other_net_spending_path'] = other_path
 
 # ---------------------------------------------------------------------------
 # 3. Define scenarios
@@ -193,8 +200,8 @@ scn_base = FiscalScenario(
     n_post    = N_POST,
 )
 
-# --- G shock: 2% of mean(Y) ---
-delta_G = np.full(T_TR, 0.02 * Y_path.mean())
+# --- G shock: 2% of Y each period (ratio in config mode; level in test mode) ---
+delta_G = np.full(T_TR, 0.02) if args.config else np.full(T_TR, 0.02 * Y_path.mean())
 
 scn_g_debt = FiscalScenario(
     name         = 'G_shock_debt',
@@ -215,8 +222,8 @@ scn_g_taul = FiscalScenario(
     n_post            = N_POST,
 )
 
-# --- I_g shock: same absolute size as G shock ---
-delta_Ig = np.full(T_TR, 0.02 * Y_path.mean())
+# --- I_g shock: same size as G shock (2% of Y(t) in config mode) ---
+delta_Ig = np.full(T_TR, 0.02) if args.config else np.full(T_TR, 0.02 * Y_path.mean())
 
 scn_ig_debt = FiscalScenario(
     name           = 'Ig_shock_debt',

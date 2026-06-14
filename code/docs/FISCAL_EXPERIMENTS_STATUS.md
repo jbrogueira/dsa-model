@@ -1,6 +1,6 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-14. **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). Still stale and to redo next: the baseline closure (`other_net_spending_over_Y`) and the fiscal figures, both under the new θ. See `## Session 2026-06-14` at top.
+Last updated: 2026-06-14. **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
 
 ---
 
@@ -47,7 +47,68 @@ Mechanics note: I stopped the optimizer once θ was frozen to 5 sig figs (it was
 
 ### Still stale — next steps
 
-`other_net_spending_over_Y = −0.0889` was measured under the OLD θ, so it must be re-measured under the new θ (`measure_baseline_closure.py`), then the fiscal figures re-run (`run_fiscal_figures.py --config … --shock both --backend jax`). The fiscal figures in `output/fiscal_test/` predate both the FOC fix and the recalibration.
+The fiscal figures in `output/fiscal_test/` predate the FOC fix and the recalibration; re-run with `run_fiscal_figures.py --config … --shock both --backend jax`. (The baseline closure has been redone under the new θ — see the next section.)
+
+---
+
+## Session 2026-06-14 (cont.): baseline closure pinned at the initial steady state
+
+### Design change
+
+`other_net_spending_over_Y` is now pinned at the **initial steady state**, not measured off a transition. It is a structural constant that makes the initial-point government budget consistent with the data primary balance; the baseline transition takes it as given and produces a time-varying primary-deficit path as a model output. The closure is no longer re-tuned to force the transition's t=0 primary balance to the target.
+
+Procedure (interest excluded throughout, matching the transition's primary balance; `pb_house` is the household-side SS balance from `compute_fiscal_ratios`):
+
+```
+pb_house = (tax_revenue − pension − ui − gov_health) / Y           [stationary SS]
+s_SS     = pb_house − (G_over_Y + I_g_over_Y + defense_over_Y)      [full, other=0]
+other_net_spending_over_Y = s_SS − primary_balance_target_over_Y
+```
+
+Implementation:
+- `compute_fiscal_ratios` (calibrate.py) now also returns `primary_balance_full_over_Y` (nets out G, I_g, defense, other) and `closure_other_over_Y` (the pin above). Adds keys only — no existing equation/moment changed.
+- `primary_balance_target_over_Y = 0.0195` (Greek 2023) is a config key in the `fiscal` block, replacing the previously hardcoded target.
+- `pin_baseline_closure.py` (replaces `measure_baseline_closure.py`) runs ONE stationary lifecycle solve (no transition), reuses `run_model_moments` + `compute_fiscal_ratios`, prints the pin, and writes it under `--write`.
+
+Result under the new θ: SS household primary balance/Y = +0.1184; (G+I_g+defense)/Y = 0.19; full SS primary surplus (other=0) = −0.0716; pinned **`other_net_spending_over_Y = −0.091122`** (was −0.0889, the transition-t=0 value). The small change is the SS-vs-t=0 cross-section gap below.
+
+### Why SS and transition-t=0 differ (for future reference)
+
+**Cross-section (SS vs transition t=0).** Two channels, not only demographics:
+1. *Demographics* — age-structure weights (fertility / population growth) and the survival schedule. The SS uses stationary weights + the calibration's fixed survival; t=0 uses births-only weights + per-cohort data survival. Differs whenever these don't coincide.
+2. *History of predetermined wealth* — agents alive at t=0 accumulated assets over their own life histories under whatever pre-t=0 price/tax/survival paths the transition assumes. If those past paths (or the t=0 prices/taxes) differ from the calibration's stationary values, the t=0 asset/consumption distribution differs from the stationary one even with identical demographics.
+
+If demographics, survival, and all prices/taxes are stationary and equal across the two (and pre-t=0 history is the same stationary equilibrium), they coincide up to Monte-Carlo noise.
+
+**meanY vs Y[0].** Not numerical error. The baseline transition is non-stationary (fertility path + longevity improvement + per-cohort data survival → evolving population and capital/labor), so Y(t) is a genuine path and its time-average ≠ its initial value. The n_sim=50 warmup adds minor MC noise on top, but the substantive gap is the non-stationarity.
+
+---
+
+## Session 2026-06-14 (cont. 2): exogenous spending lines as GDP shares of Y(t)
+
+### Change
+
+The exogenous fiscal lines (G, I_g, defense, other-net closure) were previously fixed **levels** `ratio × meanY` (constant across the transition, sized off an n_sim=50 warmup mean). They are now **fixed shares of Y(t)**: the SS-calibrated ratio is passed through and the budget forms `level = ratio · Y_path[t]` using each run's own realized output. Decisions taken: each scenario indexes to its **own** Y(t) (true fixed-share-of-GDP; in tax-financed runs the spending levels respond to the tax-induced output change, a behavioral change to the experiment, not a normalization); the G/I_g shock magnitudes are **2% of Y(t)** each period; `B_initial = B_over_Y · Y(0)`; **gov_health is unchanged** (it stays a real per-agent medical-goods cost, so its GDP share drifts off 0.054 along the path — a real resource cost, not an imposed share).
+
+This is the consistent counterpart to the SS-pinned closure: `other_net_spending_over_Y` is a ratio, so applying it as `ratio · Y(t)` (not `ratio · meanY`) keeps the share at its pinned value.
+
+### Items audited
+
+- **Now GDP-share (changed):** G, I_g, defense, other-net, and the G/I_g shock deltas; `B_initial` uses Y(0).
+- **Already move with the economy (unchanged):** taxes (rates fixed; revenue is the sum of per-agent payments), pensions (replacement × past income), UI (replacement × wage), bequest tax, debt_service = `r_B · B(t)`.
+- **Real cost, not a share (deliberately unchanged):** gov_health.
+
+### Implementation (additive; level-path API preserved as fallback)
+
+- `OLGTransition`: `simulate_transition` takes `G_over_Y/I_g_over_Y/defense_over_Y/other_net_over_Y` (scalar or `(T,)`), stored as `_active_*_over_Y`; `compute_government_budget` uses `ratio · Y_path[t]` when a ratio is set, else the level path. `I_g_over_Y` raises when `eta_g != 0` (I_g→K_g→Y simultaneity needs a fixed point). The lines have no household/production/NFA coupling at `eta_g=0`, so this is exact and single-pass; each scenario's `self.Y_path` makes it scenario-specific automatically.
+- `fiscal_experiments._apply_shock`: ratio branch (gated on `*_over_Y` in `base_paths`) composes ratio cf entries (baseline ratio + ratio shock) and leaves the level paths None; `_run_one_simulation` forwards the ratio kwargs.
+- `run_fiscal_figures.py --config`: passes ratios, `delta_G=delta_Ig=0.02` (ratio), `B_initial = B_over_Y · Y(0)`; the hardcoded test branch stays in level mode.
+
+Verified: ratio mode gives G/Y exactly the target share every period; level mode unchanged; the `eta_g≠0` guard fires; `test_fiscal_experiments.py` 39/39 pass.
+
+### Still stale — next steps
+
+Re-run the fiscal figures under the new θ + SS-pinned closure + GDP-share spending: `run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`. The outputs in `output/fiscal_test/` predate all three.
 
 ---
 

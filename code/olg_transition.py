@@ -243,6 +243,13 @@ class OLGTransition:
         self._active_govt_spending_path = None  # effective G used in last simulate_transition
         self._active_defense_spending_path = None    # effective defense used in last simulate_transition
         self._active_other_net_spending_path = None  # effective other-net spending used in last simulate_transition
+        # GDP-share spending mode: when set (scalar or (T,) array), the budget
+        # uses level = ratio * Y_path[t] for that line, taking precedence over the
+        # level path above. Lets exogenous fiscal lines be fixed shares of Y(t).
+        self._active_G_over_Y = None
+        self._active_I_g_over_Y = None
+        self._active_defense_over_Y = None
+        self._active_other_net_over_Y = None
 
         # Backend selection ('numpy' or 'jax')
         self.backend = backend
@@ -1728,10 +1735,26 @@ class OLGTransition:
         t_idx = int(t)
         _at = lambda path, default=0.0: float(path[t_idx]) if path is not None and t_idx < len(path) else default
 
-        G_t   = _at(self._active_govt_spending_path if self._active_govt_spending_path is not None else self.govt_spending_path)
-        I_g_t = _at(self._active_I_g_path          if self._active_I_g_path          is not None else self.I_g_path)
-        defense_t = _at(self._active_defense_spending_path if self._active_defense_spending_path is not None else self.defense_spending_path)
-        other_t   = _at(self._active_other_net_spending_path if self._active_other_net_spending_path is not None else self.other_net_spending_path)
+        # GDP-share spending mode: if a ratio is set, level = ratio * Y_path[t]
+        # (ratio may be a scalar or a (T,) array). Otherwise read the level path.
+        Y_t = _at(self.Y_path)
+        def _ratio_at(ratio):
+            if ratio is None:
+                return None
+            if np.isscalar(ratio):
+                return float(ratio)
+            arr = np.asarray(ratio)
+            return float(arr[t_idx]) if t_idx < len(arr) else float(arr[-1])
+        def _spend(ratio, active_level, obj_level):
+            r = _ratio_at(ratio)
+            if r is not None:
+                return r * Y_t
+            return _at(active_level if active_level is not None else obj_level)
+
+        G_t   = _spend(self._active_G_over_Y, self._active_govt_spending_path, self.govt_spending_path)
+        I_g_t = _spend(self._active_I_g_over_Y, self._active_I_g_path, self.I_g_path)
+        defense_t = _spend(self._active_defense_over_Y, self._active_defense_spending_path, self.defense_spending_path)
+        other_t   = _spend(self._active_other_net_over_Y, self._active_other_net_spending_path, self.other_net_spending_path)
 
         # Feature #9: Sovereign debt service
         debt_service = 0.0
@@ -1813,6 +1836,8 @@ class OLGTransition:
                            I_g_path=None, govt_spending_path=None,
                            defense_spending_path=None,
                            other_net_spending_path=None,
+                           G_over_Y=None, I_g_over_Y=None,
+                           defense_over_Y=None, other_net_over_Y=None,
                            transfer_floor=None,
                            n_sim=10000, verbose=True,
                            pop_growth_path=None,
@@ -1854,6 +1879,21 @@ class OLGTransition:
         self._active_govt_spending_path = _G
         self._active_defense_spending_path = _defense
         self._active_other_net_spending_path = _other
+
+        # GDP-share spending mode (level = ratio * Y_path[t], computed in the
+        # budget). A set ratio takes precedence over the level path for that line.
+        self._active_G_over_Y         = G_over_Y
+        self._active_I_g_over_Y       = I_g_over_Y
+        self._active_defense_over_Y   = defense_over_Y
+        self._active_other_net_over_Y = other_net_over_Y
+        # I_g feeds public capital (K_g) BEFORE Y exists, so a GDP-share I_g would
+        # create a simultaneity (I_g level needs Y; K_g→Y needs I_g level). Only
+        # safe when public capital has no production feedback.
+        if I_g_over_Y is not None and self.eta_g != 0.0:
+            raise ValueError(
+                "I_g_over_Y (GDP-share public investment) is incompatible with "
+                "eta_g != 0: I_g feeds K_g feeds Y, requiring a fixed point. "
+                "Pass I_g_path as a level instead.")
 
         # Handle transfer_floor override (used in lifecycle config during cohort solves)
         _orig_tf = None

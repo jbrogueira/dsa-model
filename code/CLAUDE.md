@@ -127,7 +127,7 @@ In `olg_transition.py`:
 - Net foreign assets accounting (NFA) in SOE mode
 - Pension trust fund (`S_pens_initial` in OLGTransition)
 - Defense spending (`defense_spending_path` in OLGTransition)
-- Other net primary spending residual (`other_net_spending_path` in OLGTransition) — exogenous (other expenditure − other revenue) line absent from explicit tax/transfer/spending; added to `total_spending`, no household-side effect. Baseline fiscal closure: `fiscal.other_net_spending_over_Y` pins the baseline primary balance to a target. Defaults None/0.
+- Other net primary spending residual (`other_net_spending_path` in OLGTransition) — exogenous (other expenditure − other revenue) line absent from explicit tax/transfer/spending; added to `total_spending`, no household-side effect. Baseline fiscal closure: `fiscal.other_net_spending_over_Y` is a structural constant pinned at the **initial steady state** (not measured off a transition) so the initial-point government budget matches `fiscal.primary_balance_target_over_Y`; the baseline transition takes it as given and its t=0 primary balance need not equal the target exactly. Pin it with `pin_baseline_closure.py` (one stationary solve, no transition; `--write` updates the config); `compute_fiscal_ratios` also reports `primary_balance_full_over_Y` and `closure_other_over_Y`. Defaults None/0.
 - Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge; production CLI defaults to `True`, test CLI defaults to `False` (opt-in via `--recompute-bequests`)
 - Bequest taxation with revenue accounting (`tau_beq` in OLGTransition budget)
 - Simulation mortality draws with bequest tracking (`alive_sim`, `bequest_sim` — 21-tuple output)
@@ -153,6 +153,7 @@ In `olg_transition.py`:
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
 - Fiscal G/I_g shocks pass `govt_spending_path=` and `I_g_path=` as explicit args to `simulate_transition()`; `transfer_floor=` (absolute value) is also an explicit arg — no external mutation needed
+- GDP-share spending mode: G, I_g, defense, and other-net spending can be passed as **ratios of Y(t)** via `G_over_Y=/I_g_over_Y=/defense_over_Y=/other_net_over_Y=` (scalar or `(T,)`) instead of level paths. The budget then uses `level = ratio · Y_path[t]`, so each run's spending tracks its own realized output and the SS shares are preserved. A set ratio takes precedence over the level path for that line; ratios default None → level-path behavior (backward compatible). `run_fiscal_figures.py --config` uses ratio mode (shocks are ratio deltas, e.g. 0.02 = 2% of Y(t); `B_initial = B_over_Y · Y(0)`); the hardcoded test branch stays in level mode. `I_g_over_Y` is rejected when `eta_g != 0` (I_g→K_g→Y simultaneity needs a fixed point — pass an I_g level there)
 
 ## JAX Backend
 

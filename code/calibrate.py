@@ -1292,6 +1292,25 @@ def compute_fiscal_ratios(panels, spec, config_data):
         'total_balance_over_Y': (tax_revenue - expenditure) / Y,
     }
 
+    # --- Full primary balance & baseline closure, pinned at the initial SS ---
+    # primary_balance_over_Y above is the household-side balance
+    # (tax_revenue - pension - ui - gov_health)/Y, interest cancelled out.
+    # The transition's primary balance also nets out the discretionary spending
+    # lines (G, I_g, defense) and the other-net closure residual, and excludes
+    # interest — so add those here for a like-for-like full SS primary balance.
+    G_over_Y       = fiscal_data.get('G_over_Y', 0.0)
+    I_g_over_Y     = fiscal_data.get('I_g_over_Y', 0.0)
+    defense_over_Y = fiscal_data.get('defense_over_Y', 0.0)
+    other_over_Y   = fiscal_data.get('other_net_spending_over_Y', 0.0)
+    discretionary  = G_over_Y + I_g_over_Y + defense_over_Y
+    pb_house       = ratios['primary_balance_over_Y']
+    ratios['primary_balance_full_over_Y'] = pb_house - discretionary - other_over_Y
+    # Closure that pins the FULL SS primary surplus (other=0) to the data target.
+    # other_net_spending is a structural SS constant; the transition takes it as
+    # given, so its t=0 primary balance need not equal the target exactly.
+    target = fiscal_data.get('primary_balance_target_over_Y', 0.0195)
+    ratios['closure_other_over_Y'] = pb_house - discretionary - target
+
     # Compare to data if available
     comparisons = {}
     for key in ratios:
@@ -1439,6 +1458,7 @@ def generate_report(result, spec, config_data, output_dir='output/calibration'):
             'pensions_over_Y', 'ui_over_Y',
             'health_gov_over_Y', 'health_oop_over_Y', 'health_total_over_Y',
             'interest_over_Y', 'primary_balance_over_Y', 'total_balance_over_Y',
+            'primary_balance_full_over_Y', 'closure_other_over_Y',
         ]
         for key in display_keys:
             mv = fiscal.get(key)

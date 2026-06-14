@@ -284,7 +284,8 @@
     "transfers_over_Y": 0.011,
     "tax_revenue_over_Y": 0.4,
     "interest_over_Y": 0.034,
-    "other_net_spending_over_Y": -0.0889
+    "primary_balance_target_over_Y": 0.0195,
+    "other_net_spending_over_Y": -0.091122
   },
   "calibration": {
     "params": [
