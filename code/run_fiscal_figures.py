@@ -215,8 +215,8 @@ scn_g_taul = FiscalScenario(
     name              = 'G_shock_tau_l',
     delta_G_path      = delta_G,
     financing         = 'tau_l',
-    balance_condition = 'terminal_flow_balance',
-    target_debt_gdp   = target_B_Y,
+    # balance_condition / target_debt_gdp set at runtime to match the baseline
+    # transition's terminal B/Y (see run_experiment_set).
     B_initial         = B_initial,
     pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
@@ -237,8 +237,8 @@ scn_ig_taul = FiscalScenario(
     name              = 'Ig_shock_tau_l',
     delta_I_g_path    = delta_Ig,
     financing         = 'tau_l',
-    balance_condition = 'terminal_flow_balance',
-    target_debt_gdp   = target_B_Y,
+    # balance_condition / target_debt_gdp set at runtime to match the baseline
+    # transition's terminal B/Y (see run_experiment_set).
     B_initial         = B_initial,
     pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
@@ -265,6 +265,17 @@ def run_experiment_set(shock_type):
 
     print(f"\n[1/3] Baseline …")
     res_base = run_fiscal_scenario(economy, scn_base, base_paths, n_sim=N_SIM, verbose=False)
+
+    # Pin the τ_l closure to the baseline transition's terminal debt/GDP.
+    # The baseline is debt-financed, so its debt drifts over the transition; its
+    # terminal B/Y is only known after this run. Matches _balance_residual's
+    # convention B[T_bal]/Y[T_bal-1] for balance_condition='terminal_debt_gdp'.
+    T_bal = res_base.T_balance or len(res_base.cf_macro['Y'])
+    target_base = float(res_base.B_path[T_bal] / res_base.cf_macro['Y'][T_bal - 1])
+    scn_taul.balance_condition = 'terminal_debt_gdp'
+    scn_taul.target_debt_gdp   = target_base
+    print(f"      τ_l target_debt_gdp = baseline terminal B/Y = {target_base:.4f}")
+
     print(f"[2/3] {shock_type} shock — debt-financed …")
     res_debt = run_fiscal_scenario(economy, scn_debt, base_paths, n_sim=N_SIM, verbose=False)
     print(f"[3/3] {shock_type} shock — labour-tax-financed …")

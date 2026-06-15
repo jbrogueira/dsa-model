@@ -4,7 +4,13 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-06-14)
+## Current status (handoff 2026-06-15)
+
+### Scenario assumptions documented + τ_l closure change (2026-06-15)
+
+- **`code/docs/FISCAL_SCENARIOS.md`** (new): the assumptions behind each fiscal scenario, in the paper's notation (`DSA-LSA model.tex` / `experiments.tex`) — environment, primary balance, debt law, shocks, the two financing rules, and a section flagging where the implementation currently diverges from the draft's experiments section.
+- **τ_l closure changed** (`run_fiscal_figures.py`): the labour-tax scenarios now target the **baseline transition's terminal debt/GDP** (`terminal_debt_gdp`, resolved at runtime), replacing the static `terminal_flow_balance` at `b*=1.64`. Committed; not yet re-run.
+- **Public capital (K_g) activation — in progress, NOT committed.** `code/docs/PUBLIC_CAPITAL_KG_PLAN.md` records a change set that turns on `η_g=0.05`, `K_g=1`; the `calibration_input_GR.json` edit is held back because `δ_g=0` makes the baseline `K_g` non-stationary (the plan lists δ_g + A_tfp-normalization as the remaining steps). Pick this up from that plan.
 
 ### Baseline closure pinned at the initial SS + spending as GDP shares (2026-06-14, later passes)
 
