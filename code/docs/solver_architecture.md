@@ -130,15 +130,18 @@ run_fiscal_figures.py   --shock {G, Ig, both}
     │
     ├──── Type B   run_tax_financed() ────────────────────────────────────
     │     │   financing ∈ {tau_l, tau_c, tau_k, tau_p, pension_replacement, transfer_floor}
-    │     │   balance_condition ∈ {terminal_debt_gdp, terminal_flow_balance, pv_balance, period_balance}
-    │     └── bisection on scalar Δ for terminal_debt_gdp / terminal_flow_balance / pv_balance
+    │     │   balance_condition ∈ {terminal_debt_gdp, terminal_nfa_gdp, terminal_flow_balance, pv_balance, period_balance}
+    │     └── bisection on scalar Δ for terminal_debt_gdp / terminal_nfa_gdp / terminal_flow_balance / pv_balance
     │         │ bounded scalar minimization (minimize_scalar) for period_balance
     │         └── _simulate_and_residual(Δ)
     │             ├── _apply_shock(..., instrument_delta=Δ)
-    │             ├── _run_one_simulation(...)
-    │             └── _balance_residual(budget, Y, B, scenario, r_terminal, T_balance)
+    │             ├── _run_one_simulation(...)   → keeps macro['NFA'] (A − K_dom) for terminal_nfa_gdp
+    │             └── _balance_residual(budget, Y, B, scenario, r_terminal, T_balance, NFA_partial)
     │                                              (r_terminal = r_B_path[-1], sovereign rate)
     │                 ├── 'terminal_debt_gdp'    → B[T_bal]/Y[T_bal−1] − target_debt_gdp → 0
+    │                 ├── 'terminal_nfa_gdp'     → target_nfa_gdp − NFA[T_bal−1]/Y[T_bal−1] → 0
+    │                 │                            (full NFA = macro['NFA'] − B; external-balance
+    │                 │                             analogue of the debt target; interior free)
     │                 ├── 'terminal_flow_balance'→ PD[T_bal−1]/Y[T_bal−1] − (g − r_B)·target → 0
     │                 ├── 'pv_balance'           → Σ_t (1+δ)^{−t} · PD[t] → 0
     │                 └── 'period_balance'       → minimize max_t |PD[t]|

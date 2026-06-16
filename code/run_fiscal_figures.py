@@ -222,6 +222,20 @@ scn_g_taul = FiscalScenario(
     n_post            = N_POST,
 )
 
+# G shock, τ_l-financed with a terminal NFA target (Type B, balance_condition
+# 'terminal_nfa_gdp'): full ΔG delivered; τ_l set so NFA/Y at T_balance returns
+# to the baseline terminal NFA/Y (pinned at runtime, like target_debt_gdp).
+# Interior NFA path is free. No nfa_limit ⇒ stays in the Type B tax path.
+scn_g_nfa = FiscalScenario(
+    name              = 'G_shock_tau_l_nfa',
+    delta_G_path      = delta_G,
+    financing         = 'tau_l',
+    # balance_condition / target_nfa_gdp set at runtime (see run_experiment_set).
+    B_initial         = B_initial,
+    pop_growth        = float(economy.pop_growth),
+    n_post            = N_POST,
+)
+
 # --- I_g shock: same size as G shock (2% of Y(t) in config mode) ---
 delta_Ig = np.full(T_TR, 0.02) if args.config else np.full(T_TR, 0.02 * Y_path.mean())
 
@@ -244,6 +258,17 @@ scn_ig_taul = FiscalScenario(
     n_post            = N_POST,
 )
 
+# I_g shock, τ_l-financed with a terminal NFA target — see scn_g_nfa.
+scn_ig_nfa = FiscalScenario(
+    name              = 'Ig_shock_tau_l_nfa',
+    delta_I_g_path    = delta_Ig,
+    financing         = 'tau_l',
+    # balance_condition / target_nfa_gdp set at runtime (see run_experiment_set).
+    B_initial         = B_initial,
+    pop_growth        = float(economy.pop_growth),
+    n_post            = N_POST,
+)
+
 # ---------------------------------------------------------------------------
 # 4. Run experiments
 # ---------------------------------------------------------------------------
@@ -257,13 +282,13 @@ t0 = time.time()
 
 def run_experiment_set(shock_type):
     if shock_type == 'G':
-        scn_debt, scn_taul = scn_g_debt, scn_g_taul
-        labels = ('G shock (debt)', 'G shock (τ_l)')
+        scn_debt, scn_taul, scn_nfa = scn_g_debt, scn_g_taul, scn_g_nfa
+        labels = ('G shock (debt)', 'G shock (τ_l, debt target)', 'G shock (τ_l, NFA@T)')
     else:
-        scn_debt, scn_taul = scn_ig_debt, scn_ig_taul
-        labels = ('I_g shock (debt)', 'I_g shock (τ_l)')
+        scn_debt, scn_taul, scn_nfa = scn_ig_debt, scn_ig_taul, scn_ig_nfa
+        labels = ('I_g shock (debt)', 'I_g shock (τ_l, debt target)', 'I_g shock (τ_l, NFA@T)')
 
-    print(f"\n[1/3] Baseline …")
+    print(f"\n[1/4] Baseline …")
     res_base = run_fiscal_scenario(economy, scn_base, base_paths, n_sim=N_SIM, verbose=False)
 
     # Pin the τ_l closure to the baseline transition's terminal debt/GDP.
@@ -276,12 +301,23 @@ def run_experiment_set(shock_type):
     scn_taul.target_debt_gdp   = target_base
     print(f"      τ_l target_debt_gdp = baseline terminal B/Y = {target_base:.4f}")
 
-    print(f"[2/3] {shock_type} shock — debt-financed …")
+    # Pin the NFA closure to the baseline transition's terminal NFA/Y, the
+    # external-balance analogue of target_debt_gdp.  res_base.NFA_path is the
+    # full NFA (A - K_dom - B); index T_bal-1 pairs with Y[T_bal-1].
+    target_nfa = float(res_base.NFA_path[T_bal - 1] / res_base.cf_macro['Y'][T_bal - 1])
+    scn_nfa.balance_condition = 'terminal_nfa_gdp'
+    scn_nfa.target_nfa_gdp    = target_nfa
+    print(f"      τ_l target_nfa_gdp = baseline terminal NFA/Y = {target_nfa:.4f}")
+
+    print(f"[2/4] {shock_type} shock — debt-financed …")
     res_debt = run_fiscal_scenario(economy, scn_debt, base_paths, n_sim=N_SIM, verbose=False)
-    print(f"[3/3] {shock_type} shock — labour-tax-financed …")
+    print(f"[3/4] {shock_type} shock — labour-tax-financed (debt-ratio target) …")
     res_taul = run_fiscal_scenario(economy, scn_taul, base_paths, n_sim=N_SIM,
                                    verbose=False, bisect_tol=1e-3)
-    return res_base, res_debt, res_taul, labels
+    print(f"[4/4] {shock_type} shock — labour-tax-financed (terminal NFA target) …")
+    res_nfa = run_fiscal_scenario(economy, scn_nfa, base_paths, n_sim=N_SIM,
+                                  verbose=False, bisect_tol=1e-3)
+    return res_base, res_debt, res_taul, res_nfa, labels
 
 
 shock_types = ['G'] if args.shock == 'G' else ['Ig'] if args.shock == 'Ig' else ['G', 'Ig']
@@ -293,8 +329,8 @@ print(f"\nAll experiments done in {time.time() - t0:.1f}s")
 # 5. Post-processing: attach derived quantities to each result
 # ---------------------------------------------------------------------------
 
-for res_base, res_debt, res_taul, _ in experiment_results.values():
-    for res in (res_base, res_debt, res_taul):
+for res_base, res_debt, res_taul, res_nfa, _ in experiment_results.values():
+    for res in (res_base, res_debt, res_taul, res_nfa):
         _T = len(res.cf_macro['Y'])
         _B = res.B_path[:_T]
         _r = np.asarray(res.cf_macro['r'])
@@ -350,10 +386,10 @@ FISCAL_LABELS = {
 print("\n--- Key results ---")
 print("\n--- Saving figures ---")
 
-for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in experiment_results.items():
+for shock_type, (res_base, res_debt, res_taul, res_nfa, (label_debt, label_taul, label_nfa)) in experiment_results.items():
     p = shock_type.lower() + '_'
-    SCENARIOS_  = [res_base, res_debt, res_taul]
-    SCN_LABELS_ = ['baseline', label_debt, label_taul]
+    SCENARIOS_  = [res_base, res_debt, res_taul, res_nfa]
+    SCN_LABELS_ = ['baseline', label_debt, label_taul, label_nfa]
     title_suffix = f'({shock_type} shock)'
 
     print(f"\n  [{shock_type}] Baseline         : final B/Y = {res_base.B_gdp_path[-1]*100:.1f}%")
@@ -361,12 +397,15 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
     print(f"  [{shock_type}] {label_taul:<20}: converged={res_taul.converged}, "
           f"Δτ_l = {res_taul.adjustment_scalar*100:+.2f} pp, "
           f"final B/Y = {res_taul.B_gdp_path[-1]*100:.1f}%")
+    print(f"  [{shock_type}] {label_nfa:<20}: converged={res_nfa.converged}, "
+          f"Δτ_l = {res_nfa.adjustment_scalar*100:+.2f} pp, "
+          f"final B/Y = {res_nfa.B_gdp_path[-1]*100:.1f}%  ({res_nfa.adjustment_label})")
 
     shock_var = 'govt_spending' if shock_type == 'G' else 'public_investment'
     mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var)
     print(f"  [{shock_type}] Fiscal multiplier ({shock_type} shock, debt): {np.nanmean(mult):.3f}")
 
-    compare_scenarios(res_base, res_debt, res_taul,
+    compare_scenarios(res_base, res_debt, res_taul, res_nfa,
         variables  = MACRO_VARS,
         var_labels = MACRO_LABELS,
         title      = f'Macro Overview {title_suffix}',
@@ -375,7 +414,7 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
     )
     plt.close('all')
 
-    compare_scenarios(res_base, res_debt, res_taul,
+    compare_scenarios(res_base, res_debt, res_taul, res_nfa,
         variables  = PRICE_VARS,
         var_labels = PRICE_LABELS,
         title      = f'Prices — SOE sanity check {title_suffix}',
@@ -384,7 +423,7 @@ for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in expe
     )
     plt.close('all')
 
-    compare_scenarios(res_base, res_debt, res_taul,
+    compare_scenarios(res_base, res_debt, res_taul, res_nfa,
         variables  = FISCAL_VARS,
         var_labels = FISCAL_LABELS,
         title      = f'Fiscal Decomposition {title_suffix}',
@@ -432,13 +471,14 @@ def _result_to_dict(res):
     return d
 
 results_out = {}
-for shock_type, (res_base, res_debt, res_taul, (label_debt, label_taul)) in experiment_results.items():
+for shock_type, (res_base, res_debt, res_taul, res_nfa, (label_debt, label_taul, label_nfa)) in experiment_results.items():
     shock_var = 'govt_spending' if shock_type == 'G' else 'public_investment'
     mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var)
     results_out[shock_type] = {
         'baseline': _result_to_dict(res_base),
         'debt_financed': _result_to_dict(res_debt),
         'tax_financed': _result_to_dict(res_taul),
+        'nfa_constrained': _result_to_dict(res_nfa),
         'fiscal_multiplier_mean': float(np.nanmean(mult)),
         'fiscal_multiplier_path': [float(x) for x in mult],
     }

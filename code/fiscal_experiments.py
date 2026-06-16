@@ -105,6 +105,9 @@ class FiscalScenario:
 
     # ── Budget balance condition ─────────────────────────────────────────────
     # 'terminal_debt_gdp'    : B_T / Y_T = target_debt_gdp
+    # 'terminal_nfa_gdp'     : NFA_T / Y_T = target_nfa_gdp  (full NFA = A - K_dom - B)
+    #                          Terminal external-balance target, analogue of
+    #                          terminal_debt_gdp; interior NFA path is free.
     # 'terminal_flow_balance': PD[T-1]/Y[T-1] = (pop_growth - r_terminal) * target_debt_gdp
     #                          Ensures the terminal period is a fiscal rest point.
     #                          For r > g and target = 0: PD[T-1] ≈ 0.
@@ -112,6 +115,7 @@ class FiscalScenario:
     # 'period_balance'       : minimise max_t |PrimaryDeficit_t| (bounded scalar min)
     balance_condition: str = 'terminal_debt_gdp'
     target_debt_gdp: float = 0.0
+    target_nfa_gdp: float = 0.0        # used only by 'terminal_nfa_gdp'
     discount_rate: float = 0.04        # used only by 'pv_balance'
     pop_growth: float = 0.0            # used by 'terminal_flow_balance'
 
@@ -270,7 +274,8 @@ def _balance_residual(budget_path: dict,
                       B_path: np.ndarray,
                       scenario: FiscalScenario,
                       r_terminal: float = 0.04,
-                      T_balance: Optional[int] = None) -> float:
+                      T_balance: Optional[int] = None,
+                      NFA_partial: Optional[np.ndarray] = None) -> float:
     """Compute the scalar balance residual for the chosen balance_condition.
 
     Returns a value whose *sign* tells bisection which direction to adjust:
@@ -297,6 +302,17 @@ def _balance_residual(budget_path: dict,
         B_T = B_path[T_bal]
         Y_T = float(Y_path[T_bal - 1])
         return float(B_T / Y_T - scenario.target_debt_gdp)
+
+    elif cond == 'terminal_nfa_gdp':
+        # Full NFA = (A - K_domestic) - B.  NFA_partial is the simulation's
+        # A - K_domestic (length T_full); B_path[t] is the end-of-period-t stock.
+        # Evaluate at the balance horizon end (T_bal-1), paired with Y[T_bal-1].
+        if NFA_partial is None:
+            raise ValueError("terminal_nfa_gdp requires NFA_partial (A - K_domestic).")
+        NFA_T = float(np.asarray(NFA_partial)[T_bal - 1] - B_path[T_bal - 1])
+        Y_T   = float(Y_path[T_bal - 1])
+        # >0 when NFA below target → raise τ_l (lowers B, raises NFA).
+        return float(scenario.target_nfa_gdp - NFA_T / Y_T)
 
     elif cond == 'terminal_flow_balance':
         # Fiscal rest-point condition: PD[T_bal-1]/Y[T_bal-1] = (g - r) * target_debt_gdp
@@ -724,7 +740,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     def _simulate_and_residual(Delta):
         cf = _apply_shock(scenario, ext_paths, T_total,
                           instrument_delta=Delta, shock_scale=1.0)
-        _, budget = _run_one_simulation(
+        macro, budget = _run_one_simulation(
             olg, ext_paths, cf, n_sim=n_sim, verbose=False,
             recompute_bequests=scenario.recompute_bequests,
             pre_transition_paths=pre_tp,
@@ -733,7 +749,10 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         Y = np.asarray(olg.Y_path, dtype=float)
         B = compute_debt_path(budget['primary_deficit'], r_B_path,
                                B_initial=scenario.B_initial)
-        return _balance_residual(budget, Y, B, scenario, r_terminal, T_bal), budget, B, Y
+        # NFA_partial (A - K_domestic) for the 'terminal_nfa_gdp' condition.
+        NFA_partial = macro.get('NFA')
+        return (_balance_residual(budget, Y, B, scenario, r_terminal, T_bal, NFA_partial),
+                budget, B, Y)
 
     # Mutable container to hold the last evaluated (budget, B, Y) tuple
     _last_result = [None]  # [0] = (budget, B, Y) or None

@@ -1,6 +1,18 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-16 (Type C NFA constraint → band around baseline; see top session). **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+Last updated: 2026-06-16 (terminal NFA target Type B closure + Type C band around baseline; see top sessions). **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+
+---
+
+## Session 2026-06-16 (b): terminal NFA target as a Type B closure
+
+Added `balance_condition='terminal_nfa_gdp'` (field `target_nfa_gdp`) — the external-balance analogue of `terminal_debt_gdp`. A single τ_l (or other Type B instrument) is bisected so full NFA/Y at the balance period T_bal equals a target; the interior NFA path is free. Residual: `target_nfa_gdp − NFA[T_bal−1]/Y[T_bal−1]` with full NFA = `macro['NFA'] (A − K_dom) − B`. `_balance_residual` gained an `NFA_partial` arg; `run_tax_financed` now keeps the simulation macro to pass it.
+
+This is the convergent alternative to the Type C pointwise band: one instrument, one terminal target, root-find like the debt closure (verified: Δτ_l converges, terminal NFA/Y hits target to ~1e-4). Use it when you want NFA returned to a level at T_bal rather than tracked every period.
+
+`run_fiscal_figures.py`: the 4th G/Ig scenario (`scn_*_nfa`) is now this terminal-NFA Type B closure, pinned at runtime to the **baseline terminal NFA/Y** (analogue of pinning the debt target to baseline terminal B/Y). It replaced the earlier Type C pointwise-band scenario. Curves per figure: baseline / debt / τ_l(debt target) / τ_l(NFA@T). Output filenames unchanged; `fiscal_results.json` gains an `nfa_constrained` block. Full fiscal suite 39/39 passes.
+
+Type C (band around baseline, `nfa_limit`/`ca_limit`) is unchanged and still available; it just isn't the scenario wired into the figures.
 
 ---
 
