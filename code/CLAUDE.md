@@ -98,7 +98,7 @@ In `olg_transition.py`:
 - `_print_income_diagnostics()`: Verbose income process diagnostics (called from `__init__` when `verbose=True`).
 - `simulate_transition()`: Accepts `recompute_bequests=False`, `bequest_tol=1e-4`, `max_bequest_iters=5` — runs a fixed-point bequest loop when `recompute_bequests=True` and `survival_probs` is set; stores `_bequest_converged` and `_bequest_iter_count` on `self`.
 - `run_fiscal_scenario()` (`fiscal_experiments.py`): dispatcher — runs baseline + counterfactual via Type A/B/C experiment.
-- `run_debt_financed()` / `run_tax_financed()` / `run_nfa_constrained()` (`fiscal_experiments.py`): Type A (one sim), Type B (bisection on scalar Δτ), Type C (Mode I: shock scale bisect; Mode II: tax rate bisect for NFA feasibility).
+- `run_debt_financed()` / `run_tax_financed()` / `run_nfa_constrained()` (`fiscal_experiments.py`): Type A (one sim), Type B (bisection on scalar Δτ to hit `balance_condition`), Type C (NFA/CA band around baseline; Mode I: shock scale bisect; Mode II: tax rate bisect). Type B `balance_condition` includes `terminal_nfa_gdp` (full NFA/Y at T_bal = target, the external-balance analogue of `terminal_debt_gdp`); Type C floor is per-period `NFA_t ≥ NFA_base_t − nfa_limit` (half-width 0 = exact baseline tracking).
 - `compare_scenarios()` / `fiscal_multiplier()` / `debt_fan_chart()` (`fiscal_experiments.py`): output utilities for plotting and multiplier calculation.
 
 ## Model Features

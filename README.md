@@ -4,7 +4,26 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-06-15)
+## Current status (handoff 2026-06-16)
+
+### NFA closures added (2026-06-16) — committed + pushed (`7c4a16a`, `5266d2c`)
+
+Two mechanisms to constrain net foreign assets in the fiscal experiments. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-16` and `(b)`); solver map in `code/docs/solver_architecture.md`.
+
+- **Terminal NFA target (Type B, `terminal_nfa_gdp`)** — the external-balance analogue of `terminal_debt_gdp`. One tax instrument (τ_l) is bisected so full NFA/Y at the balance period T_bal equals a target; the interior path is free. Residual `target_nfa_gdp − NFA[T_bal−1]/Y[T_bal−1]`, full NFA = `(A − K_dom) − B`. Converges like the debt closure (verified: Δτ_l converges, terminal NFA/Y hits target to ~1e-4). **This is the scenario now wired into the fiscal figures** as a 4th curve, pinned at runtime to the baseline terminal NFA/Y. Figures show: baseline / debt / τ_l(debt target) / τ_l(NFA@T); `fiscal_results.json` gains an `nfa_constrained` block. Output filenames unchanged.
+- **Band around baseline (Type C, `nfa_limit`/`ca_limit`)** — `run_nfa_constrained`'s floor is now per-period `NFA_t ≥ NFA_base_t − nfa_limit` (was the absolute `−nfa_limit`); half-width 0 ⇒ exact tracking. Mode I (debt) trims the shock to the largest feasible fraction; Mode II (tax) raises the instrument. Available but **not** the figure scenario — a single scalar τ cannot generally hold the band at every period, which is why the figures use the terminal target.
+- NFA / CA limits are **not calibrated** in `calibration_input_GR.json`. Reference magnitudes from the baseline: initial-SS full NFA/Y ≈ −132% (drifts to ≈ −426% over the horizon), CA ≈ −0.75% of Y.
+- Full fiscal suite 39/39 passes. Type B/C correctness fix: the Mode I/II bisection now checks the full NFA (net of debt), matching Step 1 — previously it checked the partial NFA (dormant, no limit ever set).
+
+### STILL STALE — next step (carried over from 2026-06-15)
+
+Re-run the fiscal figures under the new θ + SS-pinned closure + GDP-share spending, now also producing the τ_l(NFA@T) curve:
+`python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`
+Everything in `code/output/fiscal_test/` predates these changes.
+
+---
+
+## Prior status (handoff 2026-06-15)
 
 ### Scenario assumptions documented + τ_l closure change (2026-06-15)
 
