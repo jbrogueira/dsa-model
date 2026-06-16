@@ -1,6 +1,23 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-14. **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+Last updated: 2026-06-16 (Type C NFA constraint → band around baseline; see top session). **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+
+---
+
+## Session 2026-06-16: Type C NFA constraint → band around baseline path
+
+The NFA/CA constraint in `run_nfa_constrained` was an absolute one-sided floor (`NFA_t ≥ −nfa_limit`). It is now a **band around the baseline path**: `NFA_t ≥ NFA_base_t − nfa_limit` (and `CA_t ≥ CA_base_t − ca_limit`), with `nfa_limit`/`ca_limit` reinterpreted as the band half-width; `0.0` enforces exact baseline tracking. This avoids the absolute floor rendering the no-shock baseline itself infeasible (baseline NFA drifts to ≈ −426% of Y over the horizon from −132% at t=0).
+
+Changes (`fiscal_experiments.py`):
+- `_check_nfa_violation` takes optional `NFA_base`/`CA_base`; floor is the baseline path minus the limit (absolute `−limit` retained as fallback when no baseline passed).
+- `run_nfa_constrained` builds the baseline **full** NFA/CA reference (partial `A − K_domestic` minus the baseline no-shock debt path) and a `_full_nfa_ca` helper.
+- Fixed a latent inconsistency (dormant — no limit was ever set in production): Step 1 checked the full NFA while the Mode I/II bisection checked the partial NFA. All checks now use full NFA (net of that iteration's debt).
+
+Behavior of the two modes (unchanged in mechanism, clarified in `solver_architecture.md`):
+- **Mode I (`financing='debt'`)**: the specified ΔG is treated as a **ceiling**, not delivered in full — the bisection finds the largest fraction `s·ΔG` (s∈[0,1]) that stays in the band. `nfa_limit=0 ⇒ s=0` (any deficit lowers NFA below baseline). This answers a feasibility question, not a financing one.
+- **Mode II (`financing≠'debt'`, e.g. `tau_l`)**: the full ΔG is delivered; the financing instrument rises to the smallest value that restores the band. `nfa_limit=0 ⇒` instrument rises until NFA tracks baseline exactly.
+
+Verified (small test economy, both modes): the counterfactual NFA lands exactly on the band edge; full fiscal suite 39/39 passes. Not yet wired into `run_fiscal_figures.py` (no Type C scenario constructed for G/Ig); no `nfa_limit`/`ca_limit` calibrated in `calibration_input_GR.json`.
 
 ---
 

@@ -590,13 +590,25 @@ def _nfa_ca_paths(macro: dict) -> tuple:
 
 def _check_nfa_violation(NFA: Optional[np.ndarray],
                          CA: Optional[np.ndarray],
-                         scenario: FiscalScenario) -> bool:
-    """True if any NFA or CA constraint is violated."""
+                         scenario: FiscalScenario,
+                         NFA_base: Optional[np.ndarray] = None,
+                         CA_base: Optional[np.ndarray] = None) -> bool:
+    """True if any NFA or CA constraint is violated.
+
+    When a baseline path is supplied, the floor tracks it as a band:
+    NFA_t >= NFA_base_t - nfa_limit (and likewise for CA).  With NFA_base=None
+    the floor is the absolute level -nfa_limit (original behaviour).
+    nfa_limit/ca_limit are the band half-width; 0.0 enforces exact tracking.
+    """
     if NFA is not None and scenario.nfa_limit is not None:
-        if np.any(NFA < -scenario.nfa_limit):
+        floor = (-scenario.nfa_limit if NFA_base is None
+                 else np.asarray(NFA_base) - scenario.nfa_limit)
+        if np.any(np.asarray(NFA) < floor):
             return True
     if CA is not None and scenario.ca_limit is not None:
-        if np.any(CA < -scenario.ca_limit):
+        floor = (-scenario.ca_limit if CA_base is None
+                 else np.asarray(CA_base) - scenario.ca_limit)
+        if np.any(np.asarray(CA) < floor):
             return True
     return False
 
@@ -867,12 +879,34 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     residual_history = []
     pre_tp = base_paths.get('_pre_transition_paths') or _build_pre_transition_paths(olg, base_paths)
 
+    # ── Baseline NFA/CA band reference ───────────────────────────────────────
+    # base_macro['NFA'] is the partial A - K_domestic; subtract the baseline debt
+    # path to get full NFA, matching the per-iteration correction below.  The
+    # constraint is then a band around this path (see _check_nfa_violation).
+    NFA_base = CA_base = None
+    if base_macro.get('NFA') is not None:
+        B_base = compute_debt_path(base_budget['primary_deficit'], r_B_path,
+                                   B_initial=scenario.B_initial)
+        _base_full = dict(base_macro)
+        _base_full['NFA'] = np.asarray(base_macro['NFA']) - B_base[:T_total]
+        NFA_base, CA_base = _nfa_ca_paths(_base_full)
+
+    def _full_nfa_ca(macro, budget):
+        """Full NFA/CA (net of this iteration's debt) from raw simulation macro."""
+        if macro.get('NFA') is None:
+            return None, None
+        B = compute_debt_path(budget['primary_deficit'], r_B_path,
+                              B_initial=scenario.B_initial)
+        m = dict(macro)
+        m['NFA'] = np.asarray(macro['NFA']) - B[:T_total]
+        return _nfa_ca_paths(m)
+
     # ── Step 1: Debt-financed, full shock ────────────────────────────────────
     full_debt_result = run_debt_financed(
         olg, scenario, base_paths, base_macro, base_budget, n_sim=n_sim, verbose=False
     )
     NFA_full, CA_full = full_debt_result.NFA_path, full_debt_result.CA_path
-    violation = _check_nfa_violation(NFA_full, CA_full, scenario)
+    violation = _check_nfa_violation(NFA_full, CA_full, scenario, NFA_base, CA_base)
 
     # ── Step 2a: No violation ────────────────────────────────────────────────
     if not violation:
@@ -891,8 +925,8 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
                 recompute_bequests=scenario.recompute_bequests,
                 pre_transition_paths=pre_tp,
             )
-            NFA, CA = _nfa_ca_paths(macro)
-            return not _check_nfa_violation(NFA, CA, scenario), macro, budget
+            NFA, CA = _full_nfa_ca(macro, budget)
+            return not _check_nfa_violation(NFA, CA, scenario, NFA_base, CA_base), macro, budget
 
         lo, hi = 0.0, 1.0
         converged = False
@@ -931,8 +965,8 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
                 recompute_bequests=scenario.recompute_bequests,
                 pre_transition_paths=pre_tp,
             )
-            NFA, CA = _nfa_ca_paths(macro)
-            return not _check_nfa_violation(NFA, CA, scenario), macro, budget
+            NFA, CA = _full_nfa_ca(macro, budget)
+            return not _check_nfa_violation(NFA, CA, scenario, NFA_base, CA_base), macro, budget
 
         # Search for a Δτ that eliminates the violation
         lo, hi = 0.0, 0.5

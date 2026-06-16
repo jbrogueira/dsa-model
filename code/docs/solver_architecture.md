@@ -144,13 +144,20 @@ run_fiscal_figures.py   --shock {G, Ig, both}
     │                 └── 'period_balance'       → minimize max_t |PD[t]|
     │
     └──── Type C   run_nfa_constrained() ─────────────────────────────────
+          ├── Constraint: band around the BASELINE path, per period:
+          │      NFA_t ≥ NFA_base_t − nfa_limit   and   CA_t ≥ CA_base_t − ca_limit
+          │      nfa_limit / ca_limit are the band half-width; 0.0 = exact tracking.
+          │      Both cf and baseline NFA are FULL (A − K_dom − B); baseline B is the
+          │      no-shock debt path (_full_nfa_ca / NFA_base in run_nfa_constrained).
           ├── Step 1 : run debt-financed with full shock; check NFA/CA via _check_nfa_violation()
-          ├── Mode I  (financing == 'debt') : bisect shock_scale ∈ [0, 1]
-          │                                   → LARGEST feasible scale with NFA_t ≥ −nfa_limit
-          │                                                              and CA_t  ≥ −ca_limit ∀ t
-          │                                                              (one-sided floors)
-          └── Mode II (financing != 'debt'): full shock + bisect instrument Δ
-                                            → SMALLEST Δ that restores NFA/CA feasibility
+          ├── Mode I  (financing == 'debt') : the shock magnitude is treated as a
+          │            CEILING, not delivered in full. Bisect shock_scale ∈ [0, 1]
+          │            → LARGEST feasible fraction s·ΔG within the band.
+          │            Answers "how much of ΔG can be debt-financed"; nfa_limit=0 ⇒ s=0
+          │            (any deficit lowers NFA below baseline).
+          └── Mode II (financing != 'debt'): full ΔG delivered; bisect the financing
+                       instrument Δ (e.g. Δτ_l) → SMALLEST Δ that restores the band.
+                       nfa_limit=0 ⇒ instrument rises until NFA tracks baseline exactly.
 
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  Inside each OLGTransition.simulate_transition(cf, pre_paths):       ║
