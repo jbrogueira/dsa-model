@@ -11,6 +11,8 @@ __pycache__/
 output/*.png
 output/test/
 *.png
+# but track the published fiscal-shock figures
+!output/fiscal_test/*.png
 
 # IDE
 .idea/
