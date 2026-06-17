@@ -48,6 +48,8 @@ parser.add_argument('--n-sim', type=int, default=None,
                     help='Override simulation size')
 args = parser.parse_args()
 
+_t_start = time.perf_counter()  # wall-clock start (includes model build + warmup)
+
 if args.backend == 'jax':
     import jax
     devices = jax.devices()
@@ -513,3 +515,7 @@ with open(results_path, 'w') as f:
 
 print(f"\nFigures saved to {OUTPUT_DIR}/")
 print(f"Numerical results saved to {results_path}")
+
+_elapsed = time.perf_counter() - _t_start
+print(f"Total run time: {_elapsed:.1f}s ({_elapsed / 60:.1f} min)  "
+      f"[backend={args.backend}, shock={args.shock}, n_sim={N_SIM}]")

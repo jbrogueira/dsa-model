@@ -808,8 +808,23 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         Delta_star = Delta_lo  # fallback
         cf_budget = B_path = Y_path = None
 
+        # Illinois (modified regula falsi): keep the verified opposite-sign
+        # bracket but step via secant interpolation instead of the midpoint,
+        # ~halving the iterations vs pure bisection on a smooth residual. The
+        # retained-endpoint residual is halved after two same-side moves to
+        # prevent the classic regula-falsi stall. Falls back to the bisection
+        # midpoint when the secant step would leave the bracket (e.g. a
+        # non-bracketing interval after a failed expansion).
+        _side = 0
         for _ in range(max_iter):
-            Delta_mid = 0.5 * (Delta_lo + Delta_hi)
+            denom = res_hi - res_lo
+            if denom != 0.0:
+                Delta_mid = (Delta_lo * res_hi - Delta_hi * res_lo) / denom
+            else:
+                Delta_mid = 0.5 * (Delta_lo + Delta_hi)
+            _lo_b, _hi_b = min(Delta_lo, Delta_hi), max(Delta_lo, Delta_hi)
+            if not (_lo_b < Delta_mid < _hi_b):
+                Delta_mid = 0.5 * (Delta_lo + Delta_hi)
             res_mid, last_budget, last_B, last_Y = _simulate_and_residual_cached(Delta_mid)
             residual_history.append(res_mid)
             n_iters += 1
@@ -820,8 +835,14 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
                 break
             if np.sign(res_mid) == np.sign(res_lo):
                 Delta_lo, res_lo = Delta_mid, res_mid
+                if _side == +1:
+                    res_hi *= 0.5
+                _side = +1
             else:
                 Delta_hi, res_hi = Delta_mid, res_mid
+                if _side == -1:
+                    res_lo *= 0.5
+                _side = -1
             Delta_star = Delta_mid
 
         # If bisection did not converge within loop (fallback), run final simulation
