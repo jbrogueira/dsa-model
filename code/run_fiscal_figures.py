@@ -345,7 +345,7 @@ for res_base, res_debt, res_taul, res_nfa, _ in experiment_results.values():
 # 6. Figure variables
 # ---------------------------------------------------------------------------
 
-MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A', 'K_g_Y']
+MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A', 'A_gdp', 'NFA_gdp', 'K_g_Y']
 MACRO_LABELS = {
     'Y':          'Output (Y)',
     'K_domestic': 'Domestic capital (K)',
@@ -353,6 +353,8 @@ MACRO_LABELS = {
     'C':          'Consumption (C)',
     'B_gdp_path': 'Debt / GDP (B/Y)',
     'A':          'Household wealth (A)',
+    'A_gdp':      'Household wealth / Y (A/Y)',
+    'NFA_gdp':    'Net foreign assets / Y (NFA/Y)',
     'K_g_Y':      'Public capital / Y (K_g/Y)',
 }
 
@@ -360,20 +362,20 @@ PRICE_VARS   = ['w', 'r']
 PRICE_LABELS = {'w': 'Wage rate (w)', 'r': 'Interest rate (r)'}
 
 FISCAL_VARS = [
-    'primary_deficit',
-    'tax_l', 'tax_c', 'tax_p', 'tax_k',
-    'ui', 'pension', 'govt_spending', 'public_investment',
+    'primary_deficit_gdp',
+    'tax_l_gdp', 'tax_c_gdp', 'tax_p_gdp', 'tax_k_gdp',
+    'ui_gdp', 'pension_gdp', 'govt_spending', 'public_investment',
     'defense_spending', 'other_net_spending',
     'interest_payments',
 ]
 FISCAL_LABELS = {
-    'primary_deficit':   'Primary deficit',
-    'tax_l':             'Labour tax',
-    'tax_c':             'Consumption tax',
-    'tax_p':             'Payroll tax',
-    'tax_k':             'Capital tax',
-    'ui':                'UI benefits',
-    'pension':           'Pensions',
+    'primary_deficit_gdp': 'Primary deficit / Y',
+    'tax_l_gdp':         'Labour tax / Y',
+    'tax_c_gdp':         'Consumption tax / Y',
+    'tax_p_gdp':         'Payroll tax / Y',
+    'tax_k_gdp':         'Capital tax / Y',
+    'ui_gdp':            'UI benefits / Y',
+    'pension_gdp':       'Pensions / Y',
     'govt_spending':     'Govt spending (G)',
     'public_investment': 'Public investment (I_g)',
     'defense_spending':  'Defense',

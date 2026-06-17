@@ -1,6 +1,28 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-16 (terminal NFA target Type B closure + Type C band around baseline; see top sessions). **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+Last updated: 2026-06-17 (b) (fiscal figures: NFA/Y + A/Y panels, /Y GBC decomposition, base_macro NFA fix, `/fiscal-note` skill — see `## Session 2026-06-17 (b)`; prior same-day run-time work in `## Session 2026-06-17`). **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+
+---
+
+## Session 2026-06-17 (b): fiscal figures — NFA/Y + A/Y panels, /Y GBC decomposition, base_macro NFA fix, fiscal-note skill
+
+Plotting/diagnostics layer + one accounting fix. Figures re-plotted from the existing `fiscal_results.json` via the new `regen_fiscal_figures_from_json.py` (no re-simulation); the underlying data is unchanged, so "redo fiscal figures under new θ" stands.
+
+- **`base_macro['NFA']` correction.** `FiscalScenarioResult.base_macro['NFA']` was the partial `A − K_domestic` (uncorrected) while `cf_macro['NFA']` was the full `A − K_domestic − B`; a baseline-vs-cf NFA comparison was off by the debt level (≈3.35×Y). New `_correct_base_macro_nfa()` applies the `− B_base` correction in `run_debt_financed`, `run_tax_financed`, and `run_nfa_constrained`. The existing figures were unaffected (they read `cf_macro`/`NFA_path`); the stored result object is now consistent. 39/39 fiscal tests pass.
+- **Generic `<line>_gdp` ratio key in `compare_scenarios`** (any `cf_macro`/`cf_budget` line ÷ Y). Macro overview adds **NFA/Y** and **A/Y** panels (9-panel grid); fiscal decomposition plots primary deficit + the four taxes + UI + pensions as **/Y**, leaving G/I_g/defense/other-net/interest as levels.
+- **`regen_fiscal_figures_from_json.py` (new):** rebuilds lightweight result stand-ins from a saved JSON and calls the existing `compare_scenarios`/`debt_fan_chart`. No simulation.
+- **`/fiscal-note` project skill (`.claude/skills/fiscal-note/`):** reads the JSON, cross-checks the four figures, writes a one-page-per-scenario note (baseline absolute; counterfactuals as deviations from baseline) and renders PDF. Produced `output/fiscal_test/g_aggregates_note.{md,pdf}` (G shock; baseline + 3 closures). Debt-financed G has zero real effect (SOE, fixed r) — only B/Y and NFA/Y diverge; τ_l closures: Δτ_l = +3.17 pp (debt target), +3.47 pp (NFA@T).
+
+---
+
+## Session 2026-06-17: fiscal run-time — Illinois root finder, JAX backend, equivalence validation
+
+Runtime-only work; model results unchanged (verified equivalent across backends).
+
+- **`run_tax_financed` root finder: pure bisection → Illinois (modified regula falsi).** Keeps the verified opposite-sign bracket (same robustness, same converged Δτ to within `tol`) but steps via secant interpolation, with the retained-endpoint-residual halving that guards against the regula-falsi stall, and a midpoint fallback if the secant step would leave the bracket. Iterations drop from ~10–15 to 1 interior step on the test scenario (residual ~1e-16; the τ_l balance residual is near-linear in Δτ under SOE — r exogenous, w fixed when K_g doesn't move). Both τ_l figure variants (`terminal_debt_gdp`, `terminal_nfa_gdp`) use this path. 39/39 fiscal tests pass.
+- **`validate_backends.py` (new): NumPy-vs-JAX equivalence.** Runs the baseline transition kernel (cohort solve + MC simulation + aggregation + government budget — the only backend-dependent computation; the fiscal layer on top is pure NumPy) under both backends and compares aggregate paths. The backends use different PRNGs (MT19937 vs ThreeFry) at the fixed seed 42 (`simulate_transition` exposes no seed), so aggregates differ by Monte-Carlo noise ∝1/√n_sim, not machine precision; a per-path n_sim-scaling test separates sampling noise from a systematic solver discrepancy. Result: PASS (gap ratio 0.558 ≈ √(300/1200)=0.5; deterministic r/w/K_g exact to 0).
+- **Measured: JAX ~25× faster than NumPy on CPU** (66 s vs 1601 s, one baseline, quick grids) — serial cohort loop vs `vmap`. Run the fiscal figures with `--backend jax`; GPU is additional upside, not a prerequisite. On the GPU box confirm the JAX device printed by `validate_backends.py` says `cuda` and that `JAX_PLATFORM_NAME` is not pinned to cpu.
+- **`run_fiscal_figures.py`: total wall-clock printout** at the end, tagged backend/shock/n_sim.
 
 ---
 

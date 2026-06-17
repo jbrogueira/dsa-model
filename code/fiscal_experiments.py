@@ -604,6 +604,26 @@ def _nfa_ca_paths(macro: dict) -> tuple:
     return NFA, CA
 
 
+def _correct_base_macro_nfa(base_macro: dict, base_budget: dict,
+                            scenario: FiscalScenario,
+                            r_B_path: np.ndarray, T_total: int) -> dict:
+    """Return a copy of base_macro with NFA converted from the partial
+    (A - K_domestic) that simulate_transition returns to the full
+    NFA = A - K_domestic - B_base.
+
+    Mirrors the cf_macro correction so that a result's base_macro and cf_macro
+    NFA are on the same (full) definition.  No-op (returns the input) when NFA
+    is absent.  Does not mutate the input dict.
+    """
+    if base_macro.get('NFA') is None:
+        return base_macro
+    B_base = compute_debt_path(base_budget['primary_deficit'], r_B_path,
+                               B_initial=scenario.B_initial)
+    out = dict(base_macro)
+    out['NFA'] = np.asarray(base_macro['NFA']) - B_base[:T_total]
+    return out
+
+
 def _check_nfa_violation(NFA: Optional[np.ndarray],
                          CA: Optional[np.ndarray],
                          scenario: FiscalScenario,
@@ -668,6 +688,9 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
         cf_macro = dict(cf_macro)
         cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T_total]
     NFA, CA = _nfa_ca_paths(cf_macro)
+    # Same correction on the baseline so base_macro/cf_macro NFA are comparable.
+    base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
+                                         r_B_path, T_total)
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
     t_balance = T_base if n_post > 0 else None
@@ -865,6 +888,9 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
     if cf_macro.get('NFA') is not None:
         cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T_total]
+    # Same correction on the baseline so base_macro/cf_macro NFA are comparable.
+    base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
+                                         r_B_path, T_total)
 
     B_gdp = B_path[:-1] / Y_path
     NFA, CA = _nfa_ca_paths(cf_macro)
@@ -1053,6 +1079,9 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         cf_macro_star = dict(cf_macro_star)
         cf_macro_star['NFA'] = np.asarray(cf_macro_star['NFA']) - B_path[:T_total]
     NFA, CA = _nfa_ca_paths(cf_macro_star)
+    # Same correction on the baseline so base_macro/cf_macro NFA are comparable.
+    base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
+                                         r_B_path, T_total)
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro_star, cf_budget_star, olg)
     t_balance = T_base if n_post > 0 else None
@@ -1261,6 +1290,24 @@ def compare_scenarios(
         if key == 'B_gdp_path':
             arr = result.B_gdp_path
             return arr[:T] if arr is not None else None
+        if key == 'NFA_gdp':
+            if result.NFA_path is None:
+                return None
+            Y = np.asarray(result.cf_macro['Y'], dtype=float)
+            n = min(len(result.NFA_path), len(Y))
+            return np.asarray(result.NFA_path[:n]) / Y[:n]
+        if key.endswith('_gdp'):
+            # Generic "<base>/Y" ratio for any macro or budget line (e.g.
+            # A_gdp, primary_deficit_gdp, tax_l_gdp, pension_gdp, ui_gdp).
+            base_key = key[:-len('_gdp')]
+            src = (result.cf_macro.get(base_key)
+                   if base_key in result.cf_macro else result.cf_budget.get(base_key))
+            if src is None:
+                return None
+            src = np.asarray(src, dtype=float)
+            Y = np.asarray(result.cf_macro['Y'], dtype=float)
+            n = min(len(src), len(Y))
+            return src[:n] / Y[:n]
         if key in result.cf_macro:
             return np.asarray(result.cf_macro[key])
         if key in result.cf_budget:

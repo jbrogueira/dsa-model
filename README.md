@@ -4,7 +4,34 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-06-16)
+## Current status (handoff 2026-06-17)
+
+### Fiscal run-time: Illinois root finder + JAX backend (2026-06-17) — committed + pushed (`bdfda58`)
+
+Runtime work on the fiscal pipeline; no change to model results (backend equivalence verified). Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-17`).
+
+- **Illinois (modified regula falsi) replaces pure bisection** in `run_tax_financed` (`fiscal_experiments.py`). Same opposite-sign bracket and converged Δτ (to within `tol`); secant interpolation cuts iterations — 1 interior step on the test scenario vs ~10–15. Both τ_l variants (`terminal_debt_gdp`, `terminal_nfa_gdp`) use it. 39/39 fiscal tests pass.
+- **JAX is ~25× faster than NumPy even on CPU** (66 s vs 1601 s, one baseline at quick grids) — the NumPy backend solves the 297 cohorts in a serial loop while JAX `vmap`s them. Corrects the earlier "CPU JAX 2–3× slower" assumption. Implication: run the fiscal figures with `--backend jax`; GPU is upside on top, not a prerequisite.
+- **Backend equivalence verified** via new `code/validate_backends.py`. The backends use different PRNGs at a fixed seed (`simulate_transition` has no seed argument), so aggregates differ by Monte-Carlo noise ∝1/√n_sim, not machine precision. A per-path n_sim-scaling test separates sampling noise from a solver discrepancy: PASS (gap ratio 0.558 ≈ √(300/1200)=0.5); deterministic paths r/w/K_g match to 0. On the GPU box: `python validate_backends.py --config calibration_input_GR.json --n-sim 1000` (confirm the printed JAX device says `cuda`).
+- **Run-time printout** added to `run_fiscal_figures.py` — total wall-clock at the end, tagged backend/shock/n_sim.
+
+### Fiscal figures, diagnostics, and note skill (2026-06-17, b)
+
+Plotting/diagnostics layer + one accounting fix. Figures re-plotted from the existing `fiscal_results.json` (no re-simulation — underlying data unchanged, so the stale-figures thread below stands). Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-06-17 (b)`).
+
+- **`base_macro['NFA']` correction** (`fiscal_experiments.py`). Each `FiscalScenarioResult` stored the baseline NFA as the partial `A − K_domestic` while `cf_macro['NFA']` was the full `A − K_domestic − B`; comparing them was wrong by the debt level. `_correct_base_macro_nfa()` now applies the `− B_base` correction in all three result paths. Did not affect the existing figures (they read `cf_macro`/`NFA_path`); fixes the stored result object. 39/39 fiscal tests pass.
+- **`compare_scenarios` gains a generic `<line>_gdp` ratio key** (any macro/budget line ÷ Y). Macro overview adds **NFA/Y** and **A/Y** panels; fiscal decomposition switches primary deficit, the four taxes, UI, and pensions to **/Y** (G/I_g/defense/other-net/interest still levels).
+- **`regen_fiscal_figures_from_json.py` (new):** re-plot all four figures from a saved `fiscal_results.json` with no simulation.
+- **`/fiscal-note` project skill (`.claude/skills/fiscal-note/`):** reads `fiscal_results.json`, cross-checks the figures, writes a one-page-per-scenario note (baseline absolute; counterfactuals as deviations from baseline) and renders it to PDF (`code/output/fiscal_test/g_aggregates_note.{md,pdf}`).
+
+### Open / carried over
+
+- **STILL STALE — fiscal figures.** Re-run under new θ + SS-pinned closure + GDP-share spending + τ_l(NFA@T), now with the faster backend: `python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`. Everything in `code/output/fiscal_test/` predates the recalibration.
+- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back; `δ_g=0` makes baseline K_g non-stationary). Pick up from `code/docs/PUBLIC_CAPITAL_KG_PLAN.md`.
+
+---
+
+## Prior status (handoff 2026-06-16)
 
 ### NFA closures added (2026-06-16) — committed + pushed (`7c4a16a`, `5266d2c`)
 

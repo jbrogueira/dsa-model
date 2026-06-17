@@ -11,7 +11,9 @@ lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simula
 fiscal_experiments.py          # Fiscal scenario framework (debt/tax/NFA-constrained experiments)
 test_olg_transition.py         # Pytest tests (83 tests, incl. 15 JAX tests, 4 cross-validation classes)
 run_fiscal_figures.py          # Fiscal shock figures: G, Ig, or both shocks; CLI --shock flag
+regen_fiscal_figures_from_json.py  # Re-plot fiscal figures from a saved fiscal_results.json (no simulation)
 test_fiscal_experiments.py     # Pytest tests for fiscal experiments (39 tests)
+validate_backends.py           # NumPy-vs-JAX equivalence check (per-path n_sim-scaling test)
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 ```
 
@@ -98,8 +100,9 @@ In `olg_transition.py`:
 - `_print_income_diagnostics()`: Verbose income process diagnostics (called from `__init__` when `verbose=True`).
 - `simulate_transition()`: Accepts `recompute_bequests=False`, `bequest_tol=1e-4`, `max_bequest_iters=5` — runs a fixed-point bequest loop when `recompute_bequests=True` and `survival_probs` is set; stores `_bequest_converged` and `_bequest_iter_count` on `self`.
 - `run_fiscal_scenario()` (`fiscal_experiments.py`): dispatcher — runs baseline + counterfactual via Type A/B/C experiment.
-- `run_debt_financed()` / `run_tax_financed()` / `run_nfa_constrained()` (`fiscal_experiments.py`): Type A (one sim), Type B (bisection on scalar Δτ to hit `balance_condition`), Type C (NFA/CA band around baseline; Mode I: shock scale bisect; Mode II: tax rate bisect). Type B `balance_condition` includes `terminal_nfa_gdp` (full NFA/Y at T_bal = target, the external-balance analogue of `terminal_debt_gdp`); Type C floor is per-period `NFA_t ≥ NFA_base_t − nfa_limit` (half-width 0 = exact baseline tracking).
-- `compare_scenarios()` / `fiscal_multiplier()` / `debt_fan_chart()` (`fiscal_experiments.py`): output utilities for plotting and multiplier calculation.
+- `run_debt_financed()` / `run_tax_financed()` / `run_nfa_constrained()` (`fiscal_experiments.py`): Type A (one sim), Type B (Illinois/modified-regula-falsi root-find on scalar Δτ to hit `balance_condition` — keeps the opposite-sign bracket, secant step, midpoint fallback; replaced pure bisection 2026-06-17, ~1 interior iter vs ~10–15), Type C (NFA/CA band around baseline; Mode I: shock scale bisect; Mode II: tax rate bisect). Type B `balance_condition` includes `terminal_nfa_gdp` (full NFA/Y at T_bal = target, the external-balance analogue of `terminal_debt_gdp`); Type C floor is per-period `NFA_t ≥ NFA_base_t − nfa_limit` (half-width 0 = exact baseline tracking).
+- `compare_scenarios()` / `fiscal_multiplier()` / `debt_fan_chart()` (`fiscal_experiments.py`): output utilities for plotting and multiplier calculation. `compare_scenarios` accepts a generic `<line>_gdp` key (any `cf_macro`/`cf_budget` line ÷ Y, e.g. `A_gdp`, `NFA_gdp`, `primary_deficit_gdp`, `tax_l_gdp`); `NFA_gdp` uses the full `NFA_path`. `MACRO_VARS`/`FISCAL_VARS` live in `run_fiscal_figures.py` and the regen script (keep in sync).
+- **NFA in results is full on both sides.** `run_debt_financed`/`run_tax_financed`/`run_nfa_constrained` correct `cf_macro['NFA']` AND `base_macro['NFA']` from the partial `A − K_domestic` to the full `A − K_domestic − B` via `_correct_base_macro_nfa()` (fixed 2026-06-17). Plot/compare both sides on the same definition.
 
 ## Model Features
 
