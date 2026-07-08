@@ -60,7 +60,7 @@ FISCAL_LABELS = {
     'public_investment': 'Public investment (I_g)',
     'defense_spending':  'Defense',
     'other_net_spending':'Other net spending',
-    'interest_payments': 'Interest payments (r·B)',
+    'interest_payments': 'Interest payments (r_B·B)',
 }
 
 
@@ -75,16 +75,24 @@ def _to_arrays(d):
     return out
 
 
-def _rebuild_result(entry, name):
+def _rebuild_result(entry, name, r_b=None):
     """Build a minimal stand-in for FiscalScenarioResult from a JSON entry.
 
     Uses only the attributes that compare_scenarios / debt_fan_chart read:
     cf_macro, cf_budget, B_gdp_path, NFA_path, CA_path, scenario.name, T_balance.
     NFA is the stored (full) counterfactual NFA.
+
+    With *r_b* set, the interest_payments line is recomputed as r_B·B from the
+    stored B/Y and Y paths (JSONs written before the r_B fix in
+    run_fiscal_figures.py carry an interest line at the capital return r).
     """
     cf_macro  = _to_arrays(entry.get('counterfactual'))
     cf_budget = _to_arrays(entry.get('cf_budget'))
     B_gdp     = np.asarray(entry['B_gdp_path'], dtype=float) if entry.get('B_gdp_path') else None
+    if r_b is not None and B_gdp is not None and 'Y' in cf_macro:
+        Y = np.asarray(cf_macro['Y'], dtype=float)
+        T = len(Y)
+        cf_budget['interest_payments'] = float(r_b) * B_gdp[:T] * Y
     NFA, CA   = _nfa_ca_paths(cf_macro)  # cf_macro['NFA'] is the full NFA
     return SimpleNamespace(
         scenario=SimpleNamespace(name=name),
@@ -97,7 +105,7 @@ def _rebuild_result(entry, name):
     )
 
 
-def regen(json_path, output_dir, shocks=None):
+def regen(json_path, output_dir, shocks=None, r_b=None):
     with open(json_path) as fh:
         data = json.load(fh)
 
@@ -118,7 +126,7 @@ def regen(json_path, output_dir, shocks=None):
         missing = [k for k, _ in spec if k not in g]
         if missing:
             print(f"[{shock}] WARNING: scenarios absent from JSON, skipped: {missing}")
-        results = [_rebuild_result(g[k], lbl) for k, lbl in present]
+        results = [_rebuild_result(g[k], lbl, r_b=r_b) for k, lbl in present]
         labels  = [lbl for _, lbl in present]
         res_base, *cfs = results
 
@@ -154,5 +162,8 @@ if __name__ == '__main__':
     ap.add_argument('--output-dir', default='output/fiscal_test')
     ap.add_argument('--shock', nargs='*', default=None,
                     help='Restrict to these shock keys (e.g. G Ig). Default: all in file.')
+    ap.add_argument('--r-b', type=float, default=None,
+                    help='Sovereign rate r_B; recompute the interest line as '
+                         'r_B·B from the stored paths (default: keep stored line).')
     args = ap.parse_args()
-    regen(args.json, args.output_dir, shocks=args.shock)
+    regen(args.json, args.output_dir, shocks=args.shock, r_b=args.r_b)

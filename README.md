@@ -4,7 +4,27 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-06-17)
+## Current status (handoff 2026-07-07)
+
+### Draft synced to code, calibration, and current fiscal runs — pushed to Overleaf (`docs/` commits `48f0d5a`..`3a8649d`)
+
+The paper draft was audited against the code and updated end-to-end. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-07`); the docs submodule log has the file-level breakdown.
+
+- **Model section** (`DSA-LSA model.tex`): equations now match the code — multiplicative tax wedge `(1−τ_l)[(1−τ_p)·wage + UI]`, permanent effect `e^α` + education strata in income/UI/pensions/L, `m(j)` age profile, career-average pension term, `Rev^l` base incl. UI and pensions, defence + other-net lines in the GBC, debt serviced at `r_B`, bequests to newborn cohorts, cohort life-table survival.
+- **Calibration appendix**: parameter table and all results paragraphs at the recalibrated θ (ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.043); moments table rebuilt from a fresh report (below). Main-text calibration section (`DSA-LSA data.tex`) rewritten around the 5-parameter SMM; the two "not yet implemented" lists merged into one.
+- **Experiments section**: rewritten to the current G-shock runs — calibrated baseline (B₀/Y=1.64, spending as shares of realised Y, r_B=0.021, T=60+20), three financing regimes (debt; τ_l with terminal-debt closure, Δτ_l=+3.2pp; τ_l with terminal-NFA closure, Δτ_l=+3.5pp), results paragraphs matching `fiscal_results.json` (multiplier exactly 0 debt-financed; income effect raises L≈+1%). **I_g section commented out** pending a rerun.
+- **Moments report at the current θ** — `code/output/calibration/calibration_GR_20260707_095127.md`, from a single objective evaluation at `_derived.theta` (no optimizer; all 5 targets exact, Q=1.5e-8). Untargeted: C/Y 0.601, wealth Gini 0.287, income Gini 0.376, p90/p10 5.43, zero-wealth 2.7%. Fills the gap left by the 2026-06-14 recalibration (log only, no report).
+- **Figure interest line fixed to r_B** (`run_fiscal_figures.py`; `regen_fiscal_figures_from_json.py --r-b`). Display-only bug: the plotted line was `r·B` at 4% while the B law of motion already used r_B=2.1%. G figures regenerated from the saved JSON (only `g_fiscal_decomp.png` changed) and copied into `docs/`. `g_aggregates_note.md` still describes the 4% line — regenerate via `/fiscal-note` after the next run.
+
+### Open / carried over
+
+- **I_g shock not re-run** under the recalibrated θ; the draft's I_g section stays commented out until it is. With `eta_g ≠ 0` the shock must be a level path (`I_g_over_Y` is rejected — I_g→K_g→Y simultaneity).
+- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back; `δ_g=0` makes baseline K_g non-stationary). Pick up from `code/docs/PUBLIC_CAPITAL_KG_PLAN.md`.
+- The G-shock figures/results are **current** (the 2026-06-17 "STILL STALE" thread was resolved by the re-run tracked in `95e8a77`, before this handoff).
+
+---
+
+## Prior status (handoff 2026-06-17)
 
 ### Fiscal run-time: Illinois root finder + JAX backend (2026-06-17) — committed + pushed (`bdfda58`)
 

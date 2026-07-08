@@ -1,6 +1,16 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-06-17 (b) (fiscal figures: NFA/Y + A/Y panels, /Y GBC decomposition, base_macro NFA fix, `/fiscal-note` skill — see `## Session 2026-06-17 (b)`; prior same-day run-time work in `## Session 2026-06-17`). **STATUS:** the tax-financed t=1 labor "spike" was traced to a broken labor-supply FOC solver + three FOC/objective correctness errors; all fixed (both backends) and the SMM **recalibrated** under the corrected solver (new θ: ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428; all moments match ≤0.01%). The baseline closure (`other_net_spending_over_Y`) has since been **pinned at the initial steady state** (no transition) under the new θ → −0.091122. Still to redo: the fiscal figures under the new θ. See the two `## Session 2026-06-14` sections at top.
+Last updated: 2026-07-07 (draft synced to code + current runs; moments report at the recalibrated θ; figure interest line at r_B — see `## Session 2026-07-07`). **STATUS:** the G-shock figures/results are current under the recalibrated θ (ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428) and the SS-pinned closure (−0.091122): `fiscal_results.json` + figures + note tracked in `95e8a77` (2026-06-17). Still to redo: the **I_g shock** under the current calibration (needs a level-path I_g when `eta_g ≠ 0`).
+
+---
+
+## Session 2026-07-07: draft synced to code; moments report at fixed θ; interest line at r_B
+
+Paper-draft update (docs submodule, pushed to Overleaf `48f0d5a`..`3a8649d`) plus two code-side items.
+
+- **Moments report at the current θ** — `output/calibration/calibration_GR_20260707_095127.md`, produced by a single objective evaluation at `_derived.theta` (no optimizer; JAX, n_sim=10,000, seed 42, 33.8 s). All five targets match to 4 decimals (Q = 1.5e-8). Untargeted under the new θ: C/Y 0.601, wealth Gini 0.287, income Gini 0.376, p90/p10 5.43, zero-wealth 2.7%, u 14.3%, total tax revenue/Y 0.345. This is the source for the draft's moments table (`DSA-LSA calibration.tex`, Table `tab:baseline-moments`). The 2026-06-14 recalibration itself only left a log (`recalib_20260614.log`); this report fills the gap.
+- **Figure interest line fixed to r_B.** `run_fiscal_figures.py` plotted `interest_payments = r · B` at the capital return (4%) while `compute_debt_path` accumulates B at `r_B` (2.1%) — display-only inconsistency, the law of motion was already correct. Now `r_B · B` (falls back to `r` when `olg.r_B` is unset, preserving the hardcoded test branch). `regen_fiscal_figures_from_json.py` gains `--r-b <rate>` to recompute the line from stored `B/Y · Y` paths when re-plotting JSONs written before the fix. G figures regenerated from `fiscal_results.json` with `--r-b 0.021`; only `g_fiscal_decomp.png` changed (the other three are interest-free and reproduce bit-identically). `g_aggregates_note.md` still describes the old 4% line — regenerate via `/fiscal-note` after the next run.
+- **Draft sync** (see the docs submodule log for detail): model section equations aligned with the code (multiplicative tax wedge, permanent effect e^α + education strata, m(j) age profile, career-average pension, Rev^l base incl. UI and pensions, defence + other-net GBC lines, debt at r_B, bequests to newborns, cohort life-table survival); calibration appendix at the recalibrated θ with the new moments table; experiments section rewritten to the current G-shock runs (three financing regimes, terminal-stock closures, ratio-mode shock, B_0/Y = 1.64, T = 60); the I_g section is commented out pending a rerun.
 
 ---
 

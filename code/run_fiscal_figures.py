@@ -335,7 +335,11 @@ for res_base, res_debt, res_taul, res_nfa, _ in experiment_results.values():
     for res in (res_base, res_debt, res_taul, res_nfa):
         _T = len(res.cf_macro['Y'])
         _B = res.B_path[:_T]
-        _r = np.asarray(res.cf_macro['r'])
+        # Interest at the sovereign rate r_B (the rate in the B law of motion),
+        # not the capital return r; fall back to r when r_B is unset.
+        _rB = getattr(economy, 'r_B', None)
+        _r = (np.full(_T, float(_rB)) if _rB is not None
+              else np.asarray(res.cf_macro['r']))
         res.cf_budget['interest_payments'] = _r * _B
         _Kg = res.cf_macro.get('K_g')
         if _Kg is not None:
@@ -380,7 +384,7 @@ FISCAL_LABELS = {
     'public_investment': 'Public investment (I_g)',
     'defense_spending':  'Defense',
     'other_net_spending':'Other net spending',
-    'interest_payments': 'Interest payments (r·B)',
+    'interest_payments': 'Interest payments (r_B·B)',
 }
 
 # ---------------------------------------------------------------------------
