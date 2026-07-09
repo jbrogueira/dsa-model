@@ -1,6 +1,18 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-07-07 (draft synced to code + current runs; moments report at the recalibrated θ; figure interest line at r_B — see `## Session 2026-07-07`). **STATUS:** the G-shock figures/results are current under the recalibrated θ (ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428) and the SS-pinned closure (−0.091122): `fiscal_results.json` + figures + note tracked in `95e8a77` (2026-06-17). Still to redo: the **I_g shock** under the current calibration (needs a level-path I_g when `eta_g ≠ 0`).
+Last updated: 2026-07-09 (experiment-design section expanded: baseline transition, shock timing, financing mechanics — see `## Session 2026-07-09`). **STATUS:** the G-shock figures/results are current under the recalibrated θ (ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428) and the SS-pinned closure (−0.091122): `fiscal_results.json` + figures + note tracked in `95e8a77` (2026-06-17). Still to redo: the **I_g shock** under the current calibration (needs a level-path I_g when `eta_g ≠ 0`).
+
+---
+
+## Session 2026-07-09: experiment-design section expanded — baseline transition, shock timing, financing mechanics
+
+Paper-only session (docs submodule, pushed to Overleaf `602882b`, `cb4b180`). No code changes.
+
+- **§4.1 Baseline** now describes how the baseline transition is solved. Initial condition: cohorts alive at t=0 simulated from birth under constant prices/policies, each with its birth-year survival diagonal; B_0 = 1.64·Y_0; O_t pinned at the initial steady state. Drivers: demographic composition (historical-survival cohorts replaced by last-table cohorts; output moves < 1% over the horizon) vs. the fiscal drift (primary surplus ≈ 1.9% of Y, below the debt-stabilising level r_B·B_t/Y_t ≈ 3.4%; B/Y 1.64 → 3.40 at T). Terminal point: real allocation ≈ stationary at T (= lifecycle length, pre-transition cohorts have exited); fiscal position is not — the financing closures target the baseline's own value at T. Numbers verified against `output/fiscal_test/fiscal_results_G_20260616.json`.
+- **§4.1 Shock** now states the MIT timing (unanticipated at t=0; date-0 wealth cross-section identical across scenarios, matching the verified A[0] predetermination), the own-output share convention (ratio mode: G^cf = 0.15·Y^cf), and the channel (G enters neither preferences nor production).
+- **§4.1 Financing regimes** now separates the debt case (single transition solve, behaviour unchanged) from the τ_l case: modified regula falsi on the scalar Δτ^l; each residual evaluation is a full transition solve; targets pinned to the drifting baseline's terminal values (tolerance 1e-3 on the terminal ratio); condition imposed at T only — drift resumes post-horizon (tax-financed B/Y 3.41 at T → 4.75 at T+20).
+- **Phrasing fix**: the debt-drift statement is now conditioned on the primary balance falling short of r_B·B_t/Y_t, not on "r_B > g" alone; g dropped (undefined in the paper; baseline output is trendless).
+- **Overleaf-side edits pulled** (user): abstract/introduction files renamed to the "DSA-LSA 2607" prefix; fiscal-multiplier paragraph and prices-sanity figure removed from the experiments section (no dangling references).
 
 ---
 

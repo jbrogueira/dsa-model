@@ -4,7 +4,26 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-07-07)
+## Current status (handoff 2026-07-09)
+
+### Experiment-design section expanded — pushed to Overleaf (`docs/` at `d546153`)
+
+Paper-only session; no code changes. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-09`).
+
+- **§4.1 Baseline** now describes how the baseline transition is solved: initial condition (cohorts alive at t=0 simulated from birth under constant prices/policies with birth-year survival diagonals; B₀ = 1.64·Y₀; O_t pinned at the initial steady state), drivers (demographic composition, output < 1% drift, vs. fiscal drift: primary surplus 1.9% of Y below the debt-stabilising r_B·B_t/Y_t ≈ 3.4%, B/Y 1.64 → 3.40 at T), and terminal point (real allocation ≈ stationary at T; fiscal position not — closures target the baseline's own value at T). Numbers verified against `fiscal_results_G_20260616.json`.
+- **§4.1 Shock**: MIT timing made explicit (unanticipated at t=0, date-0 wealth identical across scenarios), own-output share convention, G in neither preferences nor production.
+- **§4.1 Financing regimes**: debt case (single solve, behaviour unchanged) separated from the τ_l case (modified regula falsi on Δτ^l, each residual evaluation a full transition solve, targets pinned to the drifting baseline at T, condition at T only — drift resumes post-horizon).
+- **Overleaf-side edits pulled** (user): abstract/introduction renamed to the "DSA-LSA 2607" prefix; fiscal-multiplier paragraph and prices-sanity figure removed.
+
+### Open / carried over (unchanged from 2026-07-07)
+
+- **I_g shock not re-run** under the recalibrated θ; the draft's I_g section stays commented out.
+- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` still carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back). Pick up from `code/docs/PUBLIC_CAPITAL_KG_PLAN.md`. The paper's §4.1 describes the `eta_g=0` run behind the current figures.
+- **Submodule protocol**: before any pull/push in `docs/`, fetch and inspect the remote first — Overleaf-side edits landed mid-session twice (one required a rebase before push).
+
+---
+
+## Prior status (handoff 2026-07-07)
 
 ### Draft synced to code, calibration, and current fiscal runs — pushed to Overleaf (`docs/` commits `48f0d5a`..`3a8649d`)
 
