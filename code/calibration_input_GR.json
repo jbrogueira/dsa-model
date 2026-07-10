@@ -19,15 +19,15 @@
   },
   "_derived": {
     "theta": {
-      "nu": 36.906928,
-      "beta": 0.94317,
-      "tau_p": 0.197757,
-      "pension_replacement_default": 0.166291,
-      "m_good": 0.042774
+      "nu": 20.65584236756219,
+      "beta": 0.9418728239045051,
+      "tau_p": 0.19777856387304765,
+      "pension_replacement_default": 0.1696940027857062,
+      "m_good": 0.0844527431369721
     },
     "theta_metadata": {
-      "calibration_date": "2026-06-09T18:32:08",
-      "source_report": "output/calibration/calibration_GR_20260609_183208.md"
+      "calibration_date": "2026-07-10T15:36:59",
+      "source_report": "output/calibration/calibration_GR_20260710_153659.md"
     }
   },
   "prices": {
@@ -37,7 +37,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.91435556,
+    "A_tfp": 1.60606497,
     "K_g": 0.745,
     "eta_g": 0.05,
     "delta_g": 0.04738255
@@ -285,7 +285,7 @@
     "tax_revenue_over_Y": 0.4,
     "interest_over_Y": 0.034,
     "primary_balance_target_over_Y": 0.0195,
-    "other_net_spending_over_Y": -0.091122
+    "other_net_spending_over_Y": -0.096295
   },
   "calibration": {
     "params": [
@@ -294,35 +294,35 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 27.296724
+        "initial": 21.125898446215515
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 0.977036
+        "initial": 0.9416982742447793
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.196775
+        "initial": 0.19777780438198433
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.146547
+        "initial": 0.1697115626748415
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.039307
+        "initial": 0.08263481800557766
       }
     ],
     "targets": [
