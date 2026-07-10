@@ -1,6 +1,8 @@
 # Public capital (K_g) activation + τ_l-matches-baseline-debt — handoff plan
 
-Status as of 2026-06-15. Picks up an in-progress change set; nothing below is committed.
+Status as of 2026-07-10 (originally 2026-06-15). Decisions in §6 are taken; §4 items 1–3
+are implemented (uncommitted). Remaining: run `normalize_A_tfp.py --write`, re-run
+`pin_baseline_closure.py --write`, sanity checks (§4.5), then the Ig run (§7).
 
 ## 1. Goal
 
@@ -50,34 +52,37 @@ whole perfect-foresight solve — explicitly NOT the chosen path.)
 
 Ordered; each is small.
 
-1. **Set δ_g as a primitive in the config** (`production.delta_g`). Value = target `I_g/Y`
-   divided by target `K_g/Y` (= `I_g/Y` once Y_ss=1, K_g/Y=1). With I_g/Y=0.03 and K_g/Y=1 →
-   δ_g=0.03. If the IMF K_g/Y target (§5) differs, recompute: δ_g=(I_g/Y)/(K_g/Y).
-   - Note: data I_g/Y (DATA sheet, code 45) = 3.86% in 2023; config currently has
-     `fiscal.I_g_over_Y = 0.03`. Decide whether to update to 0.0386 (§6).
+1. **DONE (2026-07-10). δ_g as a primitive in the config** (`production.delta_g`). Set to
+   0.04738255 = (I_g/Y)/(K_g/Y) = 0.0353/0.745 (§6 decisions). `fiscal.I_g_over_Y` = 0.0353.
 
-2. **Config-mode I_g: switch from share to level** in `code/run_fiscal_figures.py` `--config`
-   branch (lines ~89, ~102, ~178). With `eta_g≠0`:
-   - Replace `base_paths['I_g_over_Y'] = I_g_over_Y` with a constant level path
-     `base_paths['I_g_path'] = np.full(T_TR, delta_g * K_g_initial)` (= δ_g since K_g=1).
-   - The warmup `I_g_warmup` (line 89) already computes `δ_g·K_g`; reuse that value as the level.
-   - Keep `I_g_over_Y` ratio mode only when `eta_g==0` (backward compatible).
+2. **DONE (2026-07-10). Config-mode I_g: level when `eta_g≠0`** — `run_fiscal_figures.py`
+   `--config` branch passes `base_paths['I_g_path'] = I_g_warmup` (= δ_g·K_g level) and omits
+   `I_g_over_Y`; the I_g shock delta is a level `0.02·Y(0)` (was ratio 0.02 of Y(t)). Ratio
+   mode kept when `eta_g==0`. Required a per-line mixed mode in `fiscal_experiments.py`
+   `_apply_shock`: with `G_over_Y` set but no `I_g_over_Y` key, I_g runs in level mode while
+   G/defense/other stay ratios (unit-tested; 39 fiscal tests pass).
 
-3. **A_tfp normalization (Y_ss=1)** — add to the calibration step (`calibrate.py`). One scalar
-   root-find: choose `A_tfp` s.t. the initial stationary solve returns Y=1. Confirm where the
-   initial-SS Y is computed and whether `pin_baseline_closure.py`'s stationary solve can be
-   reused as the inner evaluation. This recalibration interacts with the SMM block — sequence it
-   so A_tfp is solved with the other externally-set params fixed, then re-run SMM if needed.
+3. **DONE (2026-07-10). A_tfp normalization (Y_ss=1)** — new script `normalize_A_tfp.py`
+   (pattern of `pin_baseline_closure.py`): 1-D root-find on A_tfp, inner evaluation =
+   `run_model_moments` at fixed `_derived.theta` + `_compute_ss_aggregates` → Y_ss; secant with
+   elasticity-based first step and bisection safeguard; `--write` stores `production.A_tfp`.
+   Prints the SMM target moments at the solution to judge whether SMM must be re-run.
+   NOT YET RUN.
 
 4. **Re-pin fiscal closure.** `fiscal.other_net_spending_over_Y` was pinned at the initial SS
-   (`pin_baseline_closure.py`). Changing A_tfp (and adding baseline I_g spending if I_g/Y moves)
-   shifts the initial-point budget, so re-run `pin_baseline_closure.py --write` after §4.3.
+   (`pin_baseline_closure.py`). Changing A_tfp (and the I_g/Y move 0.03→0.0353) shifts the
+   initial-point budget, so re-run `pin_baseline_closure.py --write` after running §4.3.
 
 5. **Tests / sanity.** With `eta_g≠0`: confirm no `I_g_over_Y` path reaches `simulate_transition`
    (else line-1892 raise). Check `check_a0_predetermination.py` still passes (Ig shock path is the
    one sensitive to K_g→w; see MEMORY MIT-stitching bug fixed 2026-03-06).
 
 ## 5. Data search — IMF (K_g/Y target)
+
+**DONE (2026-07-10):** `data/IMF_ICSD_GR.csv` (full Greece extract, ICSD via the IMF SDMX API,
+identical to the May-2021 Excel; coverage 1960–2019). Greek general-govt K_g/Y = 74.5% (2019),
+76.4% mean 2015–19. Logged in `code/data_inventory.md` §1.12. The PIM cross-check (last bullet)
+remains optional/undone. Original task spec kept below for reference.
 
 The repo has **no public-capital stock series** — only flows (I_g/Y, I/Y) in `data/DATA_GR.xlsx`
 DATA sheet. To discipline `K_g/Y` rather than choose it:
@@ -100,13 +105,15 @@ DATA sheet. To discipline `K_g/Y` rather than choose it:
   is a known weakness).
 - Do NOT quote an IMF K_g/Y number from memory; pull it from the dataset.
 
-## 6. Open decisions for next session
+## 6. Decisions (taken 2026-07-10)
 
-1. **K_g=1 vs K_g/Y=IMF.** Keep the clean `K_g=1` normalization (K_g/Y falls out of Y_ss), or pin
-   `K_g/Y` to the IMF value (K_g≠1, δ_g from the two ratios). The latter disciplines the public-
-   capital channel to data; the former is cleaner bookkeeping.
-2. **I_g/Y = 0.03 vs 0.0386 (2023 data).** δ_g and the baseline I_g level both depend on this.
-3. **Reference year** for the K_g/Y (and I_g/Y) target — 2023 is the default used elsewhere.
+1. **K_g/Y pinned to IMF: 0.745** (Greek general-government capital stock / GDP, 2019 — latest
+   ICSD observation; see §5 note and `data_inventory.md` §1.12). With Y_ss=1, `K_g = 0.745`.
+2. **I_g/Y = 0.0353** (DATA-sheet mean 2015–19; matches ICSD 3.52%). → δ_g = 0.0353/0.745 =
+   0.04738255. (δ_g sits just above the ICSD PIM-typical 2.5–4.6% range — the cost of imposing
+   stationarity on non-stationary Greek data; 2023's 3.86% would have pushed δ_g to 5.2%.)
+3. **Reference year stays 2023** for all other fiscal targets; the K_g/Y target carries a 2019
+   vintage (ICSD coverage ends 2019; K_g/Y moved only 77.5→74.5% over 2015–19).
 
 ## 7. Verification once implemented
 

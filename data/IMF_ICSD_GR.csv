@@ -1,0 +1,868 @@
+country,indicator,series_name,year,value,dataflow,publication_date
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1960,65.8836441,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1961,74.58280945,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1962,74.85489655,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1963,83.72136688,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1964,91.59926605,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1965,101.4626846,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1966,108.0521927,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1967,114.1781921,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1968,122.4032745,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1969,136.5575714,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1970,148.7529755,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1971,160.4169464,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1972,176.7155457,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1973,191.016037,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1974,178.7179718,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1975,190.0965881,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1976,203.1218262,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1977,209.0956421,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1978,224.2485199,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1979,231.6085358,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1980,233.1768188,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1981,229.553894,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1982,226.9538727,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1983,224.5059052,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1984,229.0197601,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1985,234.7671509,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1986,235.9824371,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1987,230.6519165,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1988,240.5419464,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,249.6825409,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,249.6825409,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,255.5309448,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,257.3196716,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,253.2025604,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,258.2666016,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,263.6907654,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,271.2380676,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,283.4008789,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,294.4391174,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,303.4859314,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,315.3819275,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,328.412323,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,341.2955017,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,361.072052,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,379.3457336,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,381.6185913,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,403.1893005,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,416.3887024,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,414.9931946,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,397.1454468,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,375.3856201,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,337.2865906,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,313.3986816,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,304.8060913,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,306.9340515,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,305.6698608,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,304.1724854,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,308.0682983,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,312.8710938,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_Q_PU_RY2017,"Gross domestic product (GDP), Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,318.6801453,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1960,0.381115884,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1961,0.436167747,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1962,0.458290607,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1963,0.518266976,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1964,0.586345792,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1965,0.675970614,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1966,0.755299449,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1967,0.815438747,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1968,0.887093782,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1969,1.021158218,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1970,1.154615402,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1971,1.282194972,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1972,1.483749747,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1973,1.939185143,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1974,2.22764945,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1975,2.680355549,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1976,3.334696531,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1977,3.904926777,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1978,4.765342712,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1979,5.913511753,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1980,7.098985195,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1981,8.499083519,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1982,10.68945694,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1983,12.75372505,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1984,15.86177349,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1985,19.35342216,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1986,23.12683678,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1987,26.05221558,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1988,31.70110321,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1989,37.67673874,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1990,45.47228241,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1991,56.24111557,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1992,65.01608276,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1993,73.2067337,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1994,83.02047729,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1995,104.6620941,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1996,114.9082031,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1997,126.3537979,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1998,129.0572968,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",1999,139.9450989,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2000,142.9759979,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2001,152.1937866,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2002,163.4607849,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2003,178.9049072,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2004,193.7158051,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2005,199.2422943,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2006,217.8616028,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2007,232.6945953,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2008,241.9904022,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2009,237.5341949,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2010,224.1239929,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2011,203.308197,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2012,188.3887024,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2013,179.616394,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2014,177.3493958,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2015,176.1102142,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2016,174.2368927,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2017,177.1519012,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2018,179.7273102,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,B1GQ_V_XDC,"Gross domestic product (GDP), Current prices, Domestic currency",2019,183.4135132,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1960,205.2416646,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1961,188.5586921,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1962,195.2957693,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1963,181.4290884,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1964,172.226316,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1965,161.4231896,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1966,157.3132282,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1967,154.4544529,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1968,149.4324418,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1969,138.8854405,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1970,132.169541,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1971,127.019538,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1972,119.4750903,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1973,114.5062315,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1974,126.7652972,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1975,123.4222603,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1976,119.604175,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1977,120.2914599,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1978,116.1112306,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1979,116.3658514,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1980,119.6266512,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1981,125.7544049,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1982,131.6224821,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1983,137.6793753,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1984,139.6449166,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1985,140.9412246,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1986,145.0613485,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1987,153.5365696,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1988,152.2999168,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1989,151.7785127,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1990,157.4293773,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1991,159.7937262,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1992,160.592686,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1993,165.3995873,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1994,164.5597834,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1995,163.7753383,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1996,160.2926734,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1997,155.2706623,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1998,151.613159,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",1999,152.02536,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2000,151.3157033,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2001,150.9213519,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2002,150.4878182,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2003,147.3648935,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2004,146.2509053,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2005,151.3560708,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2006,147.1061234,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2007,147.7452475,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2008,156.6957437,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2009,169.5021739,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2010,181.6940197,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2011,202.3805381,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2012,214.7113068,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2013,214.6445404,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2014,205.8791473,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2015,199.2494751,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2016,192.966898,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2017,184.259987,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2018,175.4817716,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_POGDP_PT,"Capital stock, Private sector, Constant prices, Percent of GDP",2019,167.1993259,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1960,135.2206879,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1961,140.63237,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1962,146.188446,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1963,151.8949127,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1964,157.7580414,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1965,163.7843018,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1966,169.9803925,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1967,176.353302,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1968,182.910202,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1969,189.6585846,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1970,196.6061249,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1971,203.7608643,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1972,211.1310577,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1973,218.7252655,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1974,226.5523682,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1975,234.6215057,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1976,242.9421844,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1977,251.5242004,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1978,260.3777161,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1979,269.5132446,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1980,278.9416199,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1981,288.6741333,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1982,298.7223206,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1983,309.0983276,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1984,319.8144531,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1985,330.8836975,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1986,342.3193054,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1987,354.1350403,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1988,366.3451843,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,378.964447,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,393.0736694,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,408.3224182,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,413.2365723,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,418.79599,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,425.0029602,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,431.8604431,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,434.7747498,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,440.0384216,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,446.4084473,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,461.3755798,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,477.2223816,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,495.6443176,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,513.6081543,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,532.0934448,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,554.7965698,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,577.6029053,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,593.1161499,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,615.194519,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,650.2766724,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,673.170166,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,682.0532227,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,682.602417,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,672.9024048,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,654.2496338,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,631.913208,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,609.0455933,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,586.9522095,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,567.6466064,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,549.0317383,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_Q_PU_RY2017,"Capital stock, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,532.8310547,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1988,65.24032593,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1989,79.14774323,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1990,97.20519257,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1995,218.255722,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1996,230.4672546,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1997,240.6841583,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1998,238.9176483,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",1999,257.5767822,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2000,266.122467,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2001,280.3106689,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2002,298.6638184,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2003,315.6797791,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2004,333.4368896,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2005,345.9539185,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2006,369.9851379,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2007,388.4264832,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2008,421.1954346,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2009,434.1618958,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2010,409.8618164,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2011,411.7838745,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2012,404.894165,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2013,390.9508667,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2014,371.8746033,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2015,353.9586182,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2016,337.1046448,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2017,326.4200134,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2018,316.8171692,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PS_V_XDC,"Capital stock, Private sector, Current prices, Domestic currency",2019,307.62854,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1989,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1990,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1991,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1992,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1993,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1994,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1995,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1996,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1997,0.392738498,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1998,0.727968341,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",1999,1.147416401,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2000,1.702210105,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2001,2.208207517,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2002,2.314217771,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2003,2.351929163,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2004,2.321868227,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2005,2.213184827,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2006,2.007922311,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2007,1.950472865,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2008,2.392763516,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2009,2.923104004,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2010,3.554848709,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2011,4.493615223,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2012,5.264468694,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2013,5.217767053,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2014,4.994775725,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2015,4.838307093,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2016,4.698051251,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2017,4.482909153,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2018,4.319003264,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_POGDP_PT,"Capital stock, Public private partnership, Constant prices, Percent of GDP",2019,4.14926125,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,1.113024354,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,2.143423557,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,3.482247353,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,5.368463039,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,7.252025604,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,7.898321152,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,8.49215889,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,8.807908058,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,8.445924759,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,8.095727921,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,8.121548653,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,9.929805756,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,11.60897446,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,13.34439087,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,15.15636158,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,16.49877548,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,15.90407181,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,15.3306675,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,14.78924656,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,14.29017925,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,13.81042194,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,13.51291275,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_Q_PU_RY2017,"Capital stock, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,13.22287178,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1989,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1990,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1991,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1992,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1993,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1994,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1995,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1996,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1997,0.608781815,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1998,1.147159815,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",1999,1.944069386,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2000,2.993717194,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2001,4.101369858,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2002,4.592885017,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2003,5.038219452,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2004,5.293619156,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2005,5.058668137,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2006,5.050105572,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2007,5.127850056,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2008,6.431706429,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2009,7.487221718,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2010,8.018959045,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2011,9.143163681,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2012,9.927529335,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2013,9.503577232,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2014,9.021945953,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2015,8.595058441,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2016,8.207289696,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2017,7.941558361,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2018,7.797588825,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_PUPVT_V_XDC,"Capital stock, Public private partnership, Current prices, Domestic currency",2019,7.634190083,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1960,51.57630113,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1961,47.3876548,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1962,49.09071924,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1963,45.61927537,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1964,43.32281868,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1965,40.62505616,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1966,39.61268952,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1967,38.91670905,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1968,37.67633932,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1969,35.04180486,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1970,33.37195311,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1971,32.09614019,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1972,30.21346826,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1973,28.9800967,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1974,32.10871737,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1975,31.28746838,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1976,30.34439503,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1977,30.54368979,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1978,29.50621552,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1979,29.59472411,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1980,30.44823353,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1981,32.03300589,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1982,33.55361553,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1983,35.12419682,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1984,35.65201943,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1985,36.00901161,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1986,37.08782119,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1987,39.28167457,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1988,38.99134283,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1989,38.88310321,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1990,40.15475279,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1991,40.31549085,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1992,41.49039458,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1993,43.69239858,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1994,44.38247677,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1995,45.03464682,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1996,44.72405495,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1997,43.94261066,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1998,43.41069317,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",1999,44.32724827,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2000,45.02525779,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2001,45.34273142,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2002,46.47585731,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2003,45.89475531,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2004,46.53810444,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2005,49.06679218,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2006,48.08722295,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2007,49.32075658,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2008,51.61479978,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2009,56.77642081,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2010,62.97099191,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2011,71.07437908,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2012,75.7820284,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2013,77.05971013,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2014,76.44169617,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2015,76.88870219,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2016,77.54921079,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2017,76.5308602,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2018,76.25890544,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_POGDP_PT,"Capital stock, General government, Constant prices, Percent of GDP",2019,74.5209318,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1960,33.98034668,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1961,35.34304428,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1962,36.7468071,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1963,38.1930809,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1964,39.68338394,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1965,41.21927261,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1966,42.80237961,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1967,44.43439484,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1968,46.11707306,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1969,47.8522377,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1970,49.64177322,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1971,51.48764801,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1972,53.39189529,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1973,55.35663223,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1974,57.38404846,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1975,59.47640991,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1976,61.63608932,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1977,63.86552429,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1978,66.16725159,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1979,68.54390717,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1980,70.99822235,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1981,73.53301239,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1982,76.15122986,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1983,78.855896,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1984,81.65016937,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1985,84.53733063,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1986,87.52074432,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1987,90.60393524,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1988,93.79053497,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,97.08432007,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,100.259407,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,103.0185547,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,106.7629471,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,110.6302719,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,114.6251144,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,118.7522049,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,121.3086624,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,124.5337448,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,127.8180618,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,134.5269623,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,142.0015259,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,148.9111176,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,158.6200104,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,165.7131348,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,176.5403137,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,187.2480011,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,193.8825378,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,205.3660583,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,214.1979065,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,225.4849701,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,236.3840485,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,239.72435,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,237.4998779,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,234.8826904,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,234.6255951,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,235.025589,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,235.8833618,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,235.7673187,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,238.5920715,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_Q_PU_RY2017,"Capital stock, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,237.4834137,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1988,16.70262146,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1989,20.2763195,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1990,24.79366112,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1995,60.01556778,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1996,64.30381775,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1997,68.11518097,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1998,68.40818024,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",1999,75.10371399,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2000,79.18695831,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2001,84.21639252,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2002,92.23773956,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2003,98.31409454,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2004,106.1020279,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2005,112.1517563,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2006,120.9436646,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2007,129.6656799,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2008,138.7396698,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2009,145.4267731,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2010,142.0487213,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2011,144.6151123,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2012,142.9067841,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2013,140.3556061,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2014,138.0748291,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2015,136.5896759,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2016,135.4750824,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2017,135.5758667,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2018,137.6788788,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,CAPSTCK_S13_V_XDC,"Capital stock, General government, Current prices, Domestic currency",2019,137.1104126,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1960,17.30451134,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1961,15.89759826,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1962,16.47340471,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1963,15.31794882,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1964,14.56056522,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1965,13.67090362,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1966,13.350677,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1967,13.13974786,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1968,12.74707295,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1969,11.88286202,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1970,11.34499945,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1971,10.94090483,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1972,10.32908961,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1973,9.938029754,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1974,11.04676784,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1975,10.80096334,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1976,10.5126821,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1977,10.6208302,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1978,10.2992879,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1979,10.37087785,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1980,10.7131708,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1981,11.31754035,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1982,11.90508378,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1983,12.51628977,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1984,12.76038393,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1985,12.94591325,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1986,13.39441264,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1987,14.25212477,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1988,14.21278505,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1989,14.67939635,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1990,15.5626224,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1991,11.4782007,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1992,11.85434699,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1993,12.52898433,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1994,12.77465089,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1995,11.21523166,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1996,11.94625036,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1997,12.03294467,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1998,14.80889766,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",1999,15.05842175,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2000,15.73319441,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2001,15.4051477,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2002,15.40188505,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2003,16.17702842,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2004,15.89731598,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2005,14.30446782,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2006,15.55727148,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2007,18.72865626,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2008,16.41187993,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2009,13.98463015,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2010,12.75723772,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2011,11.17110478,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2012,8.961087173,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2013,7.642674586,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2014,7.000596687,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2015,6.860177123,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2016,7.420466777,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2017,7.199998846,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2018,7.545820222,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_POGDP_PT,"Gross fixed capital formation, Private sector, Constant prices, Percent of GDP",2019,7.695845975,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1960,11.40084267,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1961,11.85687542,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1962,12.33115005,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1963,12.82439613,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1964,13.33737087,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1965,13.87086582,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1966,14.42569923,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1967,15.00272655,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1968,15.6028347,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1969,16.22694778,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1970,16.87602425,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1971,17.55106544,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1972,18.25310707,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1973,18.98323059,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1974,19.74255943,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1975,20.5322628,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1976,21.35355186,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1977,22.2076931,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1978,23.09600067,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1979,24.01983833,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1980,24.98063087,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1981,25.97985458,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1982,27.01904869,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1983,28.09980965,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1984,29.22380066,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1985,30.39275169,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1986,31.60846138,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1987,32.87279892,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1988,34.18770981,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,36.6518898,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,38.85715103,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,29.33035469,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,30.50356674,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,31.72370911,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,32.99265671,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,29.5735302,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,32.40277863,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,34.10147095,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,43.60318756,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,45.7001915,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,49.61965179,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,50.59240341,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,52.56594086,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,58.41072845,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,60.30578995,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,54.58850861,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,62.72525406,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,77.98400879,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,68.10818481,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,55.5393219,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,47.88883591,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,37.67863846,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,28.08392906,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,23.29533768,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,21.48721504,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,20.96949387,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,22.57101822,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,22.18091393,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,23.60869026,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_Q_PU_RY2017,"Gross fixed capital formation, Private sector, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,24.52513313,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1988,6.088294983,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1989,7.654846668,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1990,9.609184265,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1995,14.94601536,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1996,17.1762085,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1997,18.6522007,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1998,23.33641243,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",1999,25.51350975,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2000,27.67033958,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2001,28.61244011,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2002,30.56716537,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2003,34.65385056,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2004,36.24422836,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2005,32.69566345,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2006,39.12793732,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2007,49.23817444,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2008,44.11484528,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2009,35.82015228,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2010,28.77752686,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2011,22.7298584,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2012,16.89846802,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2013,13.92027473,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2014,12.64501381,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2015,12.18682861,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2016,12.96323013,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2017,12.75493431,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2018,13.62333012,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PS_V_XDC,"Gross fixed capital formation, Private sector, Current prices, Domestic currency",2019,14.1595211,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1989,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1990,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1991,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1992,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1993,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1994,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1995,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1996,0.418333666,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1997,0.386159082,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1998,0.492604634,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",1999,0.679923534,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2000,0.678136598,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2001,0.290941007,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2002,0.27291884,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2003,0.187055355,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2004,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2005,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2006,0.0923249889756865,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2007,0.527705059,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2008,0.517476077,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2009,0.57478903,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2010,0.650679706,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2011,0.607449023,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2012,0.0429510328537133,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2013,0.0444842348818233,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2014,0.0482295424831707,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2015,0.056314403,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2016,0.0572813356973637,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2017,0.11154263,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2018,0.109448534,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_POGDP_PT,"Gross fixed capital formation, Public private partnership, Constant prices, Percent of GDP",2019,0.117724375,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,1.134680152,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,1.094378233,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,1.450420737,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,2.063472271,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,2.138720274,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,0.955486119,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,0.931459725,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,0.675404608,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,0.0,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,0.372244477,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,2.197304249,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,2.147490501,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,2.282748461,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,2.44255805,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,2.048844099,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,0.134607971,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,0.135590658,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,0.148032889,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,0.172136158,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,0.174234062,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,0.343627483,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,0.342432827,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_PUPVT_Q_PU_RY2017,"Gross fixed capital formation, Public private partnership, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,0.375164211,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1960,3.400247493,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1961,3.123796444,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1962,3.236939198,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1963,3.009897991,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1964,2.861076066,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1965,2.686262207,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1966,2.623339316,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1967,2.581892754,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1968,2.504734235,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1969,2.33492132,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1970,2.229234037,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1971,2.149831466,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1972,2.029612922,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1973,1.952771677,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1974,2.170633028,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1975,2.122333677,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1976,2.065687794,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1977,2.086938307,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1978,2.023756824,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1979,2.037823965,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1980,2.105082773,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1981,2.223838135,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1982,2.339287252,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1983,2.45938597,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1984,2.50734928,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1985,2.543804881,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1986,2.631932475,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1987,2.800468546,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1988,2.792738338,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1989,2.70441817,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1990,2.596355342,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1991,2.984695108,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1992,3.082505253,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1993,3.25793208,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1994,3.321813171,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1995,2.723499179,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1996,2.952522742,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1997,2.908331521,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1998,4.04601655,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",1999,4.287741888,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2000,4.055775364,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2001,4.867371356,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2002,4.035787462,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2003,4.969195758,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2004,4.834619776,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2005,3.852879202,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2006,4.963428931,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2007,4.292720913,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2008,5.023494049,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2009,5.295241839,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2010,3.696021795,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2011,2.498010974,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2012,2.557456411,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2013,3.412084649,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2014,3.632848717,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2015,3.836543948,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2016,3.570599954,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2017,4.529999694,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2018,3.245299954,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_POGDP_PT,"Gross fixed capital formation, General government, Constant prices, Percent of GDP",2019,2.412428779,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1960,2.240206957,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1961,2.329815149,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1962,2.423007488,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1963,2.51992774,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1964,2.620724678,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1965,2.725553751,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1966,2.834575653,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1967,2.947958469,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1968,3.065876722,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1969,3.188511848,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1970,3.31605196,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1971,3.448693991,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1972,3.58664155,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1973,3.730107069,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1974,3.879311323,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1975,4.03448391,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1976,4.19586277,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1977,4.363697052,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1978,4.538244724,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1979,4.719774246,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1980,4.908565044,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1981,5.104907036,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1982,5.309103012,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1983,5.521466732,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1984,5.742325306,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1985,5.972018242,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1986,6.210898399,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1987,6.459334373,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1988,6.717707157,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1989,6.752460003,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1990,6.482645988,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1991,7.626819611,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1992,7.931892395,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1993,8.249167442,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1994,8.579133987,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1995,7.181615829,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1996,8.008365631,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1997,8.242237091,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1998,11.91305542,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",1999,13.01269341,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2000,12.79118252,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2001,15.98504734,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2002,13.77396107,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2003,17.94237709,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2004,18.33992386,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2005,14.70330334,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2006,20.01201439,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2007,17.87440491,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2008,20.84715843,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2009,21.02981186,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2010,13.87433434,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2011,8.425456047,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2012,8.015034676,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2013,10.40024185,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2014,11.15044975,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2015,11.72715855,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2016,10.86078262,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2017,13.95549297,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2018,10.15360546,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_Q_PU_RY2017,"Gross fixed capital formation, General government, Constant prices, Purchasing power parity (PPP) international dollar, ICP benchmark 2017",2019,7.687931538,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1988,1.196318388,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1989,1.410269499,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1990,1.603126884,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1995,3.629480362,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1996,4.245109558,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1997,4.508188725,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1998,6.375864029,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",1999,7.264728069,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2000,7.132987499,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2001,9.040314674,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2002,8.009577751,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2003,10.64483356,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2004,11.02243042,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2005,8.806510925,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2006,12.48346806,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2007,11.28568745,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2008,13.50306416,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2009,13.5632019,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2010,8.337413788,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2011,5.082705498,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2012,4.822751045,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2013,6.214729309,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2014,6.561929226,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2015,6.815465927,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2016,6.237682343,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2017,8.024980545,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2018,5.859109879,IMF.FAD:ICSD(1.0.0),2025-07-01
+GRC,P51G_S13_V_XDC,"Gross fixed capital formation, General government, Current prices, Domestic currency",2019,4.438606739,IMF.FAD:ICSD(1.0.0),2025-07-01

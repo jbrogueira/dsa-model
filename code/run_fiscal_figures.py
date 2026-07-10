@@ -46,6 +46,8 @@ parser.add_argument('--config', type=str, default=None,
                     help='JSON config file (same format as calibration input)')
 parser.add_argument('--n-sim', type=int, default=None,
                     help='Override simulation size')
+parser.add_argument('--output-dir', type=str, default='output/fiscal_test',
+                    help='Directory for figures and fiscal_results.json')
 args = parser.parse_args()
 
 _t_start = time.perf_counter()  # wall-clock start (includes model build + warmup)
@@ -56,7 +58,7 @@ if args.backend == 'jax':
     dev_type = devices[0].platform.upper() if devices else 'UNKNOWN'
     print(f"JAX backend: {dev_type} ({len(devices)} device(s): {devices})")
 
-OUTPUT_DIR = 'output/fiscal_test'
+OUTPUT_DIR = args.output_dir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -84,10 +86,12 @@ if args.config:
                  ['tau_c_path', 'tau_l_path', 'tau_p_path', 'tau_k_path',
                   'pension_replacement_path']}
 
-    # Warmup sim to get steady-state Y. With eta_g=0 / K_g=0 (Greek config),
-    # public investment has no production feedback, so I_g=0 here is harmless;
-    # the spending paths below are sized off the resulting mean(Y).
+    # Warmup sim to get steady-state Y. The warmup I_g level delta_g*K_g is the
+    # stationary public-investment level (keeps K_g flat at K_g_initial), so with
+    # eta_g != 0 it doubles as the baseline I_g path; with eta_g=0 / K_g=0 it is
+    # zero and harmless. The spending paths below are sized off the resulting Y.
     prod = config_data.get('production', {})
+    eta_g_cfg = prod.get('eta_g', 0.0)
     I_g_warmup = np.full(T_TR, prod.get('delta_g', 0.05) * prod.get('K_g', 0.0))
 
     print("Calibrating baseline fiscal paths …")
@@ -100,18 +104,29 @@ if args.config:
     # Government spending lines are fixed shares of Y(t): pass the SS-calibrated
     # ratios and let the budget multiply by each run's realized Y_path, so levels
     # move with output and the shares stay at their SS values (GDP-share mode).
+    # Exception: with eta_g != 0 the I_g line is a constant LEVEL delta_g*K_g
+    # (the stationary level; a GDP-share I_g would need an I_g↔K_g↔Y fixed
+    # point and is rejected by simulate_transition).
     G_over_Y       = paths.get('G_over_Y', 0.13)
     I_g_over_Y     = paths.get('I_g_over_Y', 0.03)
     defense_over_Y = paths.get('defense_over_Y', 0.0)
     other_over_Y   = paths.get('other_net_spending_over_Y', 0.0)
     G_path = I_g_path = defense_path = other_path = None  # ratio mode → no levels
+    if eta_g_cfg != 0.0:
+        I_g_path = I_g_warmup      # level mode for I_g only
 
     B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
     B_initial = B_over_Y * Y0          # initial debt level pins B/Y at t=0
     target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
     print(f"  Y(0) = {Y0:.4f}  (warmup n_sim=50)")
-    print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
-          f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
+    if eta_g_cfg != 0.0:
+        print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
+              f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
+        print(f"  I_g = {I_g_path[0]:.4f} (level = delta_g*K_g, K_g flat at "
+              f"{prod.get('K_g', 0.0)})")
+    else:
+        print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
+              f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
     print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
 
 else:
@@ -175,9 +190,12 @@ else:
 base_paths = dict(r_path=r_path, G_path=G_path, I_g_path=I_g_path, **tax_paths)
 if args.config:
     # GDP-share mode: spending lines are ratios of Y(t) (constant shares across
-    # scenarios; each scenario's budget multiplies by its own Y_path).
+    # scenarios; each scenario's budget multiplies by its own Y_path). With
+    # eta_g != 0 the I_g line stays a level (base_paths['I_g_path'] above);
+    # omitting 'I_g_over_Y' keeps _build_cf_paths in level mode for I_g only.
     base_paths['G_over_Y']         = G_over_Y
-    base_paths['I_g_over_Y']       = I_g_over_Y
+    if eta_g_cfg == 0.0:
+        base_paths['I_g_over_Y']   = I_g_over_Y
     base_paths['defense_over_Y']   = defense_over_Y
     base_paths['other_net_over_Y'] = other_over_Y
 else:
@@ -238,8 +256,14 @@ scn_g_nfa = FiscalScenario(
     n_post            = N_POST,
 )
 
-# --- I_g shock: same size as G shock (2% of Y(t) in config mode) ---
-delta_Ig = np.full(T_TR, 0.02) if args.config else np.full(T_TR, 0.02 * Y_path.mean())
+# --- I_g shock: same size as G shock. Config mode: ratio delta (2% of Y(t))
+# when I_g is in GDP-share mode (eta_g=0); LEVEL delta 0.02*Y(0) when I_g is a
+# level path (eta_g != 0) — the shock is then 2% of initial output, constant. ---
+if args.config:
+    delta_Ig = (np.full(T_TR, 0.02) if eta_g_cfg == 0.0
+                else np.full(T_TR, 0.02 * Y0))
+else:
+    delta_Ig = np.full(T_TR, 0.02 * Y_path.mean())
 
 scn_ig_debt = FiscalScenario(
     name           = 'Ig_shock_debt',

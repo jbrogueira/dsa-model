@@ -507,6 +507,10 @@ def _apply_shock(scenario: FiscalScenario,
     # spending lines (and their shocks) are shares of Y(t); the budget multiplies
     # by each run's realized Y_path, so levels move with output and the SS ratios
     # are preserved. delta_G_path / delta_I_g_path are then ratio deltas.
+    # The I_g line is per-line: with eta_g != 0 the caller passes I_g as a level
+    # path (no 'I_g_over_Y' key) since a GDP-share I_g would need an I_g↔K_g↔Y
+    # fixed point; delta_I_g_path is then a level delta while the other lines
+    # stay ratios.
     ratio_mode = any(k in base_paths for k in
                      ('G_over_Y', 'I_g_over_Y', 'defense_over_Y', 'other_net_over_Y'))
     if ratio_mode:
@@ -519,10 +523,16 @@ def _apply_shock(scenario: FiscalScenario,
                 arr = np.concatenate([arr, np.full(T - len(arr), arr[-1])])
             return arr[:T]
         cf['G_over_Y']         = _rbase('G_over_Y')   + _shock(scenario.delta_G_path)
-        cf['I_g_over_Y']       = _rbase('I_g_over_Y') + _shock(scenario.delta_I_g_path)
+        if 'I_g_over_Y' in base_paths:
+            cf['I_g_over_Y'] = _rbase('I_g_over_Y') + _shock(scenario.delta_I_g_path)
+            cf['I_g_path']   = None
+        else:
+            cf['I_g_over_Y'] = None
+            cf['I_g_path']   = (I_g if I_g is not None else np.zeros(T)) \
+                               + _shock(scenario.delta_I_g_path)
         cf['defense_over_Y']   = _rbase('defense_over_Y')      # baseline line, no shock
         cf['other_net_over_Y'] = _rbase('other_net_over_Y')    # baseline closure, no shock
-        cf['G_path'] = cf['I_g_path'] = None
+        cf['G_path'] = None
         cf['defense_spending_path'] = cf['other_net_spending_path'] = None
     else:
         cf['G_path']  = (G       if G       is not None else np.zeros(T)) + _shock(scenario.delta_G_path)
@@ -1411,7 +1421,8 @@ def debt_fan_chart(
         T = len(result.cf_macro['Y'])
         B_gdp = result.B_gdp_path[:T]
         ax.plot(np.arange(T), B_gdp * 100.0,
-                label=label, color=colours[i % len(colours)], linewidth=2)
+                label=label, color=colours[i % len(colours)], linewidth=2,
+                marker='o' if i == 0 else None, markersize=3)
 
     ax.axhline(y=60.0, color='black', linestyle='--', alpha=0.4, label='60% reference')
     ax.set_xlabel('Period')
