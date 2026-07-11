@@ -10,10 +10,14 @@ lifecycle_perfect_foresight.py # Lifecycle model with perfect foresight prices (
 lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simulate)
 fiscal_experiments.py          # Fiscal scenario framework (debt/tax/NFA-constrained experiments)
 test_olg_transition.py         # Pytest tests (83 tests, incl. 15 JAX tests, 4 cross-validation classes)
-run_fiscal_figures.py          # Fiscal shock figures: G, Ig, or both shocks; CLI --shock flag
+run_fiscal_figures.py          # Fiscal shock figures: G, Ig, or both shocks; CLI --shock, --output-dir flags
 regen_fiscal_figures_from_json.py  # Re-plot fiscal figures from a saved fiscal_results.json (no simulation)
 test_fiscal_experiments.py     # Pytest tests for fiscal experiments (39 tests)
 validate_backends.py           # NumPy-vs-JAX equivalence check (per-path n_sim-scaling test)
+pin_baseline_closure.py        # Pin fiscal.other_net_spending_over_Y at the initial SS (--write)
+normalize_A_tfp.py             # Root-find A_tfp s.t. initial-SS Y = 1 at fixed _derived.theta (--write)
+run_scale_loop.sh              # Outer loop: SMM <-> A_tfp normalization until joint fixed point, then closure re-pin
+chain_fiscal_after_loop.sh     # Waits for run_scale_loop.sh, gates on the A[0] check, runs the G+Ig set
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 ```
 
@@ -124,7 +128,7 @@ In `olg_transition.py`:
 - Endogenous retirement window (`retirement_window`)
 - Schooling phase with child costs (`schooling_years`, `child_cost_profile`)
 - Government spending on goods (`govt_spending_path` in OLGTransition)
-- Public capital in production (`eta_g`, `K_g_initial`, `delta_g` in OLGTransition)
+- Public capital in production (`eta_g`, `K_g_initial`, `delta_g` in OLGTransition). **Active in the GR config since 2026-07-10:** `eta_g=0.05`, `K_g=0.745` (= K_g/Y at the Y_ss=1 normalization; IMF ICSD 2019), `delta_g=0.04738255` (= (I_g/Y)/(K_g/Y) = 0.0353/0.745, keeps baseline K_g stationary at the level-I_g path)
 - Public investment path (`I_g_path` in OLGTransition)
 - Small open economy with sovereign debt (`economy_type`, `r_star`, `B_path` in OLGTransition)
 - Net foreign assets accounting (NFA) in SOE mode
@@ -157,6 +161,7 @@ In `olg_transition.py`:
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
 - Fiscal G/I_g shocks pass `govt_spending_path=` and `I_g_path=` as explicit args to `simulate_transition()`; `transfer_floor=` (absolute value) is also an explicit arg — no external mutation needed
 - GDP-share spending mode: G, I_g, defense, and other-net spending can be passed as **ratios of Y(t)** via `G_over_Y=/I_g_over_Y=/defense_over_Y=/other_net_over_Y=` (scalar or `(T,)`) instead of level paths. The budget then uses `level = ratio · Y_path[t]`, so each run's spending tracks its own realized output and the SS shares are preserved. A set ratio takes precedence over the level path for that line; ratios default None → level-path behavior (backward compatible). `run_fiscal_figures.py --config` uses ratio mode (shocks are ratio deltas, e.g. 0.02 = 2% of Y(t); `B_initial = B_over_Y · Y(0)`); the hardcoded test branch stays in level mode. `I_g_over_Y` is rejected when `eta_g != 0` (I_g→K_g→Y simultaneity needs a fixed point — pass an I_g level there)
+- Mixed ratio/level mode (since 2026-07-10): with `eta_g != 0`, `run_fiscal_figures.py --config` passes I_g as a constant **level** `delta_g · K_g` (the stationary value, so baseline K_g stays flat) and a **level** Ig-shock delta `0.02 · Y(0)`, while G/defense/other stay ratios of Y(t). `_apply_shock` (fiscal_experiments.py) treats the I_g line per-line: level mode when `base_paths` has no `I_g_over_Y` key, ratio mode otherwise. Note the resulting G-vs-Ig shock asymmetry: G is 2% of each run's realized Y(t), Ig is 2% of initial Y, constant
 
 ## JAX Backend
 

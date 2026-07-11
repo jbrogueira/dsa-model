@@ -1,8 +1,11 @@
 # Public capital (K_g) activation + τ_l-matches-baseline-debt — handoff plan
 
-Status as of 2026-07-10 (originally 2026-06-15). Decisions in §6 are taken; §4 items 1–3
-are implemented (uncommitted). Remaining: run `normalize_A_tfp.py --write`, re-run
-`pin_baseline_closure.py --write`, sanity checks (§4.5), then the Ig run (§7).
+Status as of 2026-07-10 EOD (originally 2026-06-15): **COMPLETE.** Decisions taken (§6),
+code implemented (§4), calibration at Y_ss=1 done on a V100 (θ + A_tfp=1.6061 + closure
+−0.096295 in the config, `dd5be23`; targets 0.0%, report `calibration_GR_20260710_153659.md`),
+A[0] checks pass (§4.5, incl. new Ig case), G+Ig run at r_B=0.021 in `output/fiscal_test_kg/`
+(Ig multiplier 0.829, G 0.0). Open follow-up (not this plan): rerun G+Ig at r_B=0 for the
+draft's §4 — see `FISCAL_EXPERIMENTS_STATUS.md` `## Session 2026-07-10`.
 
 ## 1. Goal
 

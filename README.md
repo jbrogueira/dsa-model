@@ -4,7 +4,45 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-07-09)
+## Current status (handoff 2026-07-10)
+
+Public capital (K_g) activated end-to-end: production-channel decisions taken from IMF data, model recalibrated at the Y_ss = 1 normalization on a cloud V100, G + I_g fiscal sets run, and the draft's I_g subsection pushed to Overleaf (mechanism only). Committed: `17ce0a0` (code + data + decisions), `dd5be23` (calibrated config + results), plus this handoff commit. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-10`); plan: `code/docs/PUBLIC_CAPITAL_KG_PLAN.md` (complete).
+
+### Completed this session
+
+- **Calibration targets from data**: K_g/Y = 0.745 (IMF ICSD, Greece general government, 2019 — dataset ends 2019; `data/IMF_ICSD_GR.csv`, inventory §1.12); I_g/Y = 0.0353 (DATA-sheet mean 2015–19, = ICSD); δ_g = 0.0353/0.745 = 0.04738255; reference year stays 2023.
+- **Code**: level-path I_g when `eta_g ≠ 0` (baseline δ_g·K_g, shock 0.02·Y(0)); per-line mixed ratio/level mode in `_apply_shock`; `normalize_A_tfp.py` (root-find A_tfp s.t. initial-SS Y = 1 at fixed θ); `run_scale_loop.sh` (SMM ↔ A_tfp outer loop + closure re-pin); `chain_fiscal_after_loop.sh` (gated fiscal chain); Ig case added to `check_a0_predetermination.py`.
+- **Recalibration at Y_ss = 1** (V100): all five SMM targets at 0.0% (Q = 7.4e-9), report `code/output/calibration/calibration_GR_20260710_153659.md`.
+
+  | | ν | β | τ_p | ρ_pens | m_good | A_tfp | closure O/Y |
+  |---|---|---|---|---|---|---|---|
+  | old (2026-06-14) | 36.907 | 0.9432 | 0.1978 | 0.1663 | 0.0428 | 1.0 | −0.0911 |
+  | new (2026-07-10) | 20.656 | 0.9419 | 0.1978 | 0.1697 | 0.0845 | 1.6061 | −0.0963 |
+
+  ν and m_good move with the output scale (wages ×2.6 in model units); the tax-rate parameters are scale-clean.
+- **A[0] predetermination**: exactly 0.0 on τ_l and Ig shocks, both backends — the MIT stitching survives the K_g→w channel.
+- **G + I_g results at r_B = 0.021** (`code/output/fiscal_test_kg/`, n_sim = 2000, T = 60+20): I_g cumulative multiplier **0.829** (K_g → 1.167 long run, +2.3% on Y) vs G **0.000**; Δτ_l debt-target G +3.03pp / Ig +2.74pp, NFA-target G +3.17pp / Ig +2.91pp; baseline terminal B/Y at T_bal = 3.886.
+- **Overleaf** (`docs/` at `9542542`): §4 Public Investment Shock subsection added — level-path design and transmission mechanism, **no quantitative results**; figure blocks stay commented.
+
+### Open question
+
+The draft's §4 is written at **r_B = 0** (deliberate: r_B − g = 0); this session's results are at **r_B = 0.021**, so no numbers went into the draft. To finish §4: rerun G + Ig at `prices.r_B = 0` under the new calibration — fresh V100, ~15 min setup + ~50 min run (only the τ_l scenarios need live solves; baseline/debt-financed debt paths are closed-form from the primary-deficit path). Then update §4.1's parameter values (I_g level 0.0353, O = −0.0963), refresh the G-shock numbers (old-θ vintage), fill the I_g subsection, and replace the stale `ig_*.png` in the Overleaf `output/fiscal_test/` folder.
+
+### Session notes (loop mechanics, for reruns)
+
+- `calibrate.py` writes `_derived.theta` back **only on formal convergence** — a maxiter-hit silently leaves stale θ; `run_scale_loop.sh` now aborts if the write-back line is absent.
+- The SMM ↔ A_tfp alternation contracts slowly (ratio ≈ 0.45/round, sign-alternating). Aitken-extrapolating the A_tfp sequence and re-seeding converged it in one further round — reuse this.
+- `m_good`'s SMM upper bound is in model output units — it was raised 0.1 → 0.2 for the Y_ss = 1 scale.
+- V100 instance terminated; nothing lives only remotely. Recipe: venv + `jax[cuda12] numpy scipy numba matplotlib quantecon`, rsync `code/` + `data/survival_GR.npz`, detached `nohup` launches.
+
+### Code state
+
+- Working tree clean after the handoff commit except the `docs` submodule pointer (pushed from inside; parent pointer deliberately not bumped) and pre-existing untracked files from other sessions.
+- `code/output/fiscal_test_kg/` is the current-calibration r_B = 0.021 run; `code/output/fiscal_test/` (draft figures) remains the old-θ vintage until the r_B = 0 rerun.
+
+---
+
+## Prior status (handoff 2026-07-09)
 
 ### Experiment-design section expanded — pushed to Overleaf (`docs/` at `d546153`)
 

@@ -1,6 +1,19 @@
 # Fiscal Experiments — Status Handoff
 
-Last updated: 2026-07-09 (experiment-design section expanded: baseline transition, shock timing, financing mechanics — see `## Session 2026-07-09`). **STATUS:** the G-shock figures/results are current under the recalibrated θ (ν=36.91, β=0.943, τ_p=0.198, ρ_pens=0.166, m=0.0428) and the SS-pinned closure (−0.091122): `fiscal_results.json` + figures + note tracked in `95e8a77` (2026-06-17). Still to redo: the **I_g shock** under the current calibration (needs a level-path I_g when `eta_g ≠ 0`).
+Last updated: 2026-07-10 (public capital activated + recalibrated at Y_ss=1; G+Ig run at r_B=0.021 — see `## Session 2026-07-10`). **STATUS:** current calibration is the K_g-activated one (θ: ν=20.656, β=0.9419, τ_p=0.1978, ρ_pens=0.1697, m=0.0845; A_tfp=1.6061; closure −0.096295); G+Ig results at r_B=0.021 in `output/fiscal_test_kg/` (`dd5be23`). Still to do: **rerun G+Ig at r_B=0** under this calibration for the draft's §4 (written at r_B=0), then fill the Ig subsection's numbers and refresh the G numbers (old-θ vintage).
+
+---
+
+## Session 2026-07-10: public capital (K_g) activated — IMF K_g/Y, Y_ss=1 recalibration on V100, G+Ig run
+
+Full activation of the public-capital channel per `PUBLIC_CAPITAL_KG_PLAN.md`; committed in `17ce0a0` (code + data + decisions) and `dd5be23` (calibrated config + results). Detail in the plan doc §§4–7 and memory.
+
+- **Decisions:** K_g/Y pinned to IMF 0.745 (ICSD, Greece general government, 2019 — latest; dataset ends 2019); I_g/Y = 0.0353 (DATA-sheet mean 2015–19, = ICSD 3.52%); δ_g = 0.0353/0.745 = 0.04738255; reference year stays 2023. Data: `data/IMF_ICSD_GR.csv` (force-added past `*.csv` ignore), inventory §1.12.
+- **Code:** with `eta_g ≠ 0`, `run_fiscal_figures.py --config` passes baseline I_g as a constant **level** δ_g·K_g (K_g flat in baseline) and a **level** Ig-shock delta 0.02·Y(0); `_apply_shock` gained a per-line mixed mode (I_g level alongside G/defense/other ratios when `base_paths` has no `I_g_over_Y` key). `check_a0_predetermination.py` gained an Ig/`eta_g≠0` case — all four cases (τ_l, Ig × numpy, jax) pass with |diff| exactly 0.0.
+- **Recalibration at Y_ss=1** (new `normalize_A_tfp.py` + `run_scale_loop.sh`, run on a Verda V100): A_tfp = 1.60606497 (Y_ss = 1.0005, so K_g = 0.745 = K_g/Y); θ = ν 20.6558 / β 0.941873 / τ_p 0.197779 / ρ_pens 0.169694 / m_good 0.084453 (all interior); closure re-pinned −0.096295 (SS primary balance = +0.0195 target). All 5 targets at 0.0% (Q = 7.4e-9), report `calibration_GR_20260710_153659.md`. Gotchas hit and fixed: (i) `calibrate.py` writes `_derived.theta` **only on formal convergence** — the loop now aborts if the write-back line is absent; (ii) the old `m_good` upper bound 0.1 was in pre-normalization units and binds at Y_ss=1 — raised to 0.2; (iii) the SMM↔A_tfp alternation contracts slowly (ratio ≈0.45/round) — Aitken-extrapolating the A_tfp sequence (seed 1.6069) converged it in one further round.
+- **G+Ig results at r_B=0.021** (`output/fiscal_test_kg/`, n_sim=2000, T=60+20, ~50 min on 1×V100): Ig cumulative multiplier **0.829** (production channel active: K_g → 1.167 long run, +2.3% on Y) vs G **0.000**; Δτ_l debt-target G +3.03pp / Ig +2.74pp, NFA-target G +3.17pp / Ig +2.91pp; baseline terminal B/Y at T_bal = 3.8863.
+- **Draft (Overleaf `9542542`):** §4 gained the Public Investment Shock subsection — level-path design and transmission mechanism only, **no numbers** — because §4 is written at r_B=0 while these results are r_B=0.021. Figure blocks stay commented; the `ig_*.png` currently in `docs/output/fiscal_test/` are stale pre-K_g vintage.
+- **Open:** rerun G+Ig at `prices.r_B=0` under this calibration (fresh V100: ~15 min setup + ~50 min; only the τ_l scenarios need live solves — baseline/debt-financed debt paths are closed-form from the primary-deficit path), then update §4.1's parameter values (I_g level 0.0353, O = −0.0963), refresh the G-shock numbers, fill the Ig subsection, replace the draft figures.
 
 ---
 

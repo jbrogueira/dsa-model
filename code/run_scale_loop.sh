@@ -13,8 +13,8 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 CFG=${1:-calibration_input_GR.json}
-MAXROUND=4
-TOL=5e-3
+MAXROUND=${MAXROUND:-8}
+TOL=${TOL:-5e-3}
 export MPLBACKEND=Agg
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 mkdir -p output/calibration
