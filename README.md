@@ -4,7 +4,42 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-07-10)
+## Current status (handoff 2026-07-14)
+
+§4 of the draft is finished: the G + I_g experiments were rerun at r_B = 0 under the 2026-07-10 calibration, the results and figures went into the draft, and the calibration appendix was synced to the new parameter vector. Overleaf `docs/` at `2b5e87e`. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-14`).
+
+### Completed this session
+
+- **r_B = 0 run** (`code/output/fiscal_test_kg_rB0/`; config `code/calibration_input_GR_rB0.json` = working config with the single edit `prices.r_B → 0.0`; the closure −0.096295 re-verified r_B-invariant, so no recalibration). n_sim = 2000, T = 60+20, all τ_l scenarios converged.
+
+  | | G | I_g |
+  |---|---|---|
+  | Δτ_l, terminal debt target | +3.07 pp | +2.83 pp |
+  | Δτ_l, terminal NFA target | +3.36 pp | +3.19 pp |
+  | cumulative multiplier (debt-financed) | 0.000 | 0.829 |
+
+  Baseline terminal B/Y at T_bal = 0.7423 (r_B = 0.021 reference: 3.8863). Acceptance gates: baseline/debt-financed real paths bit-identical to `fiscal_test_kg`; B[t+1] = B[t] + PD[t] at 5e-16; eval clean.
+- **Draft synced and pushed** (`2b5e87e`): §4.1 parameter values (I_g level, O = −0.096, terminal B/Y 0.74), G-shock numbers refreshed (Δτ_l +3.1/+3.4 pp), I_g subsection filled with figures and results paragraphs, all 8 figure PNGs replaced; calibration appendix + `data.tex` tables at the new θ (A = 1.606 at Y_ss = 1, K_g block active, r_B footnote, moments table refreshed). Full draft compiles clean.
+- **`eval_fiscal_results.py` drift fixed** — debt accumulation at r_B, bisection target anchored to the baseline's terminal B/Y at T_balance, mode-aware shock-path checks plus a new `shock_ig_path`. Both accepted runs now validate at **0 FAIL / 24 WARN / 104 PASS**. `run_fiscal_figures.py` embeds `r_B` and the shock modes in the results JSON.
+- **GPU instance sizing measured**: the fiscal run needs ≈29–30 GB resident. Verda's 6vCPU/23GB V100 OOMs bare and swap-thrashes with a 16 GB swapfile (949.7 min vs ~50 min on an adequate instance). Use ≥32 GB RAM. Launch detached runs with `python -u` (block-buffered logs hid the OOM kill); `pgrep -f <script>` over ssh matches its own shell — bracket the pattern.
+- Co-author contact list added to `code/CLAUDE.md`; co-authors notified of the Overleaf update.
+
+### Open threads
+
+1. **eval coverage** (~10 LOC): the eval main loop iterates baseline/debt_financed/tax_financed only — `nfa_constrained` blocks are never checked. Success: the four nfa_constrained scenarios appear in the report with identity checks passing.
+2. **Fiscal note stale**: `code/output/fiscal_test/g_aggregates_note.{md,pdf}` predates every current run — regenerate via `/fiscal-note` from `fiscal_test_kg_rB0/fiscal_results.json`.
+3. **m description**: the calibration-table entry for m now reads "medical-cost scale (model units)"; the previous "share of mean income" predates the Y_ss = 1 normalization and was not re-verified — check which reading is correct.
+4. Pre-r_B result JSONs evaluated without `--config` fail the debt-accumulation check spuriously (fallback to r = 0.04) — pass `--config` or re-run to embed `r_B`.
+
+### Code state
+
+- `code/eval_fiscal_results.py` (check fixes), `code/run_fiscal_figures.py` (params embed), `code/CLAUDE.md` (co-authors + eval conventions), `code/calibration_input_GR_rB0.json` + `code/output/fiscal_test_kg_rB0/` (run inputs/outputs) — in this handoff commit.
+- `docs/` submodule at `2b5e87e` on Overleaf master; parent pointer bumped in this handoff commit.
+- V100 instance terminated; nothing lives only remotely.
+
+---
+
+## Prior status (handoff 2026-07-10)
 
 Public capital (K_g) activated end-to-end: production-channel decisions taken from IMF data, model recalibrated at the Y_ss = 1 normalization on a cloud V100, G + I_g fiscal sets run, and the draft's I_g subsection pushed to Overleaf (mechanism only). Committed: `17ce0a0` (code + data + decisions), `dd5be23` (calibrated config + results), plus this handoff commit. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-10`); plan: `code/docs/PUBLIC_CAPITAL_KG_PLAN.md` (complete).
 

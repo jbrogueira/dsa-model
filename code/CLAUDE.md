@@ -2,6 +2,12 @@
 
 Overlapping Generations (OLG) model simulating demographic and policy transitions with heterogeneous agents.
 
+## Co-authors
+
+- K.Slawinska@esm.europa.eu
+- Ramon.Marimon@eui.eu
+- L.Zavalloni@esm.europa.eu
+
 ## Structure
 
 ```
@@ -107,6 +113,7 @@ In `olg_transition.py`:
 - `run_debt_financed()` / `run_tax_financed()` / `run_nfa_constrained()` (`fiscal_experiments.py`): Type A (one sim), Type B (Illinois/modified-regula-falsi root-find on scalar Δτ to hit `balance_condition` — keeps the opposite-sign bracket, secant step, midpoint fallback; replaced pure bisection 2026-06-17, ~1 interior iter vs ~10–15), Type C (NFA/CA band around baseline; Mode I: shock scale bisect; Mode II: tax rate bisect). Type B `balance_condition` includes `terminal_nfa_gdp` (full NFA/Y at T_bal = target, the external-balance analogue of `terminal_debt_gdp`); Type C floor is per-period `NFA_t ≥ NFA_base_t − nfa_limit` (half-width 0 = exact baseline tracking).
 - `compare_scenarios()` / `fiscal_multiplier()` / `debt_fan_chart()` (`fiscal_experiments.py`): output utilities for plotting and multiplier calculation. `compare_scenarios` accepts a generic `<line>_gdp` key (any `cf_macro`/`cf_budget` line ÷ Y, e.g. `A_gdp`, `NFA_gdp`, `primary_deficit_gdp`, `tax_l_gdp`); `NFA_gdp` uses the full `NFA_path`. `MACRO_VARS`/`FISCAL_VARS` live in `run_fiscal_figures.py` and the regen script (keep in sync). The plotted `interest_payments` line is `r_B·B` (falls back to `r` when `olg.r_B` is unset; fixed 2026-07-07 — it was `r·B` while the B law of motion used `r_B`); `regen_fiscal_figures_from_json.py --r-b <rate>` recomputes the line from stored paths when re-plotting JSONs written before the fix.
 - **NFA in results is full on both sides.** `run_debt_financed`/`run_tax_financed`/`run_nfa_constrained` correct `cf_macro['NFA']` AND `base_macro['NFA']` from the partial `A − K_domestic` to the full `A − K_domestic − B` via `_correct_base_macro_nfa()` (fixed 2026-06-17). Plot/compare both sides on the same definition.
+- **`eval_fiscal_results.py` conventions (since 2026-07-14):** debt accumulation is checked at `r_B` (from the JSON `params` or `--config` `prices.r_B`; pre-r_B JSONs without `--config` fall back to `r` and fail spuriously — pass `--config`); `bisection_target` compares B/Y at `T_balance` against the same shock's baseline `B_gdp_path[T_balance]`; shock-path checks are mode-aware via `shock_mode_G`/`shock_mode_Ig` embedded in `params` by `run_fiscal_figures.py` (inferred for older JSONs: ratio for config-run G, level for Ig with `eta_g != 0`). The eval main loop iterates baseline/debt_financed/tax_financed only — `nfa_constrained` blocks are not checked.
 
 ## Model Features
 

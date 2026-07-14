@@ -146,11 +146,13 @@ def chk_budget_identity(budget, scenario):
     return _pass('budget_identity', scenario, 'FAIL')
 
 
-def chk_debt_accumulation(budget, B_gdp_path, Y, r_path, scenario):
+def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario):
+    """Debt accrues at the sovereign rate r_B (the rate in the B law of motion),
+    not the capital return r; the caller passes r_B when available."""
     PD   = _arr(budget, 'primary_deficit')
     Ygdp = np.asarray(Y, dtype=float)
     Bgdp = np.asarray(B_gdp_path, dtype=float)
-    r    = np.asarray(r_path, dtype=float)
+    r    = np.asarray(r_debt_path, dtype=float)
     T    = len(PD)
     # Reconstruct B levels: B_gdp_path[t] = B[t] / Y[min(t, T-1)]
     Y_ext = np.append(Ygdp, Ygdp[-1])
@@ -159,7 +161,7 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_path, scenario):
     mx = float(resid.max())
     if mx > IDENTITY_TOL * float(np.abs(B).mean() + 1):
         return _fail('debt_accumulation', scenario, 'FAIL', mx,
-                     f"max |B[t+1] - (1+r)*B[t] - PD[t]| = {mx:.2e}")
+                     f"max |B[t+1] - (1+r_B)*B[t] - PD[t]| = {mx:.2e}")
     return _pass('debt_accumulation', scenario, 'FAIL')
 
 
@@ -311,28 +313,48 @@ def chk_debt_financed_neutrality(base_macro, cf_macro, params, scenario):
     return results
 
 
-def chk_bisection_target(B_gdp_path, target, scenario):
-    terminal = float(B_gdp_path[-1])
+def chk_bisection_target(B_gdp_path, target, scenario, t_check=None, target_src='params'):
+    """The τ_l closure targets the baseline transition's terminal B/Y at
+    T_balance (not the initial-debt calibration value, and not the end of the
+    post-horizon extension), so the check is evaluated at t_check = T_balance
+    against the baseline's B_gdp_path there."""
+    idx = -1 if t_check is None or t_check >= len(B_gdp_path) else int(t_check)
+    terminal = float(B_gdp_path[idx])
     resid = abs(terminal - target)
     if resid > BISECT_TOL:
         return _fail('bisection_target', scenario, 'FAIL', resid,
-                     f"terminal B/Y = {terminal:.4f}, target = {target:.4f}, gap = {resid:.4f}")
+                     f"B/Y at T_bal = {terminal:.4f}, target = {target:.4f} "
+                     f"({target_src}), gap = {resid:.4f}")
     return _pass('bisection_target', scenario, 'FAIL')
 
 
-def chk_shock_g_path(base_budget, cf_budget, delta_G, scenario):
-    base_G = _arr(base_budget, 'govt_spending')
-    cf_G   = _arr(cf_budget,   'govt_spending')
-    dG     = np.asarray(delta_G, dtype=float)
-    if base_G is None or cf_G is None:
-        return _skip('shock_g_path', scenario, 'FAIL', 'no govt_spending in budget')
-    T = min(len(base_G), len(cf_G), len(dG))
-    resid = np.abs(cf_G[:T] - base_G[:T] - dG[:T])
+def chk_shock_line_path(check_name, base_budget, cf_budget, base_macro, cf_macro,
+                        delta, mode, line_key, scenario):
+    """Shock-line check in the mode the run used.
+    mode='level': cf - base = Δ (level paths; Ig with eta_g != 0, test branch).
+    mode='ratio': cf/Y_cf - base/Y_base = Δ (GDP-share paths; each run's spending
+    tracks its own realised output, so the level difference is not Δ)."""
+    base_L = _arr(base_budget, line_key)
+    cf_L   = _arr(cf_budget,   line_key)
+    dL     = np.asarray(delta, dtype=float)
+    if base_L is None or cf_L is None:
+        return _skip(check_name, scenario, 'FAIL', f'no {line_key} in budget')
+    if mode == 'ratio':
+        Y_base = _arr(base_macro, 'Y')
+        Y_cf   = _arr(cf_macro,   'Y')
+        if Y_base is None or Y_cf is None:
+            return _skip(check_name, scenario, 'FAIL', 'no Y for ratio-mode check')
+        T = min(len(base_L), len(cf_L), len(dL), len(Y_base), len(Y_cf))
+        resid = np.abs(cf_L[:T] / Y_cf[:T] - base_L[:T] / Y_base[:T] - dL[:T])
+        desc = f"max |{line_key}_cf/Y_cf - {line_key}_base/Y_base - Δ|"
+    else:
+        T = min(len(base_L), len(cf_L), len(dL))
+        resid = np.abs(cf_L[:T] - base_L[:T] - dL[:T])
+        desc = f"max |{line_key}_cf - {line_key}_base - Δ|"
     mx = float(resid.max())
     if mx > IDENTITY_TOL:
-        return _fail('shock_g_path', scenario, 'FAIL', mx,
-                     f"max |G_cf - G_base - ΔG| = {mx:.2e}")
-    return _pass('shock_g_path', scenario, 'FAIL')
+        return _fail(check_name, scenario, 'FAIL', mx, f"{desc} = {mx:.2e} ({mode} mode)")
+    return _pass(check_name, scenario, 'FAIL')
 
 
 def chk_labor_response_sign(base_macro, cf_macro, adjustment_scalar, scenario):
@@ -406,11 +428,13 @@ def chk_calibration_ratios(cf_budget, cf_macro, params, scenario):
 # Run all checks for one experiment (one shock type, one scenario key)
 # ---------------------------------------------------------------------------
 
-def run_scenario_checks(exp_data, scenario_key, params, shock_type):
+def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp=None):
     """
     exp_data : dict with keys baseline, counterfactual, base_budget, cf_budget,
                B_gdp_path, converged, adjustment_scalar
     scenario_key : 'baseline' | 'debt_financed' | 'tax_financed'
+    baseline_exp : the same shock's baseline scenario dict (anchors the
+               bisection-target check to the baseline terminal B/Y)
     """
     label    = f"{shock_type}/{scenario_key}"
     base_mac = exp_data.get('baseline', {})
@@ -422,6 +446,11 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type):
     adj_scl  = exp_data.get('adjustment_scalar')
     r_path   = cf_mac.get('r', base_mac.get('r', []))
     Y        = cf_mac.get('Y', base_mac.get('Y', []))
+    # Debt accrues at r_B, not the capital return r; fall back to r only when
+    # r_B is unavailable (pre-r_B JSONs evaluated without --config).
+    r_B      = params.get('r_B')
+    r_debt   = (np.full(max(len(Y), 1), float(r_B)) if r_B is not None
+                else np.asarray(r_path, dtype=float))
 
     results = []
 
@@ -431,14 +460,29 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type):
     results.append(chk_convergence(conv, label))
     results.append(chk_budget_identity(cf_bud, label))
     if len(B_gdp) > 1 and len(Y) > 0:
-        results.append(chk_debt_accumulation(cf_bud, B_gdp, Y, r_path, label))
+        results.append(chk_debt_accumulation(cf_bud, B_gdp, Y, r_debt, label))
     results.append(chk_nfa_accounting(cf_mac, B_gdp, label))
     results += chk_tax_revenue(cf_bud, cf_mac, params, label)
 
-    # Shock path check
+    # Shock path checks, in the mode the run used.  Explicit shock_mode_* keys
+    # are written by run_fiscal_figures; for older JSONs the mode is inferred:
+    # config runs (G_over_Y present) use GDP-share paths, except the I_g line,
+    # which is a level whenever eta_g != 0.
+    config_run = 'G_over_Y' in params
     delta_G  = params.get('delta_G_path')
     if shock_type == 'G' and delta_G is not None and scenario_key != 'baseline':
-        results.append(chk_shock_g_path(base_bud, cf_bud, delta_G, label))
+        g_mode = params.get('shock_mode_G') or ('ratio' if config_run else 'level')
+        results.append(chk_shock_line_path('shock_g_path', base_bud, cf_bud,
+                                           base_mac, cf_mac, delta_G, g_mode,
+                                           'govt_spending', label))
+    delta_Ig = params.get('delta_Ig_path')
+    if shock_type == 'Ig' and delta_Ig is not None and scenario_key != 'baseline':
+        ig_mode = params.get('shock_mode_Ig') or (
+            'ratio' if config_run and float(params.get('eta_g', 0.0)) == 0.0
+            else 'level')
+        results.append(chk_shock_line_path('shock_ig_path', base_bud, cf_bud,
+                                           base_mac, cf_mac, delta_Ig, ig_mode,
+                                           'public_investment', label))
 
     # Bisection target (tax-financed only)
     # terminal_debt_gdp: check B[T]/Y[T] == target (stock condition)
@@ -459,8 +503,14 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type):
                 else:
                     results.append(_pass('bisection_flow_target', label, 'FAIL'))
         elif len(B_gdp) > 0:
-            target = params.get('target_debt_gdp', 0.0)
-            results.append(chk_bisection_target(B_gdp, target, label))
+            T_bal = exp_data.get('T_balance')
+            base_Bgdp = (baseline_exp or {}).get('B_gdp_path')
+            if base_Bgdp and T_bal is not None and T_bal < len(base_Bgdp):
+                target, target_src = float(base_Bgdp[T_bal]), 'baseline terminal B/Y'
+            else:
+                target, target_src = params.get('target_debt_gdp', 0.0), 'params'
+            results.append(chk_bisection_target(B_gdp, target, label,
+                                                t_check=T_bal, target_src=target_src))
 
     # Terminal convergence
     if scenario_key != 'baseline':
@@ -553,6 +603,9 @@ def main():
         for key in ['alpha', 'delta', 'eta_g']:
             if key in prod and key not in params:
                 params[key] = prod[key]
+        prices = cfg.get('prices', {})
+        if 'r_B' in prices and params.get('r_B') is None:
+            params['r_B'] = prices['r_B']
 
     if not params:
         print("WARNING: no 'params' section in JSON and no --config provided. "
@@ -569,7 +622,8 @@ def main():
             exp = shock_data.get(scn_key)
             if exp is None:
                 continue
-            all_results += run_scenario_checks(exp, scn_key, params, shock_type)
+            all_results += run_scenario_checks(exp, scn_key, params, shock_type,
+                                               baseline_exp=shock_data.get('baseline'))
 
     print_report(all_results)
 

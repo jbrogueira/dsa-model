@@ -530,6 +530,11 @@ params_out = {
     'tau_k_path':    [float(x) for x in base_paths['tau_k_path']],
     'delta_G_path':  [float(x) for x in delta_G] if 'G'  in shock_types else None,
     'delta_Ig_path': [float(x) for x in delta_Ig] if 'Ig' in shock_types else None,
+    'r_B':           (float(economy.r_B) if getattr(economy, 'r_B', None) is not None
+                      else None),
+    'shock_mode_G':  'ratio' if args.config else 'level',
+    'shock_mode_Ig': ('ratio' if (args.config and eta_g_cfg == 0.0) else 'level')
+                     if 'Ig' in shock_types else None,
 }
 if args.config:
     fiscal = config_data.get('fiscal', {})
