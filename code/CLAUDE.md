@@ -17,8 +17,13 @@ lifecycle_jax.py               # JAX-accelerated lifecycle model (solve + simula
 fiscal_experiments.py          # Fiscal scenario framework (debt/tax/NFA-constrained experiments)
 test_olg_transition.py         # Pytest tests (83 tests, incl. 15 JAX tests, 4 cross-validation classes)
 run_fiscal_figures.py          # Fiscal shock figures: G, Ig, or both shocks; CLI --shock, --output-dir flags
-regen_fiscal_figures_from_json.py  # Re-plot fiscal figures from a saved fiscal_results.json (no simulation)
+regen_fiscal_figures_from_json.py  # Re-plot fiscal figures from a saved fiscal_results.json (no simulation); --budget-components SHOCK SCENARIO draws the stacked budget lines behind the primary balance (levels + deviations)
 test_fiscal_experiments.py     # Pytest tests for fiscal experiments (39 tests)
+build_health_flag_data.py      # Health-flag data side: coverage/CHE/GDP/population from DATA_GR.xlsx -> data/health_flag_GR.csv
+build_health_model_baseline.py # Health-flag model side (analytic, no solve): demographics/Abar/g_model -> data/health_model_baseline_GR.npz
+health_flag_decomposition.py   # Shapley decomposition of gov-health/GDP gap into coverage/demographics/residual (g=kappa*Abar*psi) + figures
+test_health_flag_decomposition.py  # Pytest tests (10) for the health-flag Shapley decomposition
+docs/HEALTH_FLAG_DECOMPOSITION.md  # Spec for the health-expenditure flag decomposition
 validate_backends.py           # NumPy-vs-JAX equivalence check (per-path n_sim-scaling test)
 pin_baseline_closure.py        # Pin fiscal.other_net_spending_over_Y at the initial SS (--write)
 normalize_A_tfp.py             # Root-find A_tfp s.t. initial-SS Y = 1 at fixed _derived.theta (--write)

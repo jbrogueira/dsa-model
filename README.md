@@ -4,7 +4,41 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-07-14)
+## Current status (handoff 2026-07-21)
+
+Two additions to the draft, both pushed. Fiscal §4 gained a budget-components view behind the primary balance, and a new §5 applies the model's government health-spending line as a measurement benchmark: the model-vs-data gap in health spending is decomposed exactly into coverage, demographics, and a residual "flag". Overleaf `docs/` at `6732aa2`; code at `7d93b68` on `origin/main`.
+
+### Completed this session
+
+- **Budget-components figures** (`regen_fiscal_figures_from_json.py --budget-components SHOCK SCENARIO`): one line per government-budget item as a share of Y, plus the primary balance, in two variants — levels and deviations from the baseline. Generated for the I_g / τ_l-financed scenario; figures + a subsection added to fiscal §4 in the draft.
+- **Health-expenditure flag decomposition** (new pipeline, spec in `code/docs/HEALTH_FLAG_DECOMPOSITION.md`). Government health spending is exogenous and multiplicative (`HSub = κ·m·Σ_j â(j) N_j`), so the model-vs-data gap in `g = gov health / GDP` decomposes exactly via the identity `g = κ·Ā·ψ` (coverage × age-cost index × residual). Contributions computed by a Shapley split; residual `ψ` is the flag (relative price, arrears, real intensity, everything else).
+  - `build_health_flag_data.py` → `data/health_flag_GR.csv`: coverage, CHE/GDP, population age shares from `data/DATA_GR.xlsx` (Eurostat SHA `hlth_sha11_hf`, nominal GDP, population by age), 2009–2023.
+  - `build_health_model_baseline.py` → `data/health_model_baseline_GR.npz`: model demographics reconstructed **analytically** (no transition solve — the health line is independent of the economic solution); validated against the live baseline `gov_health` to 0.46 % (MC tolerance).
+  - `health_flag_decomposition.py` → decomposition CSV + two figures (inputs; stacked contributions). `test_health_flag_decomposition.py`: 10 tests pass (Shapley additivity, order-invariance, closed form, anchor-zero).
+  - New draft §5 (`docs/DSA-LSA measurement.tex`) with the identity, data, Shapley method, results, both figures, and a §5.4 sketch of the endogenous-component (pension) extension.
+
+  Result, government health / GDP, 2009–2023 (pp of GDP contributions to the gap vs the calibrated benchmark g^m = 5.38 %):
+
+  | factor | sign / range | reading |
+  |---|---|---|
+  | residual (flag) | +0.4 … +1.7, positive every year | peaks 2009–10 and 2020 |
+  | coverage κ | negative from 2013 (−0.70 in 2014) | austerity coverage cut below model's 0.662 |
+  | demographics Ā | −0.33 … −0.76 | data younger than model over 25–84; shrinks as population ages |
+
+### Open threads
+
+1. **Health-flag steps 5–6**: the paper subsection (step 5) is done; the counterfactual extension (step 6) — feed the estimated data coverage path into the model to price the household/GE consequences of a flagged deviation — is not. Same template would seed the pension version (§5.4).
+2. Carried over from 2026-07-14: eval `nfa_constrained` coverage (~10 LOC); stale fiscal note (`code/output/fiscal_test/g_aggregates_note.*`); the calibration-table `m` description ("medical-cost scale" vs "share of mean income") not re-verified post-Y_ss=1.
+
+### Code state
+
+- All source committed and pushed: `7d93b68` (health-flag pipeline + budget-components edit) + three `docs`-submodule bumps. `origin/main` clean, 0 ahead.
+- `docs/` submodule at `6732aa2` on Overleaf master; parent pointer bumped.
+- Generated artifacts (`data/health_flag*.csv/npz`, `output/health_flag/*.png`) are untracked/gitignored and regenerable from the scripts. Memory: `health_flag_decomposition.md`.
+
+---
+
+## Prior status (handoff 2026-07-14)
 
 §4 of the draft is finished: the G + I_g experiments were rerun at r_B = 0 under the 2026-07-10 calibration, the results and figures went into the draft, and the calibration appendix was synced to the new parameter vector. Overleaf `docs/` at `2b5e87e`. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-14`).
 

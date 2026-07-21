@@ -21,3 +21,7 @@ output/test/
 
 # OS
 .DS_Store
+
+# Health-flag generated artifacts (regenerable from build_health_*.py)
+data/health_flag_age_shares_GR.npz
+data/health_model_baseline_GR.npz
