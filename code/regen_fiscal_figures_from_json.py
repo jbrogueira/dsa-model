@@ -17,6 +17,7 @@ Usage:
 """
 import argparse
 import json
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -62,6 +63,75 @@ FISCAL_LABELS = {
     'other_net_spending':'Other net spending',
     'interest_payments': 'Interest payments (r_B·B)',
 }
+
+# Budget-components chart: one line per budget item, as a share of Y.
+# Taxes solid, spending dashed; colors from the validated dataviz palette.
+BUDGET_COMPONENTS = [
+    # key                  label                        color      linestyle
+    ('tax_l',              'Labour tax',                '#104281', '-'),
+    ('tax_p',              'Payroll tax',               '#6da7ec', '-'),
+    ('tax_c',              'Consumption tax',           '#256abf', '-'),
+    ('tax_k',              'Capital tax',               '#1baf7a', '-'),
+    ('pension',            'Pensions',                  '#008300', '--'),
+    ('gov_health',         'Govt health',               '#e87ba4', '--'),
+    ('ui',                 'UI benefits',               '#eda100', '--'),
+    ('govt_spending',      'Govt spending (G)',         '#e34948', '--'),
+    ('defense_spending',   'Defense',                   '#4a3aa7', '--'),
+    ('public_investment',  'Public investment (I_g)',   '#eb6834', '--'),
+    ('other_net_spending', 'Other net spending',        '#898781', '--'),
+]
+
+
+def budget_components_chart(result, title, output_dir, filename,
+                            base_budget=None, base_Y=None):
+    """One line per budget item (/Y, in %) plus the primary balance (/Y).
+
+    Items are plotted with their budget sign: taxes and spending positive,
+    other_net_spending negative (it is a net-revenue residual).  The primary
+    balance is total revenue minus primary spending.
+
+    With *base_budget* and *base_Y* given, every line is the deviation of the
+    scenario's share of Y from the baseline's share of Y, in pp of Y.
+    """
+    cb = result.cf_budget
+    Y = np.asarray(result.cf_macro['Y'], dtype=float)
+    years = np.arange(len(Y))
+    deviations = base_budget is not None
+
+    def share(budget, y, key):
+        return np.asarray(budget[key], dtype=float) / y * 100.0
+
+    fig, ax = plt.subplots(figsize=(11.5, 6.0))
+    for key, label, color, linestyle in BUDGET_COMPONENTS:
+        s = share(cb, Y, key)
+        if deviations:
+            s = s - share(base_budget, base_Y, key)
+        ax.plot(years, s, color=color, linestyle=linestyle,
+                linewidth=1.8, label=label)
+
+    pb = -share(cb, Y, 'primary_deficit')
+    if deviations:
+        pb = pb + share(base_budget, base_Y, 'primary_deficit')
+    ax.plot(years, pb, color='#0b0b0b', linewidth=2.4, zorder=5,
+            label='Primary balance')
+    ax.axhline(0.0, color='#c3c2b7', linewidth=0.8, zorder=1)
+
+    ax.set_title(title)
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Deviation from baseline (pp of Y)' if deviations
+                  else 'Share of Output Y (%)')
+    ax.set_xlim(years[0], years[-1])
+    ax.grid(axis='y', color='#e1e0d9', linewidth=0.6)
+    ax.set_axisbelow(True)
+    for spine in ('top', 'right'):
+        ax.spines[spine].set_visible(False)
+    ax.legend(loc='center left', bbox_to_anchor=(1.01, 0.5),
+              frameon=False, fontsize=9)
+    fig.tight_layout()
+
+    path = os.path.join(output_dir, filename)
+    fig.savefig(path, dpi=150, bbox_inches='tight')
+    print(f"  saved {path}")
 
 
 def _to_arrays(d):
@@ -155,6 +225,35 @@ def regen(json_path, output_dir, shocks=None, r_b=None):
         plt.close('all')
 
 
+SCENARIO_LABELS = {
+    'baseline':        'baseline',
+    'debt_financed':   '{shock} shock (debt)',
+    'tax_financed':    '{shock} shock (τ_l, debt target)',
+    'nfa_constrained': '{shock} shock (τ_l, NFA@T)',
+}
+
+
+def regen_budget_components(json_path, output_dir, shock, scenario):
+    with open(json_path) as fh:
+        data = json.load(fh)
+    entry = data[shock][scenario]
+    label = SCENARIO_LABELS.get(scenario, scenario).format(shock=shock)
+    result = _rebuild_result(entry, label)
+    print(f"[{shock}/{scenario}] budget-components chart from {json_path} -> {output_dir}")
+    budget_components_chart(result,
+        title=f'Budget components and primary balance — {label}',
+        output_dir=output_dir,
+        filename=f'{shock.lower()}_{scenario}_budget_components.png')
+    plt.close('all')
+    budget_components_chart(result,
+        title=f'Budget components and primary balance — {label} — deviations from baseline',
+        output_dir=output_dir,
+        filename=f'{shock.lower()}_{scenario}_budget_components_dev.png',
+        base_budget=_to_arrays(entry['base_budget']),
+        base_Y=np.asarray(entry['baseline']['Y'], dtype=float))
+    plt.close('all')
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -165,5 +264,12 @@ if __name__ == '__main__':
     ap.add_argument('--r-b', type=float, default=None,
                     help='Sovereign rate r_B; recompute the interest line as '
                          'r_B·B from the stored paths (default: keep stored line).')
+    ap.add_argument('--budget-components', nargs=2, metavar=('SHOCK', 'SCENARIO'),
+                    default=None,
+                    help='Draw only the stacked budget-components chart for one '
+                         'shock/scenario (e.g. Ig tax_financed) and exit.')
     args = ap.parse_args()
-    regen(args.json, args.output_dir, shocks=args.shock, r_b=args.r_b)
+    if args.budget_components:
+        regen_budget_components(args.json, args.output_dir, *args.budget_components)
+    else:
+        regen(args.json, args.output_dir, shocks=args.shock, r_b=args.r_b)
