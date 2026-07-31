@@ -69,7 +69,7 @@ This document tracks all features from the theoretical model (DSA-LSA paper) and
 ### 11. Pension formula — `Done`
 
 **Paper:** `PENS_t = max{ρ·ȳ, b_min}` with minimum pension floor.
-**Code:** `pension = max(replacement_rate × w_ret × y_grid[i_y_last], pension_min_floor)`. Config: `LifecycleConfig.pension_min_floor`.
+**Code:** `pension = max(replacement_rate × w_ret × [λ·κ(ret)·y_grid[i_y_last] + (1−λ)·mean_κ·mean_y_employed] × α_mult, pension_min_floor)`, with `λ = pension_avg_weight`. Config: `LifecycleConfig.pension_min_floor`, `pension_avg_weight` (unset in the GR configs → λ = 0.443 derived at `calibrate.py:1093`).
 
 ### 12. Tax application to labor income — `Skipped`
 

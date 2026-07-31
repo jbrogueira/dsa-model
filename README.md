@@ -4,7 +4,56 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-07-21)
+## Current status (handoff 2026-07-31)
+
+A full audit of the paper draft against the code that produced the results. No code was run or changed; the draft was corrected where it misdescribed the implementation, and the implementation gaps that text cannot fix were recorded for a later re-run. Overleaf `docs/` at `9eafb13`; code unchanged on `origin/main` apart from docs.
+
+The reported run is unambiguous: every figure in `docs/output/` is byte-identical to `code/output/fiscal_test_kg_rB0/` and `code/output/health_flag/`, so the audit is against `fiscal_results.json` from that run (r_B = 0, K_g active, JAX, n_sim = 2000) and `output/calibration/calibration_GR_20260710_153659.md`.
+
+### Verified consistent
+
+Household budget constraints and all four tax bases; `HSub = κ·Σ_j m(j)N_j`; production function and both FOCs; `K_domestic`; `NFA = A − K − B`; the debt law and primary-deficit definition; the job-separation rule; Tauchen + Gauss–Hermite discretisation; MIT predetermination (`A[0]` identical to 8 dp across all eight scenarios). Every parameter in the draft's tables matches the configs to the reported precision, every entry in the baseline-moments table matches the calibration report, and every reported experiment number matches the results JSON (Δτ_l = 3.07/3.36/2.83/3.19 pp, ΔY = +1.97/+3.07/+3.23 %, K_g +47.1 %, ΔB/Y = +1.197/+1.103).
+
+### Implementation gaps found — deferred, `code/docs/OPEN_ISSUES_2026-07-30.md`
+
+| # | Gap | Magnitude |
+|---|---|---|
+| 1 | `L` is aggregated from `effective_y_sim`, which carries UI | `w·L − 𝓑^lab = UI`, exactly 1.887 % of `w·L`; Y and K 1.9 % above their model definitions |
+| 2 | Bequest circuit open in every reported fiscal run (`recompute_bequests=False`) | 3.77 % of Y per period leaves the economy; newborns receive nothing; `τ^beq = 0` |
+| 3 | `z_last` is the previous income state, not the last *employed* one | UI pays zero from the second period of a spell; P(spell continues) = 0.5 |
+| 4 | `B_initial` sized off a 50-draw warmup Y(0) | B/Y = 1.633 at t=0, not 1.64 |
+| 5 | `Y_ss = 1` does not carry to the transition (Y(0) = 0.885) | `K^g/Y` = 0.84 and `I^g/Y` = 0.040 against the 0.745 / 0.0353 ICSD targets |
+| 6 | `pension_avg_weight` and `tau_beq` absent from the configs | λ = 0.443 comes from a silent fallback at `calibrate.py:1093` |
+
+Items 1–4 share one re-run: `run_scale_loop.sh` (~40–60 min) then `chain_fiscal_after_loop.sh` (15.8 h GPU, measured), after which every number in §4, §5 and the appendix must be re-derived. Predicted from item 1 alone: L, K, Y all −1.887 %, τ^p → 0.194, β below 0.942.
+
+### Draft corrections pushed (Overleaf `dce76c5` → `9eafb13`)
+
+- **Pension base**: λ = 0.443 with its derivation replaces "λ = 1 in the baseline". This is deliberate code (`IMPLEMENTATION_PLAN.md:51`, `calibration_plan.md:63`), so the text was the stale side.
+- **`z_last`**: previous period's income state; `z'_last = z`; UI zero beyond one period.
+- **Parameter table**: λ, τ^beq, n_a, n_y, n_α, n_sim added; footnote on `K^g/Y` and `I^g/Y` along the transition; extensive-margin labour supply removed (no such option exists).
+- **§5 measurement**: `ψ^m = m·N̄/Y`; coverage falls below the calibrated 0.662 from **2011**, not 2013; the "gap is zero in the calibration reference year" claim dropped — the health target is an OECD aggregate while the decomposition uses Eurostat SHA, so no year has a zero gap (2020 is +0.42 pp).
+- **§4**: debt starts at 1.63; `O_t` pinned at the initial steady state (1.95 % of Y, 1.6 % at t=0); I_g multiplier 0.76 through T and 0.83 over the full path; `eq:foc-k` cross-reference.
+- **Abstract / introduction**: migration removed (absent from the code); the "problem is not in the model … but in the data" clause replaced by a pointer to the three-way split, which §5 itself defines as carrying model misspecification.
+- Restored `\input{DSA-LSA not implemented}` — it was the document's only unresolved cross-reference.
+
+Build verified after each pass: 35 pages, zero undefined references, overfull-hbox set unchanged from before the edits.
+
+### Open threads
+
+1. **Items 1–4 above** need the batched re-run and a full re-derivation of the reported numbers. Decide items 2 and 3 (both are genuine modelling choices, not clear bugs) before launching.
+2. `experiments.tex:11` still states the bequest transfer was solved as a fixed point — left in place pending the decision on item 2.
+3. `calibration.tex:332` asserts a ρ ∈ {0.90, 0.95, 0.97, 0.99} SMM re-run and σ / borrowing-constraint robustness checks; no corresponding output exists in `output/calibration/`. Confirm whether these were run.
+4. Carried over: health-flag step 6 (counterfactual coverage path); eval `nfa_constrained` coverage; stale `code/output/fiscal_test/g_aggregates_note.*`.
+
+### Code state
+
+- No source file changed this session. `code/docs/OPEN_ISSUES_2026-07-30.md` is new; `code/CLAUDE.md` and `code/docs/model_vs_implementation.md` gained annotations for gaps 1–3 and 6 at the exact call sites.
+- `docs/` submodule at `9eafb13` on Overleaf master, pushed. One upstream Overleaf commit (`623d85a`, footnote wording in the introduction) arrived mid-session and was preserved through a rebase.
+
+---
+
+## Prior status (handoff 2026-07-21)
 
 Two additions to the draft, both pushed. Fiscal §4 gained a budget-components view behind the primary balance, and a new §5 applies the model's government health-spending line as a measurement benchmark: the model-vs-data gap in health spending is decomposed exactly into coverage, demographics, and a residual "flag". Overleaf `docs/` at `6732aa2`; code at `7d93b68` on `origin/main`.
 
@@ -22,7 +71,7 @@ Two additions to the draft, both pushed. Fiscal §4 gained a budget-components v
   | factor | sign / range | reading |
   |---|---|---|
   | residual (flag) | +0.4 … +1.7, positive every year | peaks 2009–10 and 2020 |
-  | coverage κ | negative from 2013 (−0.70 in 2014) | austerity coverage cut below model's 0.662 |
+  | coverage κ | negative from 2011, −0.70 in 2014 | austerity coverage cut below model's 0.662 |
   | demographics Ā | −0.33 … −0.76 | data younger than model over 25–84; shrinks as population ages |
 
 ### Open threads

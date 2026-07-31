@@ -136,7 +136,7 @@ In `olg_transition.py`:
 - Age-dependent productivity transitions (`P_y_by_age_health`)
 - Endogenous labor supply via FOC (`labor_supply`, `nu`, `phi`)
 - Wage age profile (`wage_age_profile` in LifecycleConfig) — age-dependent wage multiplier κ(j), effective wage = w · κ(j) · y
-- Career-average pension (`pension_avg_weight`, `mean_kappa_working`, `mean_y_employed` in LifecycleConfig) — pension base blends last income state with career average; `pension_avg_weight=1.0` recovers last-state-only pension
+- Career-average pension (`pension_avg_weight`, `mean_kappa_working`, `mean_y_employed` in LifecycleConfig) — pension base blends last income state with career average; `pension_avg_weight=1.0` recovers last-state-only pension. **Both GR configs leave `pension_avg_weight` unset**, so `calibrate.py:1093` derives λ = (1−ρ_z^{J_R})/(J_R(1−ρ_z)) = **0.443**; β, ν and ρ^pens were all fitted against that blended base
 - Endogenous retirement window (`retirement_window`)
 - Schooling phase with child costs (`schooling_years`, `child_cost_profile`)
 - Government spending on goods (`govt_spending_path` in OLGTransition)
@@ -147,7 +147,7 @@ In `olg_transition.py`:
 - Pension trust fund (`S_pens_initial` in OLGTransition)
 - Defense spending (`defense_spending_path` in OLGTransition)
 - Other net primary spending residual (`other_net_spending_path` in OLGTransition) — exogenous (other expenditure − other revenue) line absent from explicit tax/transfer/spending; added to `total_spending`, no household-side effect. Baseline fiscal closure: `fiscal.other_net_spending_over_Y` is a structural constant pinned at the **initial steady state** (not measured off a transition) so the initial-point government budget matches `fiscal.primary_balance_target_over_Y`; the baseline transition takes it as given and its t=0 primary balance need not equal the target exactly. Pin it with `pin_baseline_closure.py` (one stationary solve, no transition; `--write` updates the config); `compute_fiscal_ratios` also reports `primary_balance_full_over_Y` and `closure_other_over_Y`. Defaults None/0.
-- Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge; production CLI defaults to `True`, test CLI defaults to `False` (opt-in via `--recompute-bequests`)
+- Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge; production CLI defaults to `True`, test CLI defaults to `False` (opt-in via `--recompute-bequests`). **`FiscalScenario.recompute_bequests` defaults to `False` and `run_fiscal_figures.py` never sets it**, so every reported fiscal run has an open circuit: newborns receive nothing and 3.77 % of Y per period in accidental bequests leaves the economy. `calibrate.py` is open too, so both sides are consistent
 - Bequest taxation with revenue accounting (`tau_beq` in OLGTransition budget)
 - Simulation mortality draws with bequest tracking (`alive_sim`, `bequest_sim` — 21-tuple output)
 - Population aging: fertility path + longevity improvement (`fertility_path`, `survival_improvement_rate` in OLGTransition)
@@ -163,12 +163,12 @@ In `olg_transition.py`:
 - Policy array shape: `(T, n_a, n_y, n_h, n_y_last)` — last dimension is previous income state (for pension calculation), not earnings history
 - `m_grid` is `(T, 1)` — age-dependent medical costs; with `n_h=1`, effectively a `(T,)` age profile scaled by `m_good`
 - `P_y` is `(n_y, n_y)` when constant, or `(T, n_h, n_y, n_y)` when age-dependent; `P_y_2d` always holds a 2D version
-- Pensions use `i_y_last` state (last working period income state)
+- Pensions use `i_y_last` state (last working period income state). `i_y_last` is the **previous period's** income state, not the last *employed* one: `z'_last = z` unconditionally while working (`lifecycle_perfect_foresight.py:1244`, `lifecycle_jax.py:765`), so it is 0 after one period of unemployment and UI pays zero from the second period of a spell onward
 - Payroll tax applies to wages only, not pensions/UI
 - `w_at_retirement` is cached in `__init__` (not recomputed per period)
 - `n_sim` controls Monte Carlo simulation size
 - Output plots saved to `output/` directory
-- `simulate_transition` `results['L']` is in efficiency units (wage-valued `effective_y_sim` aggregate divided by `w_path`), matching calibrate.py's `L = labor_income / w`; `_aggregate_capital_labor_njit` returns `(K, C, L)` — keep unpack order aligned
+- `simulate_transition` `results['L']` is in efficiency units (wage-valued `effective_y_sim` aggregate divided by `w_path`), matching calibrate.py's `L = labor_income / w`; `_aggregate_capital_labor_njit` returns `(K, C, L)` — keep unpack order aligned. **`effective_y_sim = wage_income + ui_sim`, so `L` carries `UI/w`** — exactly 1.887 % of `w·L`, verified as `w·L − tax_p/τ^p = UI` at every t. Consequence: `L` exceeds `∫κ_j z e^α ℓ dμ`, `𝓑^lab ≠ w·L` (labour share 0.670 vs payroll base 0.657 of Y), and Y and K are 1.887 % above their model definitions
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
 - Fiscal G/I_g shocks pass `govt_spending_path=` and `I_g_path=` as explicit args to `simulate_transition()`; `transfer_floor=` (absolute value) is also an explicit arg — no external mutation needed
