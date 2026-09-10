@@ -30,6 +30,8 @@ normalize_A_tfp.py             # Root-find A_tfp s.t. initial-SS Y = 1 at fixed 
 run_scale_loop.sh              # Outer loop: SMM <-> A_tfp normalization until joint fixed point, then closure re-pin
 chain_fiscal_after_loop.sh     # Waits for run_scale_loop.sh, gates on the A[0] check, runs the G+Ig set
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
+docs/OPEN_ISSUES_2026-07-30.md # Six implementation gaps found in the draft-vs-code audit; items 1-4 share one batched re-run
+docs/TREND_GROWTH_PLAN.md      # Plan for r_B = g = 1% (detrended units); not implemented as of 2026-09-10
 ```
 
 ## Environment

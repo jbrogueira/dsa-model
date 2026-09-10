@@ -4,7 +4,32 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-07-31)
+## Current status (handoff 2026-09-10)
+
+Short session: established where the trend-growth extension (r_B = g > 0) stands. No code was run or changed. Overleaf `docs/` unchanged at `9eafb13`.
+
+### Trend-growth extension — plan only, nothing implemented
+
+`code/docs/TREND_GROWTH_PLAN.md` (committed 2026-07-31) specifies a detrended economy with labour-augmenting productivity growth g = 1 % and sovereign rate r_B = 1 %; r stays at 4 %, so the design is r_B = g, not r = g. None of it exists in code: no `trend_growth` field anywhere, `calibration_input_GR.json` still has `r_B = 0.021` and `delta_g = 0.04738`, no recalibration, no run, no output directory. The reported results (draft §4) proxy r_B − g = 0 with r_B = 0, g = 0.
+
+Every file:line pointer in the plan was re-checked on 2026-09-10 and still lands on the intended code: budget constraint `lifecycle_perfect_foresight.py:949,956` and `lifecycle_jax.py:273,294`; debt law `fiscal_experiments.py:264`; terminal flow balance `fiscal_experiments.py:319`; current account `fiscal_experiments.py:613`; K_g law `olg_transition.py:1915`; pension fund `olg_transition.py:2238`.
+
+All seven steps in the plan are open: (1) config wiring of g into `LifecycleConfig`, `OLGTransition`, `FiscalScenario`; (2) `(1+g)·a_next` in both solvers; (3) growth factors in the four stock laws, mirrored in `eval_fiscal_results.py:149`, and `PD/Y = (g − r_B)/(1+g)·b` at the terminal condition; (4) `delta_g = 0.037383` re-identified from the same I_g/K_g ratio; (5) SMM on the V100 from the current θ with β scaled by (1+g)^γ (≈ 0.961), then `normalize_A_tfp.py`, then `pin_baseline_closure.py --write`; (6) G and I_g, debt- and τ_l-financed, into a fresh output directory; (7) A[0] predetermination, K_g/Y flat at 0.745, B/Y flat under zero primary balance, asset grid not binding.
+
+### Open threads
+
+1. **Three modelling choices to settle before implementing the growth extension** (from the plan): whether the write-up carries the trend in the labour-disutility weight ν; wage versus price indexation of pensions (current code implies wage indexation); whether households earn r or r_B on their holdings of B (at r = 4 %, r_B = 1 %, B/Y = 1.64 the gap is 4.9 % of Y in interest income the government does not pay).
+2. **Sequencing.** Items 1–4 of `code/docs/OPEN_ISSUES_2026-07-30.md` share one batched re-run (~16 h GPU), and items 2–3 there are also undecided modelling choices. A growth recalibration launched before that re-run would have to be repeated after it.
+3. Carried over unchanged: the four open threads of the 2026-07-31 handoff below.
+
+### Code state
+
+- No source, config, or data file changed. `code/CLAUDE.md` gained file-tree pointers to `docs/TREND_GROWTH_PLAN.md` and `docs/OPEN_ISSUES_2026-07-30.md`.
+- `a00e99c` (the 2026-07-31 handoff commit) was never pushed; it goes to `origin/main` with this handoff.
+
+---
+
+## Prior status (handoff 2026-07-31)
 
 A full audit of the paper draft against the code that produced the results. No code was run or changed; the draft was corrected where it misdescribed the implementation, and the implementation gaps that text cannot fix were recorded for a later re-run. Overleaf `docs/` at `9eafb13`; code unchanged on `origin/main` apart from docs.
 
