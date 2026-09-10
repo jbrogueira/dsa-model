@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from numba import njit
 from typing import Optional
+import warnings
 
 def _get_lifecycle_model_class(backend: str):
     """Return the lifecycle model class for the given backend."""
@@ -19,7 +20,6 @@ def _get_lifecycle_model_class(backend: str):
         raise ValueError(f"Unknown backend: {backend!r}. Use 'numpy' or 'jax'.")
 
 # Suppress RuntimeWarning from numpy
-import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Indices into the raw 21-tuple simulation output for the variables needed downstream.
@@ -1084,7 +1084,8 @@ class OLGTransition:
         birth_cohort_solutions = {}
         _mit_baseline_to_solve = {}  # {edu_type: {bp: model}} — JAX batch-solve deferred
 
-        if verbose: print("\n  Solving for unique birth cohorts...")
+        if verbose:
+            print("\n  Solving for unique birth cohorts...")
 
         # Safety: ensure MIT baseline cache exists (handles standalone calls).
         if not hasattr(self, '_mit_baseline_cache'):
@@ -1263,7 +1264,7 @@ class OLGTransition:
 
                     # Check if saving is happening
                     if mean_a_policy < 0.01:
-                        print(f"       ⚠️  WARNING: Near-zero savings for this cohort!")
+                        print("       ⚠️  WARNING: Near-zero savings for this cohort!")
 
                 birth_cohort_solutions[edu_type][birth_period] = model
 
@@ -1318,7 +1319,8 @@ class OLGTransition:
         # Setting initial conditions to SS values at age k (as was done previously) placed
         # age-k wealth at age 0 of the simulation — wrong initial state, wrong trajectory,
         # and constant aggregate cross-sections because all cohorts looked like the SS.
-        if verbose: print("\n  Setting initial conditions for pre-transition cohorts...")
+        if verbose:
+            print("\n  Setting initial conditions for pre-transition cohorts...")
 
         if verbose:
             print("All cohort problems ready!")
@@ -1733,7 +1735,8 @@ class OLGTransition:
         total_revenue = total_tax_c + total_tax_l + total_tax_p + total_tax_k + bequest_tax_revenue
 
         t_idx = int(t)
-        _at = lambda path, default=0.0: float(path[t_idx]) if path is not None and t_idx < len(path) else default
+        def _at(path, default=0.0):
+            return float(path[t_idx]) if path is not None and t_idx < len(path) else default
 
         # GDP-share spending mode: if a ratio is set, level = ratio * Y_path[t]
         # (ratio may be a scalar or a (T,) array). Otherwise read the level path.
@@ -2135,7 +2138,7 @@ class OLGTransition:
             r_implied, w_implied = self._marginal_products_njit(
                 K_for_Y[0], L_path[0], self.alpha, self.delta, self.A, K_g_0, self.eta_g
             )
-            print(f"  Period 0:")
+            print("  Period 0:")
             print(f"    Exogenous r: {r_path[0]:.4f}, Implied r: {r_implied:.4f}")
             print(f"    Computed w:  {w_path[0]:.4f}, Implied w: {w_implied:.4f}")
 
@@ -2164,7 +2167,7 @@ class OLGTransition:
             print("\n" + "=" * 60)
             print("Transition Simulation Complete")
             print("=" * 60)
-            print(f"\nSummary Statistics:")
+            print("\nSummary Statistics:")
             print(f"  Average A (hh wealth): {np.mean(K_path):.4f}")
             print(f"  Average L: {np.mean(L_path):.4f}")
             print(f"  Average Y: {np.mean(Y_path):.4f}")

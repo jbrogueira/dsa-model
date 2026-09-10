@@ -14,7 +14,8 @@ from pure-baseline wages. A[0] must still be exactly baseline.
 
 Usage: python check_a0_predetermination.py
 """
-import os, platform
+import os
+import platform
 if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import numpy as np

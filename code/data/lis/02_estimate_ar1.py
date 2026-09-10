@@ -28,7 +28,7 @@ import json
 import os
 import re
 from datetime import date
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 from scipy.optimize import minimize
@@ -249,7 +249,7 @@ def main():
               f"sigma_alpha={joint['sigma_alpha']:.4f}   ssr={joint['ssr']:.2e}")
         print(f"    rho fixed at 0.95:                     sigma_eta={fixed['sigma_eta']:.4f}   "
               f"sigma_alpha={fixed['sigma_alpha']:.4f}   ssr={fixed['ssr']:.2e}")
-        print(f"    sensitivity (sigma_eta by rho):  ", end="")
+        print("    sensitivity (sigma_eta by rho):  ", end="")
         print("   ".join(f"rho={g['rho']:.2f}->{g['sigma_eta']:.4f}" for g in grid))
         print()
 

@@ -9,7 +9,6 @@ to keep runtime fast while exercising every code path.
 """
 
 import numpy as np
-import pytest
 from lifecycle_perfect_foresight import LifecycleConfig
 from olg_transition import OLGTransition
 
@@ -23,10 +22,7 @@ from fiscal_experiments import (
     exponential_convergence,
     _apply_shock,
     _balance_residual,
-    _get_psi,
     _nfa_ca_paths,
-    run_debt_financed,
-    run_tax_financed,
     run_fiscal_scenario,
     fiscal_multiplier,
 )
@@ -284,7 +280,6 @@ class TestBalanceResidual:
         """If B_T/Y_T == target, residual == 0."""
         T  = T_TRANSITION
         Y  = np.ones(T) * 5.0
-        r_path = np.ones(T) * 0.0   # zero interest so B grows only via PD
         PD = np.zeros(T)
         budget = {'primary_deficit': PD}
         B      = np.zeros(T + 1)    # B = 0 everywhere

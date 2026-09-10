@@ -20,23 +20,23 @@ import platform
 if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')  # avoid Metal backend on macOS
 import time
-
-# Force unbuffered print so progress is visible over SSH / pipes
-print = functools.partial(print, flush=True)
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # non-interactive backend — no display required
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # noqa: E402
 
-from lifecycle_perfect_foresight import LifecycleConfig
-from olg_transition import OLGTransition
-from fiscal_experiments import (
+from lifecycle_perfect_foresight import LifecycleConfig  # noqa: E402
+from olg_transition import OLGTransition  # noqa: E402
+from fiscal_experiments import (  # noqa: E402
     FiscalScenario,
     run_fiscal_scenario,
     compare_scenarios,
     debt_fan_chart,
     fiscal_multiplier,
 )
+
+# Force unbuffered print so progress is visible over SSH / pipes
+print = functools.partial(print, flush=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--backend', choices=['numpy', 'jax'], default='numpy')
@@ -314,7 +314,7 @@ def run_experiment_set(shock_type):
         scn_debt, scn_taul, scn_nfa = scn_ig_debt, scn_ig_taul, scn_ig_nfa
         labels = ('I_g shock (debt)', 'I_g shock (τ_l, debt target)', 'I_g shock (τ_l, NFA@T)')
 
-    print(f"\n[1/4] Baseline …")
+    print("\n[1/4] Baseline …")
     res_base = run_fiscal_scenario(economy, scn_base, base_paths, n_sim=N_SIM, verbose=False)
 
     # Pin the τ_l closure to the baseline transition's terminal debt/GDP.

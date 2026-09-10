@@ -23,7 +23,12 @@ This equals ratios['closure_other_over_Y'] from compute_fiscal_ratios.
 Usage:
     python pin_baseline_closure.py [--backend jax|numpy] [--config FILE] [--write]
 """
-import os, sys, platform, json, argparse, dataclasses
+import os
+import sys
+import platform
+import json
+import argparse
+import dataclasses
 if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import numpy as np

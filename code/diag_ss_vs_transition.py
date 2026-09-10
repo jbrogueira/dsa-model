@@ -11,17 +11,19 @@ Prints the t=0 transition ratios vs the SS ratios, plus the full Y path and item
 paths across periods so we can tell a TRANSIENT (t=0 matches SS, later drifts)
 from a LEVEL mismatch (t=0 already off => convention bug).
 """
-import os, sys, platform, json
+import os
+import sys
+import platform
+import json
 if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import numpy as np
+from calibrate import (load_config, build_olg_transition, run_model_moments,
+                       compute_fiscal_ratios)
 
 CONFIG = 'calibration_input_GR.json'
 BACKEND = sys.argv[1] if len(sys.argv) > 1 else 'numpy'
 N_SIM = int(sys.argv[2]) if len(sys.argv) > 2 else 3000
-
-from calibrate import (load_config, build_olg_transition, run_model_moments,
-                       compute_fiscal_ratios)
 
 with open(CONFIG) as f:
     config_data = json.load(f)
@@ -49,7 +51,8 @@ print(f"n_sim={spec.n_sim}, seed={spec.seed}, w={spec.w:.5f}, r={spec.r:.4f}")
 m_model, panels = run_model_moments(theta, spec, return_panels=True)
 ss = compute_fiscal_ratios(panels, spec, cfg_ss)
 if 'error' in ss:
-    print("compute_fiscal_ratios error:", ss['error']); raise SystemExit(1)
+    print("compute_fiscal_ratios error:", ss['error'])
+    raise SystemExit(1)
 print(f"\nSS Y level = {ss['Y']:.5f},  L = {ss['L']:.5f}")
 ss_keys = ['tax_revenue_over_Y', 'tax_c_over_Y', 'tax_l_over_Y', 'tax_p_over_Y',
            'tax_k_over_Y', 'pensions_over_Y', 'ui_over_Y', 'health_gov_over_Y',

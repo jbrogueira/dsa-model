@@ -23,7 +23,8 @@ DATA_CSV = os.path.join(HERE, "data", "health_flag_GR.csv")
 # --- reference Shapley (subset form) to cross-check the permutation form ------
 
 def shapley_reference(m, d):
-    m = np.asarray(m, float); d = np.asarray(d, float)
+    m = np.asarray(m, float)
+    d = np.asarray(d, float)
     n = len(m)
 
     def value(S):
@@ -93,7 +94,8 @@ def test_no_change_gives_zero_contribution():
 def test_single_factor_change_isolated():
     # only factor 1 moves -> all contribution on factor 1, exactly its marginal effect
     m = np.array([0.662, 0.90, 0.081])
-    d = m.copy(); d[1] = 0.86
+    d = m.copy()
+    d[1] = 0.86
     c = shapley_multiplicative(m, d)
     assert c[0] == pytest.approx(0.0, abs=1e-14)
     assert c[2] == pytest.approx(0.0, abs=1e-14)

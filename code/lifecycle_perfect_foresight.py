@@ -372,13 +372,13 @@ class LifecycleModelPerfectForesight:
         print(f"INCOME PROCESS DIAGNOSTIC - {self.config.education_type.upper()} EDUCATION")
         print('='*70)
         edu_params = self.config.edu_params[self.config.education_type]
-        print(f"Input parameters:")
+        print("Input parameters:")
         print(f"  mu_y:    {edu_params['mu_y']}")
         print(f"  sigma_y: {edu_params['sigma_y']}")
         print(f"  rho_y:   {edu_params['rho_y']}")
-        print(f"\nIncome grid (y_grid):")
+        print("\nIncome grid (y_grid):")
         print(f"  {self.y_grid}")
-        print(f"\nIncome grid details:")
+        print("\nIncome grid details:")
         for i, y in enumerate(self.y_grid):
             state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
             print(f"  State {i} ({state_name}): y = {y:.6f}")
@@ -390,10 +390,10 @@ class LifecycleModelPerfectForesight:
         stationary = eigenvectors[:, stationary_idx].real
         stationary = stationary / stationary.sum()
 
-        print(f"\nTransition matrix P_y (first 3 rows):")
+        print("\nTransition matrix P_y (first 3 rows):")
         print(P_y_2d[:3])
 
-        print(f"\nStationary distribution:")
+        print("\nStationary distribution:")
         for i in range(self.n_y):
             state_name = "UNEMPLOYED" if i == 0 else f"Employed {i}"
             print(f"  State {i} ({state_name}, y={self.y_grid[i]:.4f}): {stationary[i]:.4%}")
@@ -402,8 +402,8 @@ class LifecycleModelPerfectForesight:
         print(f"\nExpected steady-state income: {expected_income:.6f}")
 
         if expected_income < 0.01:
-            print(f"\n⚠️  WARNING: Expected income is nearly zero!")
-            print(f"    This will cause zero average income in simulations!")
+            print("\n⚠️  WARNING: Expected income is nearly zero!")
+            print("    This will cause zero average income in simulations!")
 
         print('='*70)
     
@@ -1464,7 +1464,7 @@ if __name__ == "__main__":
             if np.any(retired_sim):
                 print(f"  Mean pension (retired):   {np.mean(pension_sim[retired_sim]):.3f}")
             else:
-                print(f"  Mean pension (retired):   N/A (no retirement periods)")
+                print("  Mean pension (retired):   N/A (no retirement periods)")
             
             print(f"  Unemployment rate:        {unemployment_rate:.2%}")
             print(f"  Retirement rate:          {retirement_rate:.2%}")
@@ -1474,7 +1474,7 @@ if __name__ == "__main__":
             print(f"  Mean gov health spending: {np.mean(gov_m_sim):.4f}")
             
             # Age-specific statistics
-            print(f"\n  Age-specific means (age 20 = lifecycle age 0):")
+            print("\n  Age-specific means (age 20 = lifecycle age 0):")
             ages_to_check = list(range(config.T))  # All ages in short lifecycle
             for age_idx in ages_to_check:
                 if age_idx < len(a_sim):

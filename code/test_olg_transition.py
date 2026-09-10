@@ -1,7 +1,5 @@
 import pytest
 import numpy as np
-import sys
-import os
 from olg_transition import OLGTransition, get_test_config
 from lifecycle_perfect_foresight import LifecycleConfig, LifecycleModelPerfectForesight
 
@@ -287,8 +285,8 @@ class TestConstantInterestRate:
         print("STEADY STATE TEST WITH CONSTANT ENVIRONMENT")
         print("="*70)
         print(f"Simulation periods: {T_transition}")
-        print(f"Number of agents: 500")
-        print(f"\nConstant parameters:")
+        print("Number of agents: 500")
+        print("\nConstant parameters:")
         print(f"  r = {r_constant:.4f}")
         print(f"  τ_c = {tau_c_constant:.4f}")
         print(f"  τ_l = {tau_l_constant:.4f}")
@@ -363,7 +361,7 @@ class TestConstantInterestRate:
         
         slope_tolerance = 0.5  # 0.5% per period
         
-        print(f"\n3. Aggregate trends (% change per period):")
+        print("\n3. Aggregate trends (% change per period):")
         print(f"   Capital:  {K_slope_pct:+.4f}%/period {'✓' if abs(K_slope_pct) < slope_tolerance else '✗'}")
         print(f"   Labor:    {L_slope_pct:+.4f}%/period {'✓' if abs(L_slope_pct) < slope_tolerance else '✗'}")
         print(f"   Output:   {Y_slope_pct:+.4f}%/period {'✓' if abs(Y_slope_pct) < slope_tolerance else '✗'}")
@@ -460,26 +458,26 @@ class TestBorrowingConstraint:
         a0_policy = model.a_policy[age, 0, y_idx, h_idx, e_idx]
         a1_policy = model.a_policy[age, 1, y_idx, h_idx, e_idx]
         
-        print(f"\nKey finding:")
+        print("\nKey finding:")
         print(f"  Policy at a=0: {a0_policy:.4f}")
         print(f"  Policy at a=1: {a1_policy:.4f}")
         
         if a0_policy < 0.01 and a1_policy > 0.01:
-            print(f"\n✓ Confirmed: Borrowing constraint binds ONLY at a=0!")
-            print(f"   Agents with any positive assets DO save.")
+            print("\n✓ Confirmed: Borrowing constraint binds ONLY at a=0!")
+            print("   Agents with any positive assets DO save.")
         
         # Now check what happens in OLGTransition when initializing cohorts
-        print(f"\n" + "="*70)
-        print(f"IMPLICATION FOR OLGTRANSITION:")
-        print(f"="*70)
-        print(f"When OLGTransition initializes old cohorts with their")
-        print(f"'steady-state assets', if those assets are ZERO (or very small),")
-        print(f"they will hit the borrowing constraint and save NOTHING.")
-        print(f"\nThis causes K→0 because:")
-        print(f"  1. New cohorts start with a=0 (by definition)")
-        print(f"  2. Policy at a=0 says: save nothing")
-        print(f"  3. Old cohorts die out")
-        print(f"  4. Aggregate K decreases monotonically to zero")
+        print("\n" + "="*70)
+        print("IMPLICATION FOR OLGTRANSITION:")
+        print("="*70)
+        print("When OLGTransition initializes old cohorts with their")
+        print("'steady-state assets', if those assets are ZERO (or very small),")
+        print("they will hit the borrowing constraint and save NOTHING.")
+        print("\nThis causes K→0 because:")
+        print("  1. New cohorts start with a=0 (by definition)")
+        print("  2. Policy at a=0 says: save nothing")
+        print("  3. Old cohorts die out")
+        print("  4. Aggregate K decreases monotonically to zero")
 
 
 class TestConfigInspection:
@@ -546,7 +544,7 @@ class TestRootCauseDiagnostic:
         K_over_L = ((r_ss + delta) / (alpha * A)) ** (1 / (alpha - 1))
         w_ss = (1 - alpha) * A * (K_over_L ** alpha)
         
-        print(f"\nSteady-state prices:")
+        print("\nSteady-state prices:")
         print(f"  r_ss = {r_ss:.4f}")
         print(f"  w_ss = {w_ss:.4f}")
         print(f"  K/L = {K_over_L:.4f}")
@@ -572,7 +570,7 @@ class TestRootCauseDiagnostic:
         # Compute mean assets by age
         mean_assets = np.mean(assets_sim, axis=1)
         
-        print(f"\nSimulated steady-state asset profile:")
+        print("\nSimulated steady-state asset profile:")
         for age in range(len(mean_assets)):
             print(f"  Age {age}: {mean_assets[age]:.4f}")
         
@@ -639,21 +637,21 @@ class TestRootCauseDiagnostic:
         c_policy_val = model.c_policy[age, a_idx, y_idx, h_idx, 0]
         a_next_policy_val = model.a_policy[age, a_idx, y_idx, h_idx, 0]
         
-        print(f"\n  At state (a=0, y_low, h_good):")
+        print("\n  At state (a=0, y_low, h_good):")
         print(f"    Consumption: {c_policy_val:.4f}")
         print(f"    Next assets: {a_next_policy_val:.4f}")
         
         # Check if the agent is saving anything
         if a_next_policy_val < 0.01:
             print(f"\n  ⚠️  WARNING: Agent not saving at age {age}!")
-            print(f"     This will cause K→0 in aggregate")
+            print("     This will cause K→0 in aggregate")
         
         # Try higher income state
         y_idx = 1  # High income
         c_policy_val_high = model.c_policy[age, a_idx, y_idx, h_idx, 0]
         a_next_policy_val_high = model.a_policy[age, a_idx, y_idx, h_idx, 0]
         
-        print(f"\n  At state (a=0, y_high, h_good):")
+        print("\n  At state (a=0, y_high, h_good):")
         print(f"    Consumption: {c_policy_val_high:.4f}")
         print(f"    Next assets: {a_next_policy_val_high:.4f}")
         
@@ -662,7 +660,7 @@ class TestRootCauseDiagnostic:
         h_val = model.h_grid[h_idx]
         income = w_ss * y_val * h_val
 
-        print(f"\n  Budget check:")
+        print("\n  Budget check:")
         print(f"    Income (w*y*h): {income:.4f}")
         print(f"    Consumption: {c_policy_val_high:.4f}")
         print(f"    Savings (a' index): {a_next_policy_val_high}")
@@ -715,7 +713,7 @@ class TestPolicyIndexing:
         model = LifecycleModelPerfectForesight(ss_config, verbose=False)
         model.solve(verbose=False)
         
-        print(f"\nPolicy function shapes:")
+        print("\nPolicy function shapes:")
         print(f"  a_policy: {model.a_policy.shape}")
         print(f"  c_policy: {model.c_policy.shape}")
         print(f"  V: {model.V.shape}")
@@ -723,7 +721,7 @@ class TestPolicyIndexing:
         # Expected: (T, n_a, n_y, n_h, n_y_last)
         # where n_y_last tracks previous income state (used for pension calculation)
 
-        print(f"\nExpected dimensions:")
+        print("\nExpected dimensions:")
         print(f"  T = {config.T}")
         print(f"  n_a = {config.n_a}")
         print(f"  n_y = {config.n_y}")
@@ -733,7 +731,7 @@ class TestPolicyIndexing:
         print(f"  n_y_last (previous income states) = {n_y_last}")
         
         # Sample policies at different ages
-        print(f"\nSample asset policies (a=0, y=high, h=good, e=0):")
+        print("\nSample asset policies (a=0, y=high, h=good, e=0):")
         for age in range(min(4, config.T)):
             a_next = model.a_policy[age, 0, 1, 0, 0]  # a=0, y=1 (high), h=0, e=0
             print(f"  Age {age}: a' = {a_next:.4f}")
@@ -804,19 +802,19 @@ class TestEarningsIndexing:
         print(f"\nNumber of previous income states (n_y_last): {n_y_last}")
 
         # Check policy at age 1, for each y_last state
-        print(f"\nAge 1 policies (a=0, y=high, h=good) by y_last state:")
+        print("\nAge 1 policies (a=0, y=high, h=good) by y_last state:")
         for yl_idx in range(n_y_last):
             a_next = model.a_policy[1, 0, 1, 0, yl_idx]
             print(f"  y_last={yl_idx}: a' = {a_next:.4f}")
 
         # Check age 2
-        print(f"\nAge 2 policies (a=0, y=high, h=good) by y_last state:")
+        print("\nAge 2 policies (a=0, y=high, h=good) by y_last state:")
         for yl_idx in range(n_y_last):
             a_next = model.a_policy[2, 0, 1, 0, yl_idx]
             print(f"  y_last={yl_idx}: a' = {a_next:.4f}")
 
         # Check which y_last states have most non-zero policies
-        print(f"\nNon-zero policies by y_last state:")
+        print("\nNon-zero policies by y_last state:")
         for yl_idx in range(n_y_last):
             yl_policies = model.a_policy[:, :, :, :, yl_idx]
             yl_nonzero = np.sum(yl_policies > 0.01)
@@ -824,7 +822,7 @@ class TestEarningsIndexing:
             print(f"  y_last={yl_idx}: {yl_nonzero}/{yl_total} ({100*yl_nonzero/yl_total:.1f}%)")
 
         # Check average policy value by y_last state
-        print(f"\nAverage savings by y_last state (excluding zeros):")
+        print("\nAverage savings by y_last state (excluding zeros):")
         for yl_idx in range(n_y_last):
             yl_policies = model.a_policy[:, :, :, :, yl_idx]
             nonzero_policies = yl_policies[yl_policies > 0.01]
@@ -1116,7 +1114,7 @@ class TestNewFeatures:
         c_flat_late = np.mean(res_flat[1][7:, :])
         c_age_late = np.mean(res_age[1][7:, :])
         assert c_age_late < c_flat_late, \
-            f"Rising medical costs should reduce late-life consumption"
+            "Rising medical costs should reduce late-life consumption"
 
     # --- Feature #14: Progressive taxation ---
 
@@ -1139,7 +1137,7 @@ class TestNewFeatures:
         var_prog = np.var(res_prog[1][3, :])
         # Allow some tolerance — the effect depends on calibration
         assert var_prog <= var_flat * 1.1, \
-            f"Progressive tax should compress consumption distribution"
+            "Progressive tax should compress consumption distribution"
 
     def test_progressive_tax_disabled_matches_flat(self):
         """tax_progressive=False should give same results as default."""
@@ -1165,7 +1163,7 @@ class TestNewFeatures:
 
         # Minimum consumption across all agents should be close to or above floor
         min_c = np.min(res[1])
-        assert min_c > 0.0, f"Consumption should be positive with transfer floor"
+        assert min_c > 0.0, "Consumption should be positive with transfer floor"
 
     def test_transfer_floor_zero_is_noop(self):
         """transfer_floor=0 should match default."""
@@ -1772,7 +1770,6 @@ class TestLaborSupply:
         model.solve(verbose=False)
         result = model.simulate(n_sim=500, seed=42)
         effective_y = result[5]
-        l_sim = result[18]
         # For workers with labor_supply=True, effective_y should not assume l=1
         # Check that in at least some periods, effective_y differs from what l=1 would give
         config_nolabor = self._base_config(labor_supply=False)
@@ -1955,7 +1952,7 @@ class TestEndogenousRetirement:
         V_fixed_ages = m_fixed.V[6:10]
         V_diff = np.max(np.abs(V_window_ages - V_fixed_ages))
         assert V_diff > 1e-8, \
-            f"Value function in retirement window should differ from fixed retirement"
+            "Value function in retirement window should differ from fixed retirement"
 
 
 class TestEndogenousRetirementJAX:

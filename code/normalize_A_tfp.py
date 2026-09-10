@@ -27,7 +27,15 @@ Usage:
 pin_baseline_closure.py --write afterwards: the closure constant was pinned at
 the old A_tfp and shifts with the output level.
 """
-import os, sys, platform, json, copy, argparse, dataclasses, tempfile, time
+import os
+import sys
+import platform
+import json
+import copy
+import argparse
+import dataclasses
+import tempfile
+import time
 if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import numpy as np
