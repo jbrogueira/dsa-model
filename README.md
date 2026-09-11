@@ -4,7 +4,65 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-09-10)
+## Current status (handoff 2026-09-11)
+
+Two sessions (10–11 September): a deep literature review was planned and run to test which contributions the framework can make to the sovereign-debt-analysis literature. No source, config or data file changed. Overleaf `docs/` unchanged at `9eafb13`.
+
+### Literature review — complete, in `lit-review/` (new, repo root)
+
+| File | Content |
+|---|---|
+| `PLAN_dsa-lsa-contributions.md` | Five candidate contributions H1–H5 with kill tests, nine search strands, deep-read list, hostile-referee questions |
+| `dsa-lsa-contributions.md` | The review (~18k words incl. bibliography): verdict table, ranked reading, eight strands, ten referee objections with evidence, 21 paper summaries, addendum from the repeat Semantic Scholar pass |
+| `dsa-lsa-contributions.bib` | 173 entries; 171 posted to Zotero (tags to-read, macro, fiscal, social-security), 2 were duplicates; 16 lit notes written to the vault |
+
+Search coverage: about 280 papers and documents screened by five agents (Semantic Scholar with citation-graph expansion, Google Scholar, surveys and full texts, official documents and 2023–2026 working papers, the authors' own and coauthors' work); 21 papers read in full. Google Scholar returned nothing for the whole run; Semantic Scholar was repeated on 11 September under one-call-at-a-time discipline after load failures on 10 September.
+
+### Verdicts on the candidates (the choice is the authors')
+
+| Candidate | Verdict | Nearest existing work |
+|---|---|---|
+| H1 structural LSA: every liability line and the primary balance as GE outcomes | Not pre-empted | Japan GE-OLG cluster (Kitao 2015 JEDC; Braun–Joines 2015 JEDC; McGrattan–Miyachi–Peralta-Alva 2018 IMF WP), all closed economy; İKY 2016 IER and 2019 JEoA (accounting model); Glomm–Jung–Tran 2018 Macro Dyn: OLG calibrated to Greece as a SOE with public capital, public employment and two pension schemes, debt 105→85 % of GDP, stable demographics, health lumped into residual spending, no UI |
+| H2 realised Greek health/pension cuts as partial default on promised liabilities | Not pre-empted; evidence thin (the health split in §5 is arithmetic) | Perotti 2021 Economic Policy; Leventi–Matsaganis 2020 EJSS; OECD 2013 and Ageing Report growth decompositions (no coverage term, no decline) |
+| H3 financing a permanent G or I_g increase: which liabilities and generations pay | Partly pre-empted (2026) | Boullot–Cahn–Challe–Matheron CEPR DP 21270 (HA-OLG with PAYG, NATO-target increase; country ⚠️); Lauwers–Michou–Ricci–Zavalloni, ESM EASW 2026 ch. 2 (same three financing options; self-financing 25–53 cents/euro); Bokan et al. ECB EB 6/2025 |
+| H4 r_B ≤ g < r with an official-lending wedge | Not pre-empted; thin as stated; absent from the draft's front matter | Wedge is standard in the Japan papers (JGB yields); Reis 2021 (r<g<m); convenience-yield theories incl. Zavalloni's ESM WP 78; Corsetti–Erce–Uy 2018/2020 and the LIC Debt Sustainability Framework model concessional rates outside OLG |
+| H5 model-consistent PSBS ledger for Greece | Partly pre-empted; nothing in the draft | Eurostat Table 29: Greek accrued pension entitlements 331/374/403 % of GDP (2015/2018/2021); Castañer et al. 2025 and Brede–Henn 2019 (actuarial and national balance sheets, not Greek, no health leg); IMF PSBS has Greece at general-government tier only |
+
+Ranked reading in the review: H1, H2, H4, then H3, H5, by distance to the nearest neighbour and by what must be built.
+
+### Facts established that bear on the draft
+
+- The Commission's S2 indicator covers exactly four ageing items (pensions, health, LTC, education), is partial equilibrium (0.6 multiplier only in alternative scenarios), and gives Greece −0.4 % of GDP in DSM 2025 (IP 332, Feb 2026, not in the bib) with low long-term risk.
+- 2024 Ageing Report, Greece 2022–2070: pensions 14.5 → 12.0 % of GDP; public health 5.4 → 5.9 %.
+- The code stores no value functions or welfare measures (grep of both solvers and the fiscal code), so cohort incidence for H3 is a solver extension, not a reporting change.
+- `docs/ref.bib` lacks Blanchard 2019, Bohn 1998, Kitao 2015 and all İmrohoroğlu–Kitao–Yamada papers; the EER 2023 and SERIEs 2022 self-works are absent; the draft writes "Fiscal Stability Fund" where the cited titles say "Financial Stability Fund".
+- Blanchard (2023, via Corneo): with exogenous r and no uncertainty "fiscal space is infinite"; D'Erasmo–Mendoza–Zhang: European labour taxes near the Laffer peak. Both must be answered by the sustainability criterion.
+- The phrase "liability sustainability analysis" has no prior use in the economics full texts indexed by Semantic Scholar.
+
+### Open threads
+
+1. **Choose the contributions.** The review supplies verdicts and a ranked reading; the decision is the authors'.
+2. **Boullot–Cahn–Challe–Matheron (CEPR DP 21270).** Country, open-economy status and cohort reporting unverified: CEPR and author pages blocked, paper not indexed in Semantic Scholar. Read the PDF before positioning H3.
+3. **Marimon–Zavalloni–Callegari (2024), "Fiscal Rules with a Financial Stability Fund".** Unpublished, CV only; may already frame sustainability as a constraint on fiscal-policy design (H1's abstract sentence). Ask the coauthors.
+4. **If H1/H2 are kept:** activate the ageing transition (fertility and survival-improvement paths are implemented, unused in the reported runs); run the pension-side counterfactual re-solves of §5.4; state the sustainability criterion against Braun–Joines Definition 2.
+5. **If H3 is kept:** welfare module storing cohort value functions; a defence-specific import share or production channel for a like-for-like comparison with the ECB and ESM results.
+6. **If H4 is kept:** settle who earns the wedge on household holdings of B (open in `code/docs/TREND_GROWTH_PLAN.md`); add the framing to abstract and introduction; run the ESM-rate versus market-rate comparison.
+7. Carried over unchanged: the trend-growth plan (nothing implemented), `code/docs/OPEN_ISSUES_2026-07-30.md` items 1–6, and the 2026-07-31 threads below.
+
+### Session notes (environment)
+
+- The Semantic Scholar MCP server failed at session start because a second Claude Code session held TCP port 8000 through the server's optional HTTP bridge; the user-scope registration now sets `SEMANTIC_SCHOLAR_ENABLE_HTTP_BRIDGE=0`. Runbook entry in `~/.claude/skills/lit-review/ARCHITECTURE.md`.
+- The API key's rate limit is shared across sessions: one caller, at least 1.5 s between calls, never two calls in one message; bursts produce 429s and server disconnects.
+- The Google Scholar scraper returned empty results for every query; the web-search budget (200 calls per session) was exhausted mid-run.
+
+### Code state
+
+- No source, config or data file changed this session. `code/CLAUDE.md` gains a pointer to `lit-review/`.
+- Unpushed commit `101862d` (ruff lint cleanups and `ruff.toml`, from another session on 2026-09-10) goes to `origin/main` with this handoff.
+
+---
+
+## Prior status (handoff 2026-09-10)
 
 Short session: established where the trend-growth extension (r_B = g > 0) stands. No code was run or changed. Overleaf `docs/` unchanged at `9eafb13`.
 
