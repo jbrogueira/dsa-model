@@ -62,7 +62,7 @@ No welfare/CEV measure exists (eq. 8). The reported outputs are: the debt-to-GDP
 
 ## 6. Current state and limits
 
-- **Public capital is on in the live config** (`production.eta_g = 0.05`, `K_g = 1.0`, `delta_g = 0.0`), unlike the source baseline (eq. 8 / Doc 1 §10.1); activation is in progress (see `docs/PUBLIC_CAPITAL_KG_PLAN.md`).
+- **Public capital is on in the live config** (`production.eta_g = 0.05`, `K_g = 1.0`, `delta_g = 0.0`), unlike the source baseline (eq. 8 / Doc 1 §10.1); activation is in progress (see `docs/archive/PUBLIC_CAPITAL_KG_PLAN.md`).
 - **Live calibration (2026-06-09) differs from `DSA-LSA calibration.tex`** (Doc 1 §10.2): `_derived.theta` = `{ν 36.91, β 0.943, τ_p 0.198, ρ_pens 0.166, m 0.0428}` overrides the base config fields (`calibrate.py:1060-1075`); the `.tex` table reports the pre-SMM starting values.
 - **Debt service uses `r^B = 0.021`**, distinct from `r = 0.04` (Doc 1 §10.3).
 - **Defense and an other-net residual** are explicit budget lines; the residual `O/Y = −0.091122` is pinned at the initial steady state by `pin_baseline_closure.py` so the initial-point budget matches `primary_balance_target_over_Y = 0.0195` (Doc 1 §10.4). The baseline transition's `t=0` primary balance need not equal the target exactly.

@@ -18,7 +18,7 @@ The r_B=0 G+Ig set under the 2026-07-10 calibration — the numbers the draft's 
 
 ## Session 2026-07-10: public capital (K_g) activated — IMF K_g/Y, Y_ss=1 recalibration on V100, G+Ig run
 
-Full activation of the public-capital channel per `PUBLIC_CAPITAL_KG_PLAN.md`; committed in `17ce0a0` (code + data + decisions) and `dd5be23` (calibrated config + results). Detail in the plan doc §§4–7 and memory.
+Full activation of the public-capital channel per `archive/PUBLIC_CAPITAL_KG_PLAN.md`; committed in `17ce0a0` (code + data + decisions) and `dd5be23` (calibrated config + results). Detail in the plan doc §§4–7 and memory.
 
 - **Decisions:** K_g/Y pinned to IMF 0.745 (ICSD, Greece general government, 2019 — latest; dataset ends 2019); I_g/Y = 0.0353 (DATA-sheet mean 2015–19, = ICSD 3.52%); δ_g = 0.0353/0.745 = 0.04738255; reference year stays 2023. Data: `data/IMF_ICSD_GR.csv` (force-added past `*.csv` ignore), inventory §1.12.
 - **Code:** with `eta_g ≠ 0`, `run_fiscal_figures.py --config` passes baseline I_g as a constant **level** δ_g·K_g (K_g flat in baseline) and a **level** Ig-shock delta 0.02·Y(0); `_apply_shock` gained a per-line mixed mode (I_g level alongside G/defense/other ratios when `base_paths` has no `I_g_over_Y` key). `check_a0_predetermination.py` gained an Ig/`eta_g≠0` case — all four cases (τ_l, Ig × numpy, jax) pass with |diff| exactly 0.0.
@@ -704,7 +704,7 @@ Calibration report: `code/output/calibration/calibration_GR_20260518_184335.md`.
 
 - **Tighten pensions further.** Model 0.221 vs target 0.16. Likely needs another small reduction in `pension_replacement_default` (0.25 → ~0.18) followed by re-calibration.
 - **Wealth-distribution residuals** (`wealth_gini = 0.38` vs 0.58, `zero_wealth_fraction = 2.9%` vs 1.1%) — Phase 9 (warm-glow bequest + initial wealth distribution).
-- **Hours overshoots +19%.** Class 3 of `docs/CALIBRATION_FIX_CHECKLIST.md` proposes adding φ (Frisch curvature) as a third free parameter to close the trade-off with A/Y.
+- **Hours overshoots +19%.** Class 3 of `docs/archive/CALIBRATION_FIX_CHECKLIST.md` proposes adding φ (Frisch curvature) as a third free parameter to close the trade-off with A/Y.
 - **Fiscal experiments not yet re-validated.** The `run_fiscal_figures.py` smoke test should be re-run on the post-bug-fix baseline to confirm the debt path no longer explodes. Expected: debt path stable around target B/Y=1.64; bisection on τ_l for tax-financed shock should converge to plausible Δτ (~1-3 pp).
 
 ---
@@ -757,7 +757,7 @@ d_80 = (1+r_B)^80 · d_0 + deficit · [(1+r_B)^80 − 1] / r_B
      = 5.27 · 1.64 + 0.011 · 4.27 / 0.021 ≈ 10.9   (~1090 %)
 ```
 
-Observed 961 % is consistent. The residual primary deficit comes from the structural L/Y and C/Y gaps documented in `docs/CALIBRATION_FIX_CHECKLIST.md` (Class 3+) and the +38 % pension overshoot from the morning's run.
+Observed 961 % is consistent. The residual primary deficit comes from the structural L/Y and C/Y gaps documented in `docs/archive/CALIBRATION_FIX_CHECKLIST.md` (Class 3+) and the +38 % pension overshoot from the morning's run.
 
 ### Open items going forward
 

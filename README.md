@@ -207,7 +207,7 @@ Two additions to the draft, both pushed. Fiscal §4 gained a budget-components v
 
 ## Prior status (handoff 2026-07-10)
 
-Public capital (K_g) activated end-to-end: production-channel decisions taken from IMF data, model recalibrated at the Y_ss = 1 normalization on a cloud V100, G + I_g fiscal sets run, and the draft's I_g subsection pushed to Overleaf (mechanism only). Committed: `17ce0a0` (code + data + decisions), `dd5be23` (calibrated config + results), plus this handoff commit. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-10`); plan: `code/docs/PUBLIC_CAPITAL_KG_PLAN.md` (complete).
+Public capital (K_g) activated end-to-end: production-channel decisions taken from IMF data, model recalibrated at the Y_ss = 1 normalization on a cloud V100, G + I_g fiscal sets run, and the draft's I_g subsection pushed to Overleaf (mechanism only). Committed: `17ce0a0` (code + data + decisions), `dd5be23` (calibrated config + results), plus this handoff commit. Detail: `code/docs/FISCAL_EXPERIMENTS_STATUS.md` (`## Session 2026-07-10`); plan: `code/docs/archive/PUBLIC_CAPITAL_KG_PLAN.md` (complete).
 
 ### Completed this session
 
@@ -257,7 +257,7 @@ Paper-only session; no code changes. Detail: `code/docs/FISCAL_EXPERIMENTS_STATU
 ### Open / carried over (unchanged from 2026-07-07)
 
 - **I_g shock not re-run** under the recalibrated θ; the draft's I_g section stays commented out.
-- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` still carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back). Pick up from `code/docs/PUBLIC_CAPITAL_KG_PLAN.md`. The paper's §4.1 describes the `eta_g=0` run behind the current figures.
+- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` still carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back). Pick up from `code/docs/archive/PUBLIC_CAPITAL_KG_PLAN.md`. The paper's §4.1 describes the `eta_g=0` run behind the current figures.
 - **Submodule protocol**: before any pull/push in `docs/`, fetch and inspect the remote first — Overleaf-side edits landed mid-session twice (one required a rebase before push).
 
 ---
@@ -277,7 +277,7 @@ The paper draft was audited against the code and updated end-to-end. Detail: `co
 ### Open / carried over
 
 - **I_g shock not re-run** under the recalibrated θ; the draft's I_g section stays commented out until it is. With `eta_g ≠ 0` the shock must be a level path (`I_g_over_Y` is rejected — I_g→K_g→Y simultaneity).
-- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back; `δ_g=0` makes baseline K_g non-stationary). Pick up from `code/docs/PUBLIC_CAPITAL_KG_PLAN.md`.
+- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back; `δ_g=0` makes baseline K_g non-stationary). Pick up from `code/docs/archive/PUBLIC_CAPITAL_KG_PLAN.md`.
 - The G-shock figures/results are **current** (the 2026-06-17 "STILL STALE" thread was resolved by the re-run tracked in `95e8a77`, before this handoff).
 
 ---
@@ -305,7 +305,7 @@ Plotting/diagnostics layer + one accounting fix. Figures re-plotted from the exi
 ### Open / carried over
 
 - **STILL STALE — fiscal figures.** Re-run under new θ + SS-pinned closure + GDP-share spending + τ_l(NFA@T), now with the faster backend: `python run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`. Everything in `code/output/fiscal_test/` predates the recalibration.
-- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back; `δ_g=0` makes baseline K_g non-stationary). Pick up from `code/docs/PUBLIC_CAPITAL_KG_PLAN.md`.
+- **Public capital K_g activation — uncommitted, in progress.** `calibration_input_GR.json` carries the working-tree edit `K_g=1.0`, `eta_g=0.05` (held back; `δ_g=0` makes baseline K_g non-stationary). Pick up from `code/docs/archive/PUBLIC_CAPITAL_KG_PLAN.md`.
 
 ---
 
@@ -334,7 +334,7 @@ Everything in `code/output/fiscal_test/` predates these changes.
 
 - **`code/docs/FISCAL_SCENARIOS.md`** (new): the assumptions behind each fiscal scenario, in the paper's notation (`DSA-LSA model.tex` / `experiments.tex`) — environment, primary balance, debt law, shocks, the two financing rules, and a section flagging where the implementation currently diverges from the draft's experiments section.
 - **τ_l closure changed** (`run_fiscal_figures.py`): the labour-tax scenarios now target the **baseline transition's terminal debt/GDP** (`terminal_debt_gdp`, resolved at runtime), replacing the static `terminal_flow_balance` at `b*=1.64`. Committed; not yet re-run.
-- **Public capital (K_g) activation — in progress, NOT committed.** `code/docs/PUBLIC_CAPITAL_KG_PLAN.md` records a change set that turns on `η_g=0.05`, `K_g=1`; the `calibration_input_GR.json` edit is held back because `δ_g=0` makes the baseline `K_g` non-stationary (the plan lists δ_g + A_tfp-normalization as the remaining steps). Pick this up from that plan.
+- **Public capital (K_g) activation — in progress, NOT committed.** `code/docs/archive/PUBLIC_CAPITAL_KG_PLAN.md` records a change set that turns on `η_g=0.05`, `K_g=1`; the `calibration_input_GR.json` edit is held back because `δ_g=0` makes the baseline `K_g` non-stationary (the plan lists δ_g + A_tfp-normalization as the remaining steps). Pick this up from that plan.
 
 ### Baseline closure pinned at the initial SS + spending as GDP shares (2026-06-14, later passes)
 

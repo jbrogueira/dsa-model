@@ -190,7 +190,7 @@ Sources: Eurostat `nama_10_gdp`, `nasa_10_nf_tr`; [Gollin (2002)](https://www.jo
 
 ### 1.12 IMF public capital stock, Greece (pulled 2026-07-10)
 
-Pulled to discipline the model's `K_g/Y` target (public-capital channel; see `docs/PUBLIC_CAPITAL_KG_PLAN.md` §5). Saved at `data/IMF_ICSD_GR.csv` — full Greece extract (all 19 indicators, 1960–2019, annual) from the IMF Investment and Capital Stock Dataset (ICSD), Fiscal Affairs Department.
+Pulled to discipline the model's `K_g/Y` target (public-capital channel; see `docs/archive/PUBLIC_CAPITAL_KG_PLAN.md` §5). Saved at `data/IMF_ICSD_GR.csv` — full Greece extract (all 19 indicators, 1960–2019, annual) from the IMF Investment and Capital Stock Dataset (ICSD), Fiscal Affairs Department.
 
 - **Source:** IMF Data portal SDMX API, dataflow `IMF.FAD:ICSD(1.0.0)`, publication date 2025-07-01. Values are identical to the May-2021 Excel distribution ("IMF Investment and Capital Stock Dataset, 2021", infrastructuregovern.imf.org) — the portal dataflow republishes the 2021 dataset with ICP-2017-benchmark PPPs. **Coverage ends 2019**; no vintage extends further.
 - **Key series** (general government = S13, constant prices):
