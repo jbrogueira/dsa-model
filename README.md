@@ -4,7 +4,20 @@ Overlapping Generations Economy with heterogeneous agents, incomplete markets, a
 
 ---
 
-## Current status (handoff 2026-09-11)
+## Current status (handoff 2026-09-21)
+
+Repository clean-up only; no source, config or data file changed. Commits `26a2776`, `29a9b98`, `346021b`; Overleaf `docs/` at `da44637` (pushed; parent pointer not staged).
+
+- **Reported runs:** `code/output/fiscal_test_kg_rB0/` (the draft's §4, r_B = 0; JSON + ten figures now tracked, byte-identical to `docs/output/fiscal_test/`) and `code/output/fiscal_test_kg/` (r_B = 0.021 counterpart). Removed from the tree: `output/fiscal_test/` (June-17 pre-K_g run and its stale `g_aggregates_note`), `output/fiscal_test_rB0_v100/` (old-θ r_B = 0 run; JSON archived in `26a2776`), `calibration_input_GR_test.json` (unreferenced). The `run_fiscal_figures.py` default `--output-dir` is still `output/fiscal_test`, so a new run recreates that folder; the `/fiscal-note` and `/eval-fiscal` defaults now point at `fiscal_test_kg_rB0`.
+- **Calibration reports:** only the 2026-07-07 report, the five 2026-07-10 SMM↔A_tfp loop iterations and the 2026-07-10 final remain; earlier intermediate reports deleted (θ history is in `calibration_input_GR.json`'s log).
+- **Docs:** five completed plans moved to `code/docs/archive/` (index in its README). `bug_report.md` stays as the live log of the `code-report-fix` skill (14 entries still marked Open from March, unverified).
+- **One dependency list:** root `requirements.txt`; `make_venv.sh` and `code/setup_jax.sh` both read it.
+- **Not done (blocked for the assistant):** prune `code/.claude/settings.local.json` (dead one-off `kill`/`ps -p` rules) and delete `code/docs/.claude/settings.local.json` (one `wc` rule). `diag_bequest_decomp.py`, `diag_ss_vs_transition.py` left in place (June diagnostics, resolved issue).
+- Open threads unchanged from 2026-09-11 below, except that the stale `g_aggregates_note` item is closed by deletion; regenerate a note from `fiscal_test_kg_rB0` when needed.
+
+---
+
+## Prior status (handoff 2026-09-11)
 
 Two sessions (10–11 September): a deep literature review was planned and run to test which contributions the framework can make to the sovereign-debt-analysis literature. No source, config or data file changed. Overleaf `docs/` unchanged at `9eafb13`.
 
