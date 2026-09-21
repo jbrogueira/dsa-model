@@ -11,8 +11,10 @@ __pycache__/
 output/*.png
 output/test/
 *.png
-# but track the published fiscal-shock figures
-!output/fiscal_test/*.png
+# but track the reported fiscal-shock figures (kg_rB0 = the draft's run; kg = its r_B=0.021 counterpart)
+!output/fiscal_test_kg/*.png
+!output/fiscal_test_kg_rB0/*.png
+# health-flag CSVs are ignored by the root *.csv rule; both are regenerable (build_health_flag_data.py, health_flag_decomposition.py)
 
 # IDE
 .idea/

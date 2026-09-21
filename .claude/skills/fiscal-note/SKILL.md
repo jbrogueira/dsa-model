@@ -18,7 +18,7 @@ Do not run any simulation. Work only from the saved JSON and PNGs.
 ## Arguments
 
 `$ARGUMENTS` is an optional path to the results JSON.
-- empty → default to `code/output/fiscal_test/fiscal_results.json`
+- empty → default to `code/output/fiscal_test_kg_rB0/fiscal_results.json`
 - one path → use it as `RESULTS_JSON`
 
 Let `FOLDER` = the directory containing `RESULTS_JSON`. The note and the figures live there.

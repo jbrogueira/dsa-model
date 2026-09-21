@@ -40,7 +40,7 @@ fi
 echo "Installing dependencies..."
 "$VENV/bin/pip" install --upgrade pip --quiet
 "$VENV/bin/pip" install --quiet \
-    numpy numba matplotlib quantecon scipy pytest \
+    -r "$(dirname "$0")/../requirements.txt" \
     "$JAX_EXTRA"
 
 echo ""

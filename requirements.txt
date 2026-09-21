@@ -1,7 +1,9 @@
-jax
-numpy
-matplotlib
-scipy
-numba
-quantecon
-pytest
+# Single dependency list for the repo (installed by make_venv.sh and code/setup_jax.sh).
+# JAX itself is installed by the venv scripts per platform: jax[cpu] on macOS ARM,
+# jax[cuda12] on Linux x86_64. Aggregation needs numba even with --backend jax.
+numpy>=1.20.0
+numba>=0.55.0
+scipy>=1.7.0
+matplotlib>=3.5.0
+quantecon>=0.5.0
+pytest>=7.0.0

@@ -430,7 +430,7 @@ The transition bakes survival into its per-cohort means (dead agents hold 0; mea
 ```bash
 bash make_venv.sh
 ```
-Creates `.venv/` in the project root. Installs `jax[cuda12]` on Linux, plain `jax` on macOS, plus `requirements.txt`.
+Creates `.venv/` in the project root. Installs `jax[cuda12]` on Linux, `jax[cpu]` on macOS, plus the root `requirements.txt` (the single dependency list; `code/setup_jax.sh` reads the same file).
 
 ### 2. Activate before each coding session
 ```bash
