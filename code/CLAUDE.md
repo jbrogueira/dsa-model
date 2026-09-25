@@ -31,7 +31,7 @@ run_scale_loop.sh              # Outer loop: SMM <-> A_tfp normalization until j
 chain_fiscal_after_loop.sh     # Waits for run_scale_loop.sh, gates on the A[0] check, runs the G+Ig set
 docs/IMPLEMENTATION_PLAN.md    # Feature implementation plan & progress
 docs/OPEN_ISSUES_2026-07-30.md # Six implementation gaps found in the draft-vs-code audit; items 1-4 share one batched re-run
-docs/TREND_GROWTH_PLAN.md      # Plan for r_B = g = 1% (detrended units); not implemented as of 2026-09-10
+docs/TREND_GROWTH_PLAN.md      # Plan for r_B = g = 1% (detrended units); audited against the code 2026-09-21, not implemented
 docs/archive/                  # Completed/superseded plans (index in its README.md); not the live pipeline
 ../lit-review/                 # Literature review (2026-09-10/11): PLAN_* (candidates H1-H5, kill tests), review .md (verdict table), .bib (173 entries); no code impact
 ```
