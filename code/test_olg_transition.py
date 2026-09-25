@@ -2478,5 +2478,64 @@ class TestFixedEffectJAX:
             assert diff < 1e-6, f"V mismatch at alpha[{k}]: max diff = {diff:.2e}"
 
 
+class TestTrendGrowthHousehold:
+    """Balanced growth in the household block (plan Step 2).
+
+    In detrended units a unit of next-period assets costs (1+g) today, so the
+    growth problem on grid G at return r is the same problem as the no-growth
+    one on grid (1+g)G at the return r_tilde that solves
+    1 + r_tilde(1-tau_k) = (1 + r(1-tau_k))/(1+g).  Every level object
+    (pension floor, transfer floor, medical costs, child costs) is unchanged
+    between the two, so the policies must coincide exactly.
+    """
+
+    G, R, TAU_K = 0.017, 0.04, 0.2236
+    A_MAX = 30.0
+
+    @classmethod
+    def _pair(cls):
+        r_tilde = ((1 + cls.R * (1 - cls.TAU_K)) / (1 + cls.G) - 1) / (1 - cls.TAU_K)
+        T = 8
+        base = dict(T=T, n_a=25, n_y=2, n_h=1, retirement_age=6, labor_supply=True,
+                    nu=1.0, phi=2.0, gamma=1.0, a_min=0.0, tau_k_default=cls.TAU_K,
+                    w_path=np.ones(T), pension_min_floor=0.1, transfer_floor=0.05)
+        grow = LifecycleConfig(trend_growth=cls.G, r_path=np.full(T, cls.R),
+                               a_max=cls.A_MAX, **base)
+        flat = LifecycleConfig(trend_growth=0.0, r_path=np.full(T, r_tilde),
+                               a_max=cls.A_MAX * (1 + cls.G), **base)
+        return grow, flat, r_tilde
+
+    def test_r_tilde_value(self):
+        _, _, r_tilde = self._pair()
+        assert abs(r_tilde - 0.017801) < 1e-6
+
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    def test_isomorphism(self, backend):
+        if backend == "jax":
+            from lifecycle_jax import LifecycleModelJAX as Model
+        else:
+            Model = LifecycleModelPerfectForesight
+        grow, flat, _ = self._pair()
+        mg = Model(grow, verbose=False); mg.solve(verbose=False)
+        mf = Model(flat, verbose=False); mf.solve(verbose=False)
+        assert np.array_equal(np.asarray(mg.a_policy), np.asarray(mf.a_policy))
+        assert np.abs(np.asarray(mg.c_policy) - np.asarray(mf.c_policy)).max() < 1e-12
+        assert np.abs(np.asarray(mg.l_policy) - np.asarray(mf.l_policy)).max() < 1e-12
+
+    def test_growth_changes_policies(self):
+        """Guard against the growth factor being a no-op on a fixed grid."""
+        T = 8
+        base = dict(T=T, n_a=25, n_y=2, n_h=1, retirement_age=6, labor_supply=True,
+                    nu=1.0, phi=2.0, gamma=1.0, a_min=0.0, a_max=self.A_MAX,
+                    w_path=np.ones(T), r_path=np.full(T, self.R))
+        m0 = LifecycleModelPerfectForesight(LifecycleConfig(trend_growth=0.0, **base),
+                                            verbose=False)
+        m0.solve(verbose=False)
+        mg = LifecycleModelPerfectForesight(LifecycleConfig(trend_growth=self.G, **base),
+                                            verbose=False)
+        mg.solve(verbose=False)
+        assert not np.array_equal(m0.a_policy, mg.a_policy)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

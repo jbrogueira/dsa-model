@@ -952,15 +952,17 @@ class LifecycleModelPerfectForesight:
         best_l = 1.0
 
         for i_a_next, a_next in enumerate(self.a_grid):
+            # In detrended units a unit of next-period assets costs (1+g) today.
+            a_next_cost = (1.0 + self.trend_growth) * a_next
             if self.labor_supply and not is_retired:
-                c_guess = (budget - a_next) / (1 + tau_c_t)
+                c_guess = (budget - a_next_cost) / (1 + tau_c_t)
                 if c_guess <= 0:
                     continue
                 c, l = self._solve_labor_newton(c_guess, w_t, kappa_t, y, h,
                                                 tau_l_t, tau_p_t, tau_c_t)
             else:
                 l = 1.0
-                c = (budget - a_next) / (1 + tau_c_t)
+                c = (budget - a_next_cost) / (1 + tau_c_t)
                 if c <= 0:
                     continue
 

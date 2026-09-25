@@ -268,8 +268,9 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
         alpha_mult=alpha_mult,
     )
 
-    # 2. Consumption candidates: (n_a, n_y, n_h, n_y, n_a_next)
-    a_next = a_grid[None, None, None, None, :]
+    # 2. Consumption candidates: (n_a, n_y, n_h, n_y, n_a_next).
+    # In detrended units a unit of next-period assets costs (1+g) today.
+    a_next = (1.0 + trend_growth) * a_grid[None, None, None, None, :]
     c_all = (budget[..., None] - a_next) / (1.0 + tau_c_t)
 
     # 2b. Labor supply FOC (when labor_supply=True).
