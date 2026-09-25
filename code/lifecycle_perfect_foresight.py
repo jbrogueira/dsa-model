@@ -19,6 +19,12 @@ class LifecycleConfig:
     beta: float = 0.96                   # Discount factor
     gamma: float = 2.0                   # CRRA coefficient
     current_age: int = 0                 # Starting age (0 = age 20)
+
+    # === Balanced growth ===
+    # Labour-augmenting productivity growth. The model is solved in detrended
+    # units, so next-period assets cost (1+trend_growth) today. 0.0 recovers
+    # the no-growth model exactly.
+    trend_growth: float = 0.0
     
     # === Retirement parameters ===
     retirement_age: int = 45             # Mandatory retirement age (period index, e.g., 45 = age 65)
@@ -296,6 +302,7 @@ class LifecycleModelPerfectForesight:
         self.labor_supply = config.labor_supply
         self.nu = config.nu
         self.phi = config.phi
+        self.trend_growth = float(config.trend_growth)
         self.retirement_window = config.retirement_window
         self.schooling_years = config.schooling_years
         self.child_cost_profile = config.child_cost_profile

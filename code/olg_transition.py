@@ -185,6 +185,12 @@ class OLGTransition:
 
         # Demographics
         self.pop_growth = pop_growth
+        # Balanced growth. g is read from the lifecycle config (its single
+        # source); n is the demographic rate above. Every per-capita detrended
+        # stock — sovereign debt, public capital, the pension fund, net foreign
+        # assets — loses growth_factor per period.
+        self.trend_growth = float(getattr(self.lifecycle_config, 'trend_growth', 0.0))
+        self.growth_factor = (1.0 + self.trend_growth) * (1.0 + float(pop_growth))
         self.birth_year = birth_year
         self.current_year = current_year
         self.n_cohorts = self.T
@@ -491,7 +497,7 @@ class OLGTransition:
                     ref.transfer_floor, ref.education_subsidy_rate,
                     ref.child_cost_profile, ref.schooling_years,
                     surv_c, P_y_4d_arg,
-                    ref.labor_supply, ref.nu, ref.phi,
+                    ref.labor_supply, ref.nu, ref.phi, ref.trend_growth,
                     beq_c,
                     ref.wage_age_profile,
                     ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
@@ -2609,13 +2615,18 @@ class OLGTransition:
         else:
             plt.close()
 
-def get_test_config():
-    """Return a minimal LifecycleConfig for fast testing."""
+def get_test_config(trend_growth=0.0):
+    """Return a minimal LifecycleConfig for fast testing.
+
+    trend_growth defaults to 0.0 so existing tests are unaffected; the
+    balanced-growth tests pass g explicitly.
+    """
     T, n_h = 20, 1
     config = LifecycleConfig(
         T=T,
         beta=0.99,
         gamma=1.0,
+        trend_growth=trend_growth,
         n_a=100,
         n_y=2,
         n_h=n_h,

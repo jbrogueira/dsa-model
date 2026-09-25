@@ -216,7 +216,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
          ui_replacement_rate, kappa, beta, gamma,
          pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
          transfer_floor, education_subsidy_rate, P_y_age_health,
-         labor_supply, nu, phi,
+         labor_supply, nu, phi, trend_growth,
          pension_avg_weight, mean_kappa_working, mean_y_employed)
     alpha_mult : scalar float, default 1.0
         Phase 8 permanent productivity FE multiplier (= exp(alpha_grid[k]) for
@@ -236,7 +236,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
      ui_replacement_rate, kappa, beta, gamma,
      pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
      transfer_floor, education_subsidy_rate, P_y_age_health,
-     labor_supply, nu, phi,
+     labor_supply, nu, phi, trend_growth,
      pension_avg_weight, mean_kappa_working, mean_y_employed) = model_params
 
     n_a = a_grid.shape[0]
@@ -444,6 +444,7 @@ def solve_lifecycle_jax(
     labor_supply=False,
     nu=1.0,
     phi=2.0,
+    trend_growth=0.0,
     bequest_lumpsum=0.0,
     wage_age_profile=None,
     pension_avg_weight=1.0,
@@ -499,7 +500,7 @@ def solve_lifecycle_jax(
                     ui_replacement_rate, kappa, beta, gamma,
                     pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
                     transfer_floor, education_subsidy_rate, P_y_age_health,
-                    labor_supply, nu, phi,
+                    labor_supply, nu, phi, trend_growth,
                     pension_avg_weight, mean_kappa_working, mean_y_employed)
 
     # Terminal period
@@ -618,6 +619,7 @@ _solve_lifecycle_jax_batched = jax.jit(
         None, None,              # child_cost_profile, schooling_years
         0, None,                 # survival_probs (per-cohort), P_y_by_age_health
         None, None, None,        # labor_supply, nu, phi
+        None,                    # trend_growth (shared scalar)
         0,                       # bequest_lumpsum (per-cohort scalar)
         None,                    # wage_age_profile (shared)
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
@@ -1016,6 +1018,7 @@ class LifecycleModelJAX:
         self.labor_supply = bool(config.labor_supply)
         self.nu = float(config.nu)
         self.phi = float(config.phi)
+        self.trend_growth = float(config.trend_growth)
 
         # New feature parameters
         self.pension_min_floor = float(config.pension_min_floor)
@@ -1117,6 +1120,7 @@ class LifecycleModelJAX:
                 labor_supply=self.labor_supply,
                 nu=self.nu,
                 phi=self.phi,
+                trend_growth=self.trend_growth,
                 wage_age_profile=self.wage_age_profile,
                 pension_avg_weight=self.pension_avg_weight,
                 mean_kappa_working=self.mean_kappa_working,

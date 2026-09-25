@@ -11,7 +11,7 @@
     "a_min": 0.0,
     "a_max": 200.0,
     "beta": 0.96,
-    "gamma": 2.0,
+    "gamma": 1.0,
     "labor_supply": true,
     "nu": 68.35,
     "phi": 1.5,
@@ -32,7 +32,7 @@
   },
   "prices": {
     "r": 0.04,
-    "r_B": 0.021
+    "r_B": 0.019
   },
   "production": {
     "alpha": 0.33,
@@ -40,7 +40,7 @@
     "A_tfp": 1.60606497,
     "K_g": 0.745,
     "eta_g": 0.05,
-    "delta_g": 0.04738255
+    "delta_g": 0.036485
   },
   "external_params": {
     "tau_c": 0.1818,
@@ -55,7 +55,8 @@
     "m_good": 0.048,
     "job_finding_rate": 0.5,
     "max_job_separation_rate": 0.1,
-    "pop_growth": -0.00573
+    "pop_growth": -0.006,
+    "trend_growth": 0.017
   },
   "edu_params": {
     "low": {
@@ -283,7 +284,7 @@
     "health_total_over_Y": 0.082,
     "transfers_over_Y": 0.011,
     "tax_revenue_over_Y": 0.4,
-    "interest_over_Y": 0.034,
+    "interest_over_Y": 0.0312,
     "primary_balance_target_over_Y": 0.0195,
     "other_net_spending_over_Y": -0.096295
   },
