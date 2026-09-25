@@ -1491,7 +1491,7 @@ class TestPhase6Features:
         np.testing.assert_allclose(res_base['w'], res_kg['w'], rtol=1e-10)
 
     def test_public_capital_accumulation(self):
-        """Public capital should follow K_g' = (1-delta_g)*K_g + I_g."""
+        """Public capital follows K_g' = [(1-delta_g)*K_g + I_g] / G."""
         T_tr = 10
         r_path = np.ones(T_tr) * 0.04
         I_g = np.ones(T_tr) * 0.2
@@ -1504,9 +1504,10 @@ class TestPhase6Features:
         res = olg.simulate_transition(r_path, n_sim=100, verbose=False)
 
         K_g = res['K_g']
+        G = olg.growth_factor
         assert K_g[0] == K_g_0
         for t in range(1, T_tr):
-            expected = (1 - delta_g) * K_g[t - 1] + I_g[t - 1]
+            expected = ((1 - delta_g) * K_g[t - 1] + I_g[t - 1]) / G
             np.testing.assert_allclose(K_g[t], expected, rtol=1e-12,
                                        err_msg=f"K_g accumulation failed at t={t}")
 
@@ -1552,7 +1553,7 @@ class TestPhase6Features:
 
         expected_debt_service = 0.04 * 1.0
         np.testing.assert_allclose(budget['debt_service'], expected_debt_service, rtol=1e-10)
-        expected_borrowing = B_path[1] - B_path[0]
+        expected_borrowing = olg.growth_factor * B_path[1] - B_path[0]
         np.testing.assert_allclose(budget['new_borrowing'], expected_borrowing, rtol=1e-10)
         assert budget['total_spending'] >= budget['debt_service']
 
@@ -1613,7 +1614,7 @@ class TestPhase7Features:
     """Tests for Phase 7: pension trust fund, defense spending."""
 
     def test_pension_trust_fund_accumulation(self):
-        """Trust fund follows S[t+1] = (1+r)*S[t] + payroll_tax - pensions."""
+        """Trust fund follows S[t+1] = [(1+r)*S[t] + payroll_tax - pensions] / G."""
         T_tr = 5
         r_path = np.ones(T_tr) * 0.04
         S_0 = 10.0
@@ -1625,9 +1626,11 @@ class TestPhase7Features:
         S = olg.S_pens_path
         assert S[0] == S_0
         # Verify accumulation equation
+        G = olg.growth_factor
         for t in range(T_tr):
             r_t = r_path[t]
-            expected = (1 + r_t) * S[t] + budget['tax_p'][t] - budget['pension'][t]
+            expected = ((1 + r_t) * S[t] + budget['tax_p'][t]
+                        - budget['pension'][t]) / G
             np.testing.assert_allclose(S[t + 1], expected, rtol=1e-10,
                                        err_msg=f"Trust fund accumulation failed at t={t}")
 
@@ -2535,6 +2538,43 @@ class TestTrendGrowthHousehold:
                                             verbose=False)
         mg.solve(verbose=False)
         assert not np.array_equal(m0.a_policy, mg.a_policy)
+
+
+class TestTrendGrowthStocks:
+    """Per-capita detrended stock recursions (plan Steps 3-4)."""
+
+    G_TREND, N_POP = 0.017, -0.006
+
+    def test_kg_flat_at_stationary_investment(self):
+        """I_g = (delta_g + G - 1) * K_g holds K_g exactly flat.
+
+        Gamma is written out from the literal rates rather than read from
+        olg.growth_factor: a test that reuses the object the recursion divides
+        by would pass for any growth factor, right or wrong.
+        """
+        T_tr = 10
+        G = (1 + self.G_TREND) * (1 + self.N_POP)
+        K_g_0, delta_g = 2.0, 0.1
+        I_g = np.full(T_tr, (delta_g + G - 1.0) * K_g_0)
+
+        olg = OLGTransition(lifecycle_config=get_test_config(self.G_TREND),
+                            pop_growth=self.N_POP,
+                            eta_g=0.05, K_g_initial=K_g_0,
+                            delta_g=delta_g, I_g_path=I_g)
+        res = olg.simulate_transition(np.full(T_tr, 0.04), n_sim=100, verbose=False)
+
+        K_g = res['K_g']
+        np.testing.assert_allclose(K_g, K_g_0, rtol=1e-12,
+                                   err_msg="stationary I_g did not hold K_g flat")
+
+    def test_age_weights_match_steady_state(self):
+        """Transition cohort weights equal calibrate.compute_age_weights."""
+        from calibrate import compute_age_weights
+        n_cohorts = 20
+        sizes = OLGTransition._cohort_sizes_njit(n_cohorts, 2020, 1960, self.N_POP)
+        sizes = sizes / sizes.sum()
+        np.testing.assert_allclose(sizes, compute_age_weights(n_cohorts, self.N_POP),
+                                   rtol=0, atol=1e-15)
 
 
 if __name__ == "__main__":

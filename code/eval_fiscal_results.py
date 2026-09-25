@@ -73,6 +73,13 @@ def _arr(d, key):
 # Individual checks
 # ---------------------------------------------------------------------------
 
+def _growth_factor(params):
+    """Gamma = (1+g)(1+n) from the run's params (JSON first, --config fallback)."""
+    g = params.get('trend_growth')
+    n = params.get('pop_growth')
+    return (1.0 + float(g or 0.0)) * (1.0 + float(n or 0.0))
+
+
 def chk_terminal_converged(exp_data, scenario):
     # WARN tier: terminal convergence is a model quality diagnostic, not an
     # accounting identity.  Short T_transition will naturally show drift.
@@ -146,9 +153,13 @@ def chk_budget_identity(budget, scenario):
     return _pass('budget_identity', scenario, 'FAIL')
 
 
-def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario):
+def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
+                          growth_factor=1.0):
     """Debt accrues at the sovereign rate r_B (the rate in the B law of motion),
-    not the capital return r; the caller passes r_B when available."""
+    not the capital return r; the caller passes r_B when available.
+
+    In per-capita detrended units the whole right-hand side is divided by
+    growth_factor = (1+g)(1+n); 1.0 recovers the no-growth identity."""
     PD   = _arr(budget, 'primary_deficit')
     Ygdp = np.asarray(Y, dtype=float)
     Bgdp = np.asarray(B_gdp_path, dtype=float)
@@ -157,11 +168,12 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario):
     # Reconstruct B levels: B_gdp_path[t] = B[t] / Y[min(t, T-1)]
     Y_ext = np.append(Ygdp, Ygdp[-1])
     B = Bgdp * Y_ext           # length T+1
-    resid = np.abs(B[1:] - ((1 + r[:T]) * B[:T] + PD))
+    G = float(growth_factor)
+    resid = np.abs(G * B[1:] - ((1 + r[:T]) * B[:T] + PD))
     mx = float(resid.max())
     if mx > IDENTITY_TOL * float(np.abs(B).mean() + 1):
         return _fail('debt_accumulation', scenario, 'FAIL', mx,
-                     f"max |B[t+1] - (1+r_B)*B[t] - PD[t]| = {mx:.2e}")
+                     f"max |G*B[t+1] - (1+r_B)*B[t] - PD[t]| = {mx:.2e}")
     return _pass('debt_accumulation', scenario, 'FAIL')
 
 
@@ -460,7 +472,8 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
     results.append(chk_convergence(conv, label))
     results.append(chk_budget_identity(cf_bud, label))
     if len(B_gdp) > 1 and len(Y) > 0:
-        results.append(chk_debt_accumulation(cf_bud, B_gdp, Y, r_debt, label))
+        results.append(chk_debt_accumulation(cf_bud, B_gdp, Y, r_debt, label,
+                                             growth_factor=_growth_factor(params)))
     results.append(chk_nfa_accounting(cf_mac, B_gdp, label))
     results += chk_tax_revenue(cf_bud, cf_mac, params, label)
 
@@ -490,16 +503,20 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
     balance_cond = exp_data.get('balance_condition', 'terminal_debt_gdp')
     if scenario_key == 'tax_financed':
         if balance_cond == 'terminal_flow_balance':
-            # Verify the flow condition held: PD[T-1]/Y[T-1] should be near zero
-            # (or near (g-r)*target if target != 0).  We check |PD/Y| < BISECT_TOL.
+            # Rest point of B' = [(1+r_B)B + PD]/G:
+            #   PD[T-1]/Y[T-1] = (G - 1 - r_B) * target_debt_gdp
             PD = _arr(cf_bud, 'primary_deficit')
             Y_arr = np.asarray(Y, dtype=float) if len(Y) > 0 else None
             if PD is not None and Y_arr is not None and len(Y_arr) > 0:
-                pd_over_y = float(abs(PD[-1])) / (float(abs(Y_arr[-1])) + 1e-8)
+                G_g = _growth_factor(params)
+                r_B_t = float(r_debt[-1]) if len(r_debt) else 0.0
+                target = float(params.get('target_debt_gdp') or 0.0)
+                rhs = (G_g - 1.0 - r_B_t) * target
+                pd_over_y = abs(float(PD[-1]) / (float(Y_arr[-1]) + 1e-8) - rhs)
                 if pd_over_y > BISECT_TOL:
                     results.append(_fail('bisection_flow_target', label, 'FAIL', pd_over_y,
-                                         f"|PD[T]/Y[T]| = {pd_over_y:.4f} > {BISECT_TOL} "
-                                         f"(terminal_flow_balance not satisfied)"))
+                                         f"|PD[T]/Y[T] - (G-1-r_B)*b| = {pd_over_y:.4f} "
+                                         f"> {BISECT_TOL} (terminal_flow_balance not satisfied)"))
                 else:
                     results.append(_pass('bisection_flow_target', label, 'FAIL'))
         elif len(B_gdp) > 0:
@@ -606,6 +623,10 @@ def main():
         prices = cfg.get('prices', {})
         if 'r_B' in prices and params.get('r_B') is None:
             params['r_B'] = prices['r_B']
+        ext = cfg.get('external_params', {})
+        for key in ['trend_growth', 'pop_growth']:
+            if key in ext and params.get(key) is None:
+                params[key] = ext[key]
 
     if not params:
         print("WARNING: no 'params' section in JSON and no --config provided. "

@@ -92,7 +92,10 @@ if args.config:
     # zero and harmless. The spending paths below are sized off the resulting Y.
     prod = config_data.get('production', {})
     eta_g_cfg = prod.get('eta_g', 0.0)
-    I_g_warmup = np.full(T_TR, prod.get('delta_g', 0.05) * prod.get('K_g', 0.0))
+    # Stationary public-investment level: (delta_g + G - 1) * K_g holds K_g flat
+    # in per-capita detrended units.
+    I_g_warmup = np.full(T_TR, (prod.get('delta_g', 0.05)
+                                + economy.growth_factor - 1.0) * prod.get('K_g', 0.0))
 
     print("Calibrating baseline fiscal paths …")
     _calib = economy.simulate_transition(
@@ -122,7 +125,7 @@ if args.config:
     if eta_g_cfg != 0.0:
         print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
               f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
-        print(f"  I_g = {I_g_path[0]:.4f} (level = delta_g*K_g, K_g flat at "
+        print(f"  I_g = {I_g_path[0]:.4f} (level = (delta_g + G - 1)*K_g, K_g flat at "
               f"{prod.get('K_g', 0.0)})")
     else:
         print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
@@ -155,7 +158,6 @@ else:
         alpha             = 0.33,
         delta             = 0.05,
         A                 = 1.0,
-        pop_growth        = 0.02,
         birth_year        = 2005,
         current_year      = 2020,
         education_shares  = {'medium': 1.0},
@@ -167,7 +169,9 @@ else:
 
     T_TR = 40
     r_path   = np.full(T_TR, 0.04)
-    I_g_path = np.full(T_TR, 0.05 * 1.0)
+    # Stationary public investment: (delta_g + G - 1) * K_g keeps K_g flat.
+    I_g_path = np.full(T_TR, (economy.delta_g + economy.growth_factor - 1.0)
+                             * economy.K_g_initial)
 
     tax_paths = dict(
         tau_l_path               = np.full(T_TR, 0.15),
@@ -238,7 +242,6 @@ scn_g_taul = FiscalScenario(
     # balance_condition / target_debt_gdp set at runtime to match the baseline
     # transition's terminal B/Y (see run_experiment_set).
     B_initial         = B_initial,
-    pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
 )
 
@@ -252,7 +255,6 @@ scn_g_nfa = FiscalScenario(
     financing         = 'tau_l',
     # balance_condition / target_nfa_gdp set at runtime (see run_experiment_set).
     B_initial         = B_initial,
-    pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
 )
 
@@ -280,7 +282,6 @@ scn_ig_taul = FiscalScenario(
     # balance_condition / target_debt_gdp set at runtime to match the baseline
     # transition's terminal B/Y (see run_experiment_set).
     B_initial         = B_initial,
-    pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
 )
 
@@ -291,7 +292,6 @@ scn_ig_nfa = FiscalScenario(
     financing         = 'tau_l',
     # balance_condition / target_nfa_gdp set at runtime (see run_experiment_set).
     B_initial         = B_initial,
-    pop_growth        = float(economy.pop_growth),
     n_post            = N_POST,
 )
 
@@ -532,6 +532,9 @@ params_out = {
     'delta_Ig_path': [float(x) for x in delta_Ig] if 'Ig' in shock_types else None,
     'r_B':           (float(economy.r_B) if getattr(economy, 'r_B', None) is not None
                       else None),
+    'trend_growth':  float(getattr(economy, 'trend_growth', 0.0)),
+    'pop_growth':    float(economy.pop_growth),
+    'delta_g':       float(economy.delta_g),
     'shock_mode_G':  'ratio' if args.config else 'level',
     'shock_mode_Ig': ('ratio' if (args.config and eta_g_cfg == 0.0) else 'level')
                      if 'Ig' in shock_types else None,

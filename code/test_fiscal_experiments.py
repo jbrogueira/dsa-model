@@ -316,7 +316,7 @@ class TestDebtFinanced:
     """Type A: single simulate_transition() call."""
 
     def test_debt_accumulation_identity(self):
-        """B[t+1] = (1+r[t])*B[t] + PD[t] holds exactly."""
+        """G*B[t+1] = (1+r[t])*B[t] + PD[t] holds exactly, G = (1+g)(1+n)."""
         olg = _make_olg()
         bp  = _make_base_paths()
         scn = FiscalScenario(name='base_debt', financing='debt', B_initial=0.1)
@@ -325,8 +325,10 @@ class TestDebtFinanced:
         B  = result.B_path
         r  = result.cf_macro['r']
         PD = result.cf_budget['primary_deficit']
+        G  = olg.growth_factor
+        assert G != 1.0, "fixture should exercise a non-unit growth factor"
         for t in range(len(PD)):
-            assert np.isclose(B[t + 1], (1 + r[t]) * B[t] + PD[t], atol=1e-10)
+            assert np.isclose(G * B[t + 1], (1 + r[t]) * B[t] + PD[t], atol=1e-10)
 
     def test_result_structure(self):
         """run_fiscal_scenario returns a FiscalScenarioResult with expected fields."""
@@ -495,6 +497,7 @@ class TestNFACA:
         assert CA is None
 
     def test_ca_equals_diff_nfa(self):
+        """G = 1 recovers the plain difference."""
         NFA_arr = np.array([1.0, 1.2, 0.9, 1.1])
         macro = {'NFA': NFA_arr}
         NFA, CA = _nfa_ca_paths(macro)
@@ -502,6 +505,25 @@ class TestNFACA:
         assert np.isclose(CA[1], -0.3)   # 0.9 - 1.2
         assert np.isclose(CA[2], 0.2)    # 1.1 - 0.9
         assert np.isclose(CA[3], 0.0)    # last period repeated
+
+    def test_debt_constant_at_rest_point(self):
+        """PD = (G - 1 - r_B) * B[0] holds B constant; the n != 0 case is the
+        one that distinguishes G from (1+g) and from a missing r_B."""
+        G, r_B, B0 = 1.0109, 0.019, 1.64
+        T = 20
+        pd = np.full(T, (G - 1.0 - r_B) * B0)
+        B = compute_debt_path(pd, np.full(T, r_B), B_initial=B0, growth_factor=G)
+        np.testing.assert_allclose(B, B0, rtol=1e-12)
+
+    def test_ca_with_growth(self):
+        """CA[t] = G*NFA[t+1] - NFA[t]; terminal entry is (G-1)*NFA[-1]."""
+        NFA_arr = np.array([1.0, 1.2, 0.9, 1.1])
+        G = 1.0109
+        NFA, CA = _nfa_ca_paths({'NFA': NFA_arr}, G)
+        assert np.isclose(CA[0], G * 1.2 - 1.0)
+        assert np.isclose(CA[1], G * 0.9 - 1.2)
+        assert np.isclose(CA[2], G * 1.1 - 0.9)
+        assert np.isclose(CA[3], (G - 1.0) * 1.1)
 
     def test_nfa_constraint_satisfied_at_solution(self):
         """NFA-constrained result satisfies NFA_t >= -nfa_limit for all t.

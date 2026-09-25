@@ -145,7 +145,7 @@ def _to_arrays(d):
     return out
 
 
-def _rebuild_result(entry, name, r_b=None):
+def _rebuild_result(entry, name, r_b=None, growth_factor=1.0):
     """Build a minimal stand-in for FiscalScenarioResult from a JSON entry.
 
     Uses only the attributes that compare_scenarios / debt_fan_chart read:
@@ -163,7 +163,7 @@ def _rebuild_result(entry, name, r_b=None):
         Y = np.asarray(cf_macro['Y'], dtype=float)
         T = len(Y)
         cf_budget['interest_payments'] = float(r_b) * B_gdp[:T] * Y
-    NFA, CA   = _nfa_ca_paths(cf_macro)  # cf_macro['NFA'] is the full NFA
+    NFA, CA   = _nfa_ca_paths(cf_macro, growth_factor)  # cf_macro['NFA'] is the full NFA
     return SimpleNamespace(
         scenario=SimpleNamespace(name=name),
         cf_macro=cf_macro,
@@ -178,6 +178,12 @@ def _rebuild_result(entry, name, r_b=None):
 def regen(json_path, output_dir, shocks=None, r_b=None):
     with open(json_path) as fh:
         data = json.load(fh)
+
+    # Gamma = (1+g)(1+n) from the run's own params, so the recomputed current
+    # account matches the recursion the run used.
+    _p = data.get('params', {}) or {}
+    growth_factor = ((1.0 + float(_p.get('trend_growth') or 0.0))
+                     * (1.0 + float(_p.get('pop_growth') or 0.0)))
 
     shock_keys = [k for k in data if k != 'params']
     if shocks:
@@ -196,7 +202,8 @@ def regen(json_path, output_dir, shocks=None, r_b=None):
         missing = [k for k, _ in spec if k not in g]
         if missing:
             print(f"[{shock}] WARNING: scenarios absent from JSON, skipped: {missing}")
-        results = [_rebuild_result(g[k], lbl, r_b=r_b) for k, lbl in present]
+        results = [_rebuild_result(g[k], lbl, r_b=r_b, growth_factor=growth_factor)
+                   for k, lbl in present]
         labels  = [lbl for _, lbl in present]
         res_base, *cfs = results
 
@@ -238,7 +245,10 @@ def regen_budget_components(json_path, output_dir, shock, scenario):
         data = json.load(fh)
     entry = data[shock][scenario]
     label = SCENARIO_LABELS.get(scenario, scenario).format(shock=shock)
-    result = _rebuild_result(entry, label)
+    _p = data.get('params', {}) or {}
+    growth_factor = ((1.0 + float(_p.get('trend_growth') or 0.0))
+                     * (1.0 + float(_p.get('pop_growth') or 0.0)))
+    result = _rebuild_result(entry, label, growth_factor=growth_factor)
     print(f"[{shock}/{scenario}] budget-components chart from {json_path} -> {output_dir}")
     budget_components_chart(result,
         title=f'Budget components and primary balance — {label}',

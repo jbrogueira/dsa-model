@@ -89,7 +89,8 @@ def _run_baseline(config_data, backend, n_sim):
     # matching run_fiscal_figures' warmup call.
     prod = config_data.get('production', {})
     eta_g = float(prod.get('eta_g', 0.0))
-    I_g_level = np.full(T_tr, prod.get('delta_g', 0.0) * prod.get('K_g', 0.0))
+    I_g_level = np.full(T_tr, (prod.get('delta_g', 0.0)
+                               + economy.growth_factor - 1.0) * prod.get('K_g', 0.0))
 
     # Spending shares of Y(t): backend-independent budget arithmetic, but include
     # them so the primary-deficit comparison is meaningful.

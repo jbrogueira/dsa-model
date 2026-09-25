@@ -72,7 +72,8 @@ def run_transition(recompute_bequests):
                  ['tau_c_path', 'tau_l_path', 'tau_p_path', 'tau_k_path',
                   'pension_replacement_path']}
     prod = config_data.get('production', {})
-    I_g_warmup = np.full(T_TR, prod.get('delta_g', 0.05) * prod.get('K_g', 0.0))
+    I_g_warmup = np.full(T_TR, (prod.get('delta_g', 0.05)
+                                + economy.growth_factor - 1.0) * prod.get('K_g', 0.0))
     _calib = economy.simulate_transition(r_path=r_path, I_g_path=I_g_warmup,
                                          n_sim=50, verbose=False, **tax_paths)
     meanY = float(np.asarray(_calib['Y']).mean())

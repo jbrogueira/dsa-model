@@ -108,7 +108,8 @@ class FiscalScenario:
     # 'terminal_nfa_gdp'     : NFA_T / Y_T = target_nfa_gdp  (full NFA = A - K_dom - B)
     #                          Terminal external-balance target, analogue of
     #                          terminal_debt_gdp; interior NFA path is free.
-    # 'terminal_flow_balance': PD[T-1]/Y[T-1] = (pop_growth - r_terminal) * target_debt_gdp
+    # 'terminal_flow_balance': PD[T-1]/Y[T-1] = (G - 1 - r_terminal) * target_debt_gdp,
+    #                          with G = (1+g)(1+n) read from the OLG object
     #                          Ensures the terminal period is a fiscal rest point.
     #                          For r > g and target = 0: PD[T-1] ≈ 0.
     # 'pv_balance'           : Σ_t δ^t * PrimaryDeficit_t = 0
@@ -117,7 +118,6 @@ class FiscalScenario:
     target_debt_gdp: float = 0.0
     target_nfa_gdp: float = 0.0        # used only by 'terminal_nfa_gdp'
     discount_rate: float = 0.04        # used only by 'pv_balance'
-    pop_growth: float = 0.0            # used by 'terminal_flow_balance'
 
     # ── Initial debt ─────────────────────────────────────────────────────────
     B_initial: float = 0.0
@@ -245,11 +245,17 @@ def _extend_base_paths(base_paths: dict, n_post: int) -> dict:
 
 def compute_debt_path(primary_deficit_path: np.ndarray,
                       r_B_path: np.ndarray,
-                      B_initial: float = 0.0) -> np.ndarray:
+                      B_initial: float = 0.0,
+                      growth_factor: float = 1.0) -> np.ndarray:
     """Forward-recursive sovereign-debt accumulation.
 
     B[0] = B_initial
-    B[t+1] = (1 + r_B[t]) * B[t] + PrimaryDeficit[t]
+    B[t+1] = [(1 + r_B[t]) * B[t] + PrimaryDeficit[t]] / growth_factor
+
+    Debt is a per-capita detrended stock, so the whole right-hand side — the
+    stock carried forward and the period-t deficit alike — is divided by
+    growth_factor = (1+g)(1+n).  The default 1.0 reproduces the no-growth
+    recursion exactly; callers in the transition pass olg.growth_factor.
 
     The sovereign rate r_B is used, not the capital return r — these can differ
     in SOE mode (sovereign spread).  Callers should pass base_paths['r_B_path'],
@@ -260,8 +266,10 @@ def compute_debt_path(primary_deficit_path: np.ndarray,
     T = len(primary_deficit_path)
     B = np.zeros(T + 1)
     B[0] = B_initial
+    G = float(growth_factor)
     for t in range(T):
-        B[t + 1] = (1.0 + float(r_B_path[t])) * B[t] + float(primary_deficit_path[t])
+        B[t + 1] = ((1.0 + float(r_B_path[t])) * B[t]
+                    + float(primary_deficit_path[t])) / G
     return B
 
 
@@ -275,7 +283,8 @@ def _balance_residual(budget_path: dict,
                       scenario: FiscalScenario,
                       r_terminal: float = 0.04,
                       T_balance: Optional[int] = None,
-                      NFA_partial: Optional[np.ndarray] = None) -> float:
+                      NFA_partial: Optional[np.ndarray] = None,
+                      growth_factor: float = 1.0) -> float:
     """Compute the scalar balance residual for the chosen balance_condition.
 
     Returns a value whose *sign* tells bisection which direction to adjust:
@@ -315,11 +324,12 @@ def _balance_residual(budget_path: dict,
         return float(scenario.target_nfa_gdp - NFA_T / Y_T)
 
     elif cond == 'terminal_flow_balance':
-        # Fiscal rest-point condition: PD[T_bal-1]/Y[T_bal-1] = (g - r) * target_debt_gdp
-        g   = float(scenario.pop_growth)
+        # Fiscal rest point of B' = [(1+r_B)B + PD]/G:
+        #   PD[T_bal-1]/Y[T_bal-1] = (G - 1 - r_B) * target_debt_gdp
+        G    = float(growth_factor)
         PD_T = float(PD[T_bal - 1])
         Y_T  = float(Y_path[T_bal - 1])
-        stability_rhs = (g - r_terminal) * scenario.target_debt_gdp
+        stability_rhs = (G - 1.0 - r_terminal) * scenario.target_debt_gdp
         return float(PD_T / Y_T - stability_rhs)
 
     elif cond == 'pv_balance':
@@ -407,14 +417,17 @@ def _check_terminal_convergence(cf_macro: dict,
             drift['S_pens'] = float(abs(S[-1] - S[-2]) / (abs(S[-2]) + 1e-10))
             thresholds['S_pens'] = tol_slow
 
-    # ── K_g steady-state gap: |K_g[T-1] - I_g_terminal/delta_g| / K_g_ss ────
+    # ── K_g steady-state gap: |K_g[T-1] - I_g_terminal/(delta_g + G - 1)| ───
     K_g = cf_macro.get('K_g')
     if K_g is not None and olg is not None:
         delta_g  = float(getattr(olg, 'delta_g', 0.0))
+        G_growth = float(getattr(olg, 'growth_factor', 1.0))
         I_g_path = getattr(olg, '_active_I_g_path', None)
-        if delta_g > 0 and I_g_path is not None:
+        # Stationary public capital solves K_g = [(1-delta_g)K_g + I_g]/G.
+        denom = delta_g + G_growth - 1.0
+        if denom > 0 and I_g_path is not None:
             I_g_T  = float(np.asarray(I_g_path)[-1])
-            K_g_ss = I_g_T / delta_g
+            K_g_ss = I_g_T / denom
             if K_g_ss > 0:
                 K_g_T = float(np.asarray(K_g)[-1])
                 drift['K_g_ss_gap'] = float(abs(K_g_T - K_g_ss) / K_g_ss)
@@ -603,20 +616,29 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
     return macro, budget
 
 
-def _nfa_ca_paths(macro: dict) -> tuple:
-    """Return (NFA_path, CA_path) from macro dict; both None if NFA absent."""
+def _nfa_ca_paths(macro: dict, growth_factor: float = 1.0) -> tuple:
+    """Return (NFA_path, CA_path) from macro dict; both None if NFA absent.
+
+    In per-capita detrended units CA_t = G * NFA_{t+1} - NFA_t with
+    G = growth_factor; the last period repeats the terminal stock, which on a
+    balanced path gives CA = (G - 1) * NFA[-1].  G = 1.0 reproduces the
+    no-growth difference exactly.
+    """
     NFA = macro.get('NFA')
     if NFA is None:
         return None, None
-    NFA = np.asarray(NFA)
-    # CA_t = NFA_{t+1} - NFA_t; last period repeats last value
-    CA = np.diff(NFA, append=NFA[-1])
+    NFA = np.asarray(NFA, dtype=float)
+    G = float(growth_factor)
+    CA = np.empty_like(NFA)
+    CA[:-1] = G * NFA[1:] - NFA[:-1]
+    CA[-1] = (G - 1.0) * NFA[-1]
     return NFA, CA
 
 
 def _correct_base_macro_nfa(base_macro: dict, base_budget: dict,
                             scenario: FiscalScenario,
-                            r_B_path: np.ndarray, T_total: int) -> dict:
+                            r_B_path: np.ndarray, T_total: int,
+                            growth_factor: float = 1.0) -> dict:
     """Return a copy of base_macro with NFA converted from the partial
     (A - K_domestic) that simulate_transition returns to the full
     NFA = A - K_domestic - B_base.
@@ -628,7 +650,8 @@ def _correct_base_macro_nfa(base_macro: dict, base_budget: dict,
     if base_macro.get('NFA') is None:
         return base_macro
     B_base = compute_debt_path(base_budget['primary_deficit'], r_B_path,
-                               B_initial=scenario.B_initial)
+                               B_initial=scenario.B_initial,
+                               growth_factor=growth_factor)
     out = dict(base_macro)
     out['NFA'] = np.asarray(base_macro['NFA']) - B_base[:T_total]
     return out
@@ -672,6 +695,9 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     When scenario.n_post > 0, all paths are extended by n_post periods (terminal
     values frozen) so the simulation shows post-target dynamics.
     """
+
+    # Per-capita detrended stocks lose (1+g)(1+n) per period.
+    G_growth = float(getattr(olg, 'growth_factor', 1.0))
     T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
     n_post  = scenario.n_post
     T_total = T_base + n_post
@@ -688,7 +714,8 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     )
 
     B_path = compute_debt_path(
-        cf_budget['primary_deficit'], r_B_path, B_initial=scenario.B_initial
+        cf_budget['primary_deficit'], r_B_path, B_initial=scenario.B_initial,
+        growth_factor=G_growth
     )
     Y_path = np.asarray(cf_macro['Y'], dtype=float)
     B_gdp  = B_path[:-1] / Y_path  # length T_total
@@ -697,10 +724,10 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     if cf_macro.get('NFA') is not None:
         cf_macro = dict(cf_macro)
         cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T_total]
-    NFA, CA = _nfa_ca_paths(cf_macro)
+    NFA, CA = _nfa_ca_paths(cf_macro, G_growth)
     # Same correction on the baseline so base_macro/cf_macro NFA are comparable.
     base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
-                                         r_B_path, T_total)
+                                         r_B_path, T_total, G_growth)
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
     t_balance = T_base if n_post > 0 else None
@@ -752,6 +779,9 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     Delta_lo, Delta_hi : float
         Initial bisection bracket.  Expanded geometrically if needed.
     """
+
+    # Per-capita detrended stocks lose (1+g)(1+n) per period.
+    G_growth = float(getattr(olg, 'growth_factor', 1.0))
     T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
     n_post  = scenario.n_post
     T_total = T_base + n_post
@@ -781,10 +811,12 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         # Get Y_path from last simulate_transition result (stored on olg)
         Y = np.asarray(olg.Y_path, dtype=float)
         B = compute_debt_path(budget['primary_deficit'], r_B_path,
-                               B_initial=scenario.B_initial)
+                               B_initial=scenario.B_initial,
+                               growth_factor=G_growth)
         # NFA_partial (A - K_domestic) for the 'terminal_nfa_gdp' condition.
         NFA_partial = macro.get('NFA')
-        return (_balance_residual(budget, Y, B, scenario, r_terminal, T_bal, NFA_partial),
+        return (_balance_residual(budget, Y, B, scenario, r_terminal, T_bal, NFA_partial,
+                                  growth_factor=G_growth),
                 budget, B, Y)
 
     # Mutable container to hold the last evaluated (budget, B, Y) tuple
@@ -900,10 +932,10 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         cf_macro['NFA'] = np.asarray(cf_macro['NFA']) - B_path[:T_total]
     # Same correction on the baseline so base_macro/cf_macro NFA are comparable.
     base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
-                                         r_B_path, T_total)
+                                         r_B_path, T_total, G_growth)
 
     B_gdp = B_path[:-1] / Y_path
-    NFA, CA = _nfa_ca_paths(cf_macro)
+    NFA, CA = _nfa_ca_paths(cf_macro, G_growth)
     adj_path = Delta_star * psi
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
@@ -946,6 +978,9 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     Step 2b-Mode I (financing='debt'): bisect on shock scale Δ_shock.
     Step 2b-Mode II (financing != 'debt'): full shock + bisect on Δτ for NFA.
     """
+
+    # Per-capita detrended stocks lose (1+g)(1+n) per period.
+    G_growth = float(getattr(olg, 'growth_factor', 1.0))
     T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
     n_post  = scenario.n_post
     T_total = T_base + n_post
@@ -962,20 +997,22 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     NFA_base = CA_base = None
     if base_macro.get('NFA') is not None:
         B_base = compute_debt_path(base_budget['primary_deficit'], r_B_path,
-                                   B_initial=scenario.B_initial)
+                                   B_initial=scenario.B_initial,
+                                   growth_factor=G_growth)
         _base_full = dict(base_macro)
         _base_full['NFA'] = np.asarray(base_macro['NFA']) - B_base[:T_total]
-        NFA_base, CA_base = _nfa_ca_paths(_base_full)
+        NFA_base, CA_base = _nfa_ca_paths(_base_full, G_growth)
 
     def _full_nfa_ca(macro, budget):
         """Full NFA/CA (net of this iteration's debt) from raw simulation macro."""
         if macro.get('NFA') is None:
             return None, None
         B = compute_debt_path(budget['primary_deficit'], r_B_path,
-                              B_initial=scenario.B_initial)
+                              B_initial=scenario.B_initial,
+                              growth_factor=G_growth)
         m = dict(macro)
         m['NFA'] = np.asarray(macro['NFA']) - B[:T_total]
-        return _nfa_ca_paths(m)
+        return _nfa_ca_paths(m, G_growth)
 
     # ── Step 1: Debt-financed, full shock ────────────────────────────────────
     full_debt_result = run_debt_financed(
@@ -1079,7 +1116,8 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
         adj_path = Delta_star * psi
 
     B_path = compute_debt_path(
-        cf_budget_star['primary_deficit'], r_B_path, B_initial=scenario.B_initial
+        cf_budget_star['primary_deficit'], r_B_path, B_initial=scenario.B_initial,
+        growth_factor=G_growth
     )
     Y_path = np.asarray(cf_macro_star['Y'], dtype=float)
     B_gdp  = B_path[:-1] / Y_path
@@ -1088,10 +1126,10 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     if cf_macro_star.get('NFA') is not None:
         cf_macro_star = dict(cf_macro_star)
         cf_macro_star['NFA'] = np.asarray(cf_macro_star['NFA']) - B_path[:T_total]
-    NFA, CA = _nfa_ca_paths(cf_macro_star)
+    NFA, CA = _nfa_ca_paths(cf_macro_star, G_growth)
     # Same correction on the baseline so base_macro/cf_macro NFA are comparable.
     base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
-                                         r_B_path, T_total)
+                                         r_B_path, T_total, G_growth)
 
     t_drift, t_conv = _check_terminal_convergence(cf_macro_star, cf_budget_star, olg)
     t_balance = T_base if n_post > 0 else None

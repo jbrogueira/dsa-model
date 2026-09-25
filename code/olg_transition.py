@@ -813,7 +813,7 @@ class OLGTransition:
             age = i
             birth_yr = current_year - age
             years_since_base = birth_yr - birth_year
-            cohort_sizes[i] = np.exp(pop_growth * years_since_base)
+            cohort_sizes[i] = (1.0 + pop_growth) ** years_since_base
         return cohort_sizes
     
     @staticmethod
@@ -925,7 +925,7 @@ class OLGTransition:
             for age in range(int(self.T)):
                 birth_yr = (int(self.current_year) + int(t)) - int(age)
                 years_since_base = birth_yr - int(self.birth_year)
-                cohort_sizes_path[t, age] = np.exp(g * years_since_base)
+                cohort_sizes_path[t, age] = (1.0 + g) ** years_since_base
 
             s = float(np.sum(cohort_sizes_path[t, :]))
             if s > 0:
@@ -1774,7 +1774,9 @@ class OLGTransition:
             B_t = float(self.B_path[t_idx]) if t_idx < len(self.B_path) else float(self.B_path[-1])
             B_next = float(self.B_path[t_idx + 1]) if t_idx + 1 < len(self.B_path) else float(self.B_path[-1])
             debt_service = r_debt * B_t
-            new_borrowing = B_next - B_t
+            # In detrended units the stock carried into t+1 is worth
+            # growth_factor times its per-capita value next period.
+            new_borrowing = self.growth_factor * B_next - B_t
 
         total_spending = (total_ui + total_pension + total_gov_health
                           + G_t + I_g_t + defense_t + other_t)
@@ -1921,7 +1923,10 @@ class OLGTransition:
             K_g_path[0] = self.K_g_initial
             for t in range(1, self.T_transition):
                 I_g_t = _I_g[t - 1] if t - 1 < len(_I_g) else _I_g[-1]
-                K_g_path[t] = (1 - self.delta_g) * K_g_path[t - 1] + I_g_t
+                # Per-capita detrended stock: the whole period-(t-1) right-hand
+                # side is divided by growth_factor = (1+g)(1+n).
+                K_g_path[t] = ((1 - self.delta_g) * K_g_path[t - 1]
+                               + I_g_t) / self.growth_factor
             if verbose:
                 print(f"\nPublic capital path: K_g[0]={K_g_path[0]:.4f} → K_g[-1]={K_g_path[-1]:.4f}")
 
@@ -2244,7 +2249,10 @@ class OLGTransition:
         S_pens[0] = self.S_pens_initial
         for t in range(self.T_transition):
             r_t = float(self.r_path[t]) if self.r_path is not None else 0.0
-            S_pens[t + 1] = (1 + r_t) * S_pens[t] + budget_path['tax_p'][t] - budget_path['pension'][t]
+            # Per-capita detrended stock: divide the whole right-hand side by
+            # growth_factor = (1+g)(1+n).
+            S_pens[t + 1] = ((1 + r_t) * S_pens[t] + budget_path['tax_p'][t]
+                             - budget_path['pension'][t]) / self.growth_factor
         self.S_pens_path = S_pens
         budget_path['S_pens'] = S_pens[:-1]  # Store balance at start of each period
 

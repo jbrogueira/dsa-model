@@ -26,9 +26,11 @@ from fiscal_experiments import FiscalScenario, run_fiscal_scenario
 
 T_TR = 10
 N_SIM = 50
+TREND_GROWTH = 0.017   # balanced-growth rate under test; 0.0 recovers the old harness
 
 def run_backend(backend, shock):
-    cfg = LifecycleConfig(T=20, n_a=30, n_y=3, n_alpha=3, retirement_age=12)
+    cfg = LifecycleConfig(T=20, n_a=30, n_y=3, n_alpha=3, retirement_age=12,
+                          trend_growth=TREND_GROWTH)
     ep = dict(cfg.edu_params)
     ep['medium'] = dict(ep['medium'], sigma_alpha=0.3)
     cfg = cfg._replace(edu_params=ep)
@@ -47,7 +49,7 @@ def run_backend(backend, shock):
     )
     if shock == 'Ig':
         # stationary baseline I_g level keeps K_g flat; the shock is a level delta
-        bp['I_g_path'] = np.full(T_TR, 0.05 * 0.745)
+        bp['I_g_path'] = np.full(T_TR, (0.05 + olg.growth_factor - 1.0) * 0.745)
         scen = FiscalScenario(
             name='Ig_shock',
             delta_I_g_path=np.full(T_TR, 0.02),
