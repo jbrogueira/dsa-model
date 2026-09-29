@@ -19,16 +19,15 @@
   },
   "_derived": {
     "theta": {
-      "nu": 14.560432,
-      "beta": 1.015765,
-      "tau_p": 0.197736,
-      "pension_replacement_default": 0.177070,
-      "m_good": 0.091282
+      "nu": 13.262543096309226,
+      "beta": 1.0190369443137424,
+      "tau_p": 0.19740878344153223,
+      "pension_replacement_default": 0.1865075124091412,
+      "m_good": 0.08431797856605856
     },
     "theta_metadata": {
-      "status": "SEEDS, not a fit. SEEDS from the 2026-09-25 exploratory run (n_sim=1000, maxiter=60, tol=1e-4, obj 0.00177, success=False by design): output/calibration_explore/calibration_GR_20260925_164002.md. Moments at this vector: hours -3.9%, A/Y +0.9%, tax_p +0.1%, pensions -1.2%, health -0.4%. NOT a production fit - A_tfp is not renormalised and the closure is not re-pinned. Run run_scale_loop.sh before using any result.",
-      "calibration_date": "2026-07-10T15:36:59",
-      "source_report": "output/calibration/calibration_GR_20260710_153659.md"
+      "calibration_date": "2026-09-29T10:18:10",
+      "source_report": "output/calibration/calibration_GR_20260929_101810.md"
     }
   },
   "prices": {
@@ -38,7 +37,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.60606497,
+    "A_tfp": 1.50284633,
     "K_g": 0.745,
     "eta_g": 0.05,
     "delta_g": 0.036485
@@ -287,7 +286,7 @@
     "tax_revenue_over_Y": 0.4,
     "interest_over_Y": 0.0312,
     "primary_balance_target_over_Y": 0.0195,
-    "other_net_spending_over_Y": -0.096295
+    "other_net_spending_over_Y": -0.106576
   },
   "calibration": {
     "params": [
@@ -296,35 +295,35 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 14.560432
+        "initial": 13.260876217541492
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 1.015765
+        "initial": 1.0187533612241715
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.197736
+        "initial": 0.19741185127369498
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.177070
+        "initial": 0.1864780636735504
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.091282
+        "initial": 0.08505347468164731
       }
     ],
     "targets": [
