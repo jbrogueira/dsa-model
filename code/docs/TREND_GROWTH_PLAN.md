@@ -58,10 +58,106 @@ rule with Z_t alone: c_t + (1+g)·a_{t+1} = (1+r̃)·a_t + y_t.
 Factor prices are unaffected. The firm condition r + δ = αY/K is a flow
 condition, so K/L and w are what they are now.
 
-Scope: n is the constant `external_params.pop_growth`. The ageing devices
-(`pop_growth_path`, `fertility_path`, `survival_improvement_rate`) define no
-population level path and stay outside this plan; the recursions read the
-scalar.
+Scope: Steps 1–7 were written with n as the constant
+`external_params.pop_growth`, and that is what the 2026-09-29 calibration
+used. Step 0 below supersedes it: demography becomes a path, Γ becomes Γ_t,
+and the calibration is re-anchored. Steps 1–7 are otherwise unchanged.
+
+## Step 0 — demographic assumptions
+
+Decided 2026-09-29, before any further calibration, so that the assumptions
+are fixed once rather than revisited after results exist.
+
+### The problem being fixed
+
+Three places make demographic assumptions and they disagree. The calibration
+uses a fixed survival vector (close to the 2023 table) and a stationary age
+distribution with births growing at n = −0.60%. The transition has cohorts
+walk the historical period tables 1961–2023 along their own calendar
+diagonals, frozen at 2023 thereafter, with births still growing at −0.60%.
+So the transition's t = 0 cross-section is not the population the SMM
+matched, and the targeted moments hold in the stationary equilibrium but not
+in the year the data describe. Measured on the 2026-09-29 calibration the
+output gap between the two is **13.7%** (ŷ = 1.0296 against 0.8851).
+
+The stationary population is also markedly older than Greece: at
+n = −0.60% its old-age dependency ratio (65–84 over 25–64, the model's age
+span) is **0.458** against **0.360** in the 2023 data. Reweighting the
+calibrated panels onto the measured cross-section, with nothing else changed,
+moves the moments by
+
+| moment | stationary | data 2023 | change |
+|---|---|---|---|
+| average hours | 0.4099 | 0.4097 | −0.07% |
+| A/Y | 3.9903 | 3.7483 | −6.3% |
+| payroll revenue/Y | 0.1300 | 0.1300 | −0.01% |
+| pensions/Y | 0.1601 | 0.1261 | −21.2% |
+| public health/Y | 0.0541 | 0.0468 | −13.3% |
+
+A/Y falls rather than rises because retirees hold assets but produce nothing,
+so shifting weight towards working ages raises output more than wealth.
+
+### What is assumed
+
+1. **t = 0 is the measured 2023 cross-section.** Model ages 0–59 = real ages
+   25–84, from `data/DATA_GR.xlsx`, sheet `Population by age`. The transition
+   weights are births-only with survival applied per cohort, so the birth
+   path is backed out of the cross-section by dividing through cumulative
+   survival; feeding the cross-section directly would apply survival twice.
+2. **The calibration targets that same cross-section**, not a stationary
+   population. `compute_age_weights` takes the measured vector in place of
+   ω_j ∝ (1+n)^(−j)·S_j. Nothing else in the solve changes: in this SOE the
+   age distribution reaches no household decision — r is exogenous, K/L is
+   pinned by the firm FOC and w with it — so individual policies are
+   invariant to it and each SMM evaluation stays a single stationary solve.
+   The one channel that could bite, the accidental-bequest transfer, is an
+   open circuit in the calibration.
+3. **The closure is pinned on the same weights as the calibration.**
+   `pin_baseline_closure` computes aggregate ratios; if the two use different
+   weightings the primary balance will not equal its target.
+4. **Survival and births follow EUROPOP2023 through the transition**,
+   identical across the baseline and every counterfactual, and settling to
+   constants before the terminal date.
+5. **The terminal state is a genuine balanced growth path.** Demography must
+   converge, because `terminal_debt_gdp`, the NFA target, the `K_g_ss_gap`
+   diagnostic and the rest point PD/Y = (Γ_T − 1 − r_B)·b all require it.
+
+### What follows
+
+- **Γ becomes Γ_t = (1+g)(1+n_t)** and every stock recursion takes the time
+  index rather than the scalar `olg.growth_factor`: the debt, K_g, pension
+  fund and current-account laws, `new_borrowing`, `K_g_ss`, and the
+  terminal-rest-point condition, which uses **Γ_T**.
+- **"Steady state" is retired** in favour of *base-year equilibrium*: one
+  lifecycle problem at constant detrended prices, aggregated over the 2023
+  cross-section, with ŷ = 1 a units normalisation of base-year output. With
+  growth no level was ever stationary, and with a non-stationary population
+  not even the detrended aggregate is. The term goes from
+  `normalize_A_tfp.py`, `pin_baseline_closure.py`, this plan and the report.
+- **The baseline is a demographic transition from t = 0**, with no policy
+  change. Detrended aggregates move while the 40–64 bulge retires, so the
+  flatness check in the report applies only to the terminal stretch.
+- **Recalibration is required.** ρ_pens and m_good move most — both rise, by
+  roughly a quarter and a seventh — and ρ_pens moving up from 0.186 is a
+  gain, since that value is low for Greece precisely because it compensates
+  for a model population with 46% more retirees per worker than the data.
+  β rises slightly; ν and τ_p barely move.
+
+### What is knowingly approximated
+
+- Lifecycle asset profiles come from a problem solved at constant prices, so
+  a 60-year-old at t = 0 did not live through the crisis. Fixing that would
+  mean solving pre-2023 cohorts against historical price paths.
+- A stationary-population device would have matched the dependency ratio but
+  not the age *shape*: Greece has 0.507 of its 25–84 population aged 40–64
+  against 0.445 in a stationary population matched on that ratio. Taking the
+  measured cross-section removes this approximation, which is the reason for
+  preferring it.
+- The initial condition's coherence rests on the small-open-economy closure.
+  In a closed economy K/L would respond to the age structure, so a
+  non-stationary initial population would make the constant pre-transition
+  prices behind the MIT stitching internally inconsistent. Worth stating in
+  the write-up.
 
 ## Step 1 — config and wiring
 
