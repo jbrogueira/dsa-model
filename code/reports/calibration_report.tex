@@ -118,26 +118,32 @@ its $t=0$ value. Flat paths are the balanced-growth check.}{5.5cm}
 \caption{Implied growth rates. Levels $X_t$ grow at $\Gamma-1$ and per-capita
 terms $X_t/N_t$ at $g$ by construction; the detrended series $\hat x$ should be
 flat, so the last column is the test.}
-\begin{tabular}{lS[table-format=1.3]S[table-format=1.3]S[table-format=1.2e2]}
+\begin{tabular}{lS[table-format=1.3]S[table-format=1.3]S[table-format=+1.3]}
 \toprule
- & {Level (\%)} & {Per capita (\%)} & {Detrended drift} \\
+ & {Level (\%)} & {Per capita (\%)} & {Detrended trend (\%)} \\
 \midrule
-$Y$        & \np & \np & \np \\
-$C$        & \np & \np & \np \\
-$K^{dom}$  & \np & \np & \np \\
+$Y$          & \np & \np & \np \\
+$C$          & \np & \np & \np \\
+$K^{dom}$    & \np & \np & \np \\
 $A$ (wealth) & \np & \np & \np \\
-$L$        & \np & \np & \np \\
-$K_g$      & \np & \np & \np \\
-$B$        & \np & \np & \np \\
+$L$          & \np & \np & \np \\
+$K_g$        & \np & \np & \np \\
+$B$          & \np & \np & \np \\
 \midrule
-Theory    & \np & \np & {0} \\
+Theory              & \np & \np & {0} \\
+Noise floor ($g=n=0$) & {} & {} & \np \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \noindent\footnotesize
-Detrended drift is $\max_t\lvert x_{t+1}/x_t-1\rvert$ over the baseline
-transition, measured after the first lifetime: the data survival table makes
-the opening $T$ periods non-stationary by construction.
+The detrended trend is the mean log growth per period,
+$\frac{1}{T/2}\sum_{t>T/2}\log(\hat x_{t+1}/\hat x_t)$, over the second half
+of the baseline transition. It is zero under correct detrending and would read
+$g$ or $\Gamma-1$ for a variable that was left in levels; the first half is
+excluded because the data survival table has each cohort walk its own calendar
+diagonal, so the opening lifetime is non-stationary by construction. The noise
+floor is the same statistic on a $g=n=0$ run, where the true value is also
+zero; only departures materially above it are informative.
 
 \end{document}
