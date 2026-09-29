@@ -34,7 +34,10 @@ json.dump(c, open(p, 'w'), indent=2)
 print("initials:", {prm['name']: prm['initial'] for prm in c['calibration']['params']})
 PY
   echo "=== round $r: SMM (calibrate.py) ==="
-  python3 calibrate.py --config "$CFG" --backend jax 2>&1 | tee /tmp/smm_round.log \
+  # SMM_EXTRA passes through extra calibrate.py flags, e.g. --tol/--maxiter.
+  # At n_sim=10000 the Monte Carlo noise floor sits above the default tol=1e-6,
+  # so Nelder-Mead exhausts maxiter and the loop aborts; --tol 1e-5 avoids that.
+  python3 calibrate.py --config "$CFG" --backend jax ${SMM_EXTRA:-} 2>&1 | tee /tmp/smm_round.log \
     || { echo "SCALE LOOP FAILED: SMM round $r"; exit 1; }
   # calibrate.py writes _derived.theta ONLY on convergence; without it the rest
   # of the loop would silently reuse the stale theta.
