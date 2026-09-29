@@ -19,13 +19,14 @@
   },
   "_derived": {
     "theta": {
-      "nu": 20.65584236756219,
-      "beta": 0.9418728239045051,
-      "tau_p": 0.19777856387304765,
-      "pension_replacement_default": 0.1696940027857062,
-      "m_good": 0.0844527431369721
+      "nu": 14.560432,
+      "beta": 1.015765,
+      "tau_p": 0.197736,
+      "pension_replacement_default": 0.177070,
+      "m_good": 0.091282
     },
     "theta_metadata": {
+      "status": "SEEDS, not a fit. SEEDS from the 2026-09-25 exploratory run (n_sim=1000, maxiter=60, tol=1e-4, obj 0.00177, success=False by design): output/calibration_explore/calibration_GR_20260925_164002.md. Moments at this vector: hours -3.9%, A/Y +0.9%, tax_p +0.1%, pensions -1.2%, health -0.4%. NOT a production fit - A_tfp is not renormalised and the closure is not re-pinned. Run run_scale_loop.sh before using any result.",
       "calibration_date": "2026-07-10T15:36:59",
       "source_report": "output/calibration/calibration_GR_20260710_153659.md"
     }
@@ -295,35 +296,35 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 21.125898446215515
+        "initial": 14.560432
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 0.9416982742447793
+        "initial": 1.015765
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.19777780438198433
+        "initial": 0.197736
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.1697115626748415
+        "initial": 0.177070
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.08263481800557766
+        "initial": 0.091282
       }
     ],
     "targets": [
