@@ -10,14 +10,21 @@
 
 \sisetup{table-align-text-post=false}
 \newcommand{\rundir}{../output/calibration_growth}
+% Fallbacks so the template compiles before any run exists; header.tex
+% overrides them with the values of the run \rundir points at.
+\newcommand{\runlabel}{\np}\newcommand{\gval}{\np}\newcommand{\nval}{\np}
+\newcommand{\rBval}{\np}\newcommand{\Gammaval}{\np}
+\IfFileExists{\rundir/header.tex}{\input{\rundir/header.tex}}{}
 \newcommand{\np}{\ensuremath{\text{--}}}   % empty cell; safe in S columns and math
+\newcommand{\tabinput}[1]{\IfFileExists{\rundir/#1}{\input{\rundir/#1}}%
+  {\figbox{run \texttt{fill\_report.py} to fill this table}{1.2cm}}}
 \newcommand{\figbox}[2]{\fbox{\parbox[c][#2][c]{\dimexpr\linewidth-2\fboxsep-2\fboxrule}%
   {\centering\small\itshape #1}}}
 
 \title{\vspace{-1.6cm}Balanced-growth calibration: Greece}
 \author{}
-\date{\small run \texttt{\np}\quad$\cdot$\quad $g=\np$,\; $n=\np$,\; $r_B=\np$,\;
-      $\Gamma-1=\np$}
+\date{\small run \texttt{\runlabel}\quad$\cdot$\quad $g=\gval$,\; $n=\nval$,\;
+      $r_B=\rBval$,\; $\Gamma-1=\Gammaval$}
 
 \begin{document}
 \maketitle
@@ -38,63 +45,28 @@ levels. Parameters are annual.
 \vspace{0.1cm}
 \begin{table}[!htbp]\centering\footnotesize
 \caption{Parameters}\vspace{-2pt}
-\begin{tabular}{@{}llS[table-format=2.4]l@{}}
-\toprule
-Symbol & Description & {Value} & Source / identified by \\
-\midrule
-\multicolumn{4}{l}{\itshape Externally set}\\
-$g$        & labour productivity growth, per capita & \np & 2024 Ageing Report \\
-$n$        & population growth                      & \np & EUROPOP2023 \\
-$\gamma$   & curvature of consumption utility       & \np & log utility \\
-$\varphi$  & inverse Frisch elasticity              & \np & \\
-$\alpha$   & private capital share                  & \np & \\
-$\delta$   & private depreciation                   & \np & standard value \\
-$\eta_g$   & public capital elasticity              & \np & \\
-$K_g/Y$    & public capital ratio                   & \np & IMF ICSD \\
-$\delta_g$ & public capital depreciation            & \np & $I_g/K_g-(\Gamma-1)$ \\
-$r$        & world return on capital                & \np & \\
-$r_B$      & sovereign rate                         & \np & implicit rate 2012--24 \\
-$\tau_c,\tau_l,\tau_k$ & consumption, labour, capital tax rates & \np & effective rates \\
-$T$, $J_R$ & lifespan, retirement age (model periods) & \np & \\
-\midrule
-\multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
-$\nu$         & labour disutility weight  & \np & average hours \\
-$\beta$       & discount factor           & \np & $A/Y$ \\
-$\tau_p$      & payroll tax rate          & \np & payroll revenue$/Y$ \\
-$\rho^{pens}$ & pension replacement rate  & \np & pensions$/Y$ \\
-$m^{good}$    & medical cost scale        & \np & public health$/Y$ \\
-\midrule
-\multicolumn{4}{l}{\itshape Pinned outside the SMM}\\
-$A$   & total factor productivity   & \np & normalisation, $\hat y=1$ \\
-$O/Y$ & other net spending          & \np & data primary balance \\
-\bottomrule
-\end{tabular}
+\tabinput{params_body.tex}
 \end{table}
 
 \begin{table}[!htbp]\centering\footnotesize
 \caption{Moments}\vspace{-2pt}
-\begin{tabular}{@{}lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.2]S[table-format=3.2]@{}}
-\toprule
- & {Data} & {Model} & {\% dev} & {Weight} \\
-\midrule
-\multicolumn{5}{l}{\itshape Targeted}\\
-Average hours            & \np & \np & \np & \np \\
-$A/Y$                    & \np & \np & \np & \np \\
-Payroll revenue$/Y$      & \np & \np & \np & \np \\
-Pensions$/Y$             & \np & \np & \np & \np \\
-Public health$/Y$        & \np & \np & \np & \np \\
-\midrule
-\multicolumn{5}{l}{\itshape Not targeted}\\
-$I_g/Y$                  & \np & \np & \np & \\
-UI$/Y$                   & \np & \np & \np & \\
-Interest$/Y$ $(r_BB/Y)$  & \np & \np & \np & \\
-Primary balance$/Y$      & \np & \np & \np & \\
-\bottomrule
-\end{tabular}
+\tabinput{moments_body.tex}
 \caption*{\footnotesize SMM objective \np{} at $n_{sim}=\np$.}
 \end{table}
 
-\clearpage
+\begin{table}[!htbp]\centering\footnotesize
+\caption{Calibrated parameters against their direct data counterparts}\vspace{-2pt}
+\tabinput{implied_body.tex}
+\end{table}
+
+\noindent\footnotesize
+$\tau^p$ and $\rho^{pens}$ each have a ratio in the data that names the same
+object. The model applies $\tau^p$ to the whole wage bill with no contribution
+ceiling, and $\rho^{pens}$ to a career-average base rather than the final wage,
+so its own ratios differ from the recorded ones; the table measures that
+distance. $m^{good}$ has no entry: the ratio that would test it, public health
+spending over output, is a targeted moment and appears in Table~2.
+
 \section*{Demographics}
 \vspace{-0.1cm}
 
@@ -120,51 +92,26 @@ rises to meet the debt target, and decisions move with it.
 
 \begin{table}[htbp]\centering\footnotesize
 \caption{Age structure}\vspace{-3pt}
-\begin{tabular}{@{}lS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]@{}}
-\toprule
- & {Data, 2023} & {Model, $t=0$} & {Model, terminal} \\
-\midrule
-Share 25--39                     & \np & \np & \np \\
-Share 40--64                     & \np & \np & \np \\
-Share 65--84                     & \np & \np & \np \\
-Dependency (65--84 / 25--64)     & \np & \np & \np \\
-Population growth $n$            & \np & \np & \np \\
-\bottomrule
-\end{tabular}
+\tabinput{age_body.tex}
 \end{table}
 
 \vspace{-0.2cm}
-\section*{Simulated aggregates}
+\section*{Simulated aggregates}\vspace{-0.2cm}
 
 \begin{figure}[htbp]\centering
-\figbox{Figure 1 --- baseline transition, two panels. \emph{Left}: detrended
-aggregates $\hat y$, $\hat c$, $\hat k^{dom}$, $\hat\ell$, $\hat a$, each
-normalised to its $t=0$ value. \emph{Right}: ratios to output $B/Y$,
-$NFA/Y$, $K_g/Y$, $A/Y$, which are invariant to the detrending.}{4.5cm}
-% \includegraphics[width=\linewidth]{\rundir/baseline_panels.pdf}
+\IfFileExists{\rundir/baseline_panels.pdf}
+  {\includegraphics[width=0.92\linewidth]{\rundir/baseline_panels.pdf}}
+  {\figbox{Figure 1 --- baseline transition. \emph{Left}: detrended aggregates
+   $\hat y$, $\hat c$, $\hat k^{dom}$, $\hat\ell$, $\hat a$, normalised to
+   $t=0$. \emph{Right}: ratios to output $B/Y$, $NFA/Y$, $K_g/Y$, $A/Y$.}{4.5cm}}
 \caption{Baseline transition}
 \end{figure}
 
-\begin{table}[htbp]\centering\small
-\caption{Implied growth rates. Levels $X_t$ grow at $\Gamma-1$ and per-capita
-terms $X_t/N_t$ at $g$ by construction; the detrended series $\hat x$ should be
-flat, so the last column is the test.}
-\begin{tabular}{lS[table-format=1.3]S[table-format=1.3]S[table-format=+1.3]}
-\toprule
- & {Level (\%)} & {Per capita (\%)} & {Detrended trend (\%)} \\
-\midrule
-$Y$          & \np & \np & \np \\
-$C$          & \np & \np & \np \\
-$K^{dom}$    & \np & \np & \np \\
-$A$ (wealth) & \np & \np & \np \\
-$L$          & \np & \np & \np \\
-$K_g$        & \np & \np & \np \\
-$B$          & \np & \np & \np \\
-\midrule
-Theory              & \np & \np & {0} \\
-Noise floor ($g=n=0$) & {} & {} & \np \\
-\bottomrule
-\end{tabular}
+\begin{table}[htbp]\centering\footnotesize
+\caption{Implied growth rates. Levels and per-capita terms grow at $\Gamma-1$
+and $g$ by construction; the detrended series should be flat, so the last
+column is the test.}\vspace{-2pt}
+\tabinput{growth_body.tex}
 \end{table}
 
 \noindent\footnotesize
