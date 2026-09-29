@@ -138,8 +138,9 @@ so shifting weight towards working ages raises output more than wealth.
   not even the detrended aggregate is. The term goes from
   `normalize_A_tfp.py`, `pin_baseline_closure.py`, this plan and the report.
 - **The baseline is a demographic transition from t = 0**, with no policy
-  change. Detrended aggregates move while the 40–64 bulge retires, so the
-  flatness check in the report applies only to the terminal stretch.
+  change. Detrended aggregates move while the 40–64 cohorts retire and settle
+  only once demography has settled, so the flatness check in the report is
+  computed over the years after that.
 - **Recalibration is required.** ρ_pens and m_good move most — both rise, by
   roughly a quarter and a seventh — and ρ_pens moving up from 0.186 is a
   gain, since that value is low for Greece precisely because it compensates

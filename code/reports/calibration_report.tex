@@ -111,8 +111,10 @@ identical across the baseline and every counterfactual, settling before the
 terminal date.\footnote{A stationary population matched on the dependency ratio
 would reproduce that ratio but not the age shape, lacking the cohort about to
 retire that drives the projected rise.} Because the base-year population is not stationary the economy is
-in transition from $t=0$ with no policy change, so the balanced-growth check
-in Table~5 applies to the terminal stretch. In this small open economy the age
+in transition from $t=0$ with no policy change: detrended aggregates move
+while the older cohorts retire, and settle only once the demographic
+transition is complete. The balanced-growth check in Table~5 is therefore
+computed over the years after demography has settled. In this small open economy the age
 structure reaches no household decision --- the return is exogenous, the
 capital--labour ratio is pinned by the firm's first-order condition and the
 wage with it --- so it moves aggregates and the government budget, not
@@ -170,12 +172,12 @@ Noise floor ($g=n=0$) & {} & {} & \np \\
 
 \noindent\footnotesize
 The detrended trend is the mean log growth per period,
-$\frac{1}{T/2}\sum_{t>T/2}\log(\hat x_{t+1}/\hat x_t)$, over the second half
-of the baseline transition. It is zero under correct detrending and would read
-$g$ or $\Gamma-1$ for a variable that was left in levels; the first half is
-excluded because the data survival table has each cohort walk its own calendar
-diagonal, so the opening lifetime is non-stationary by construction. The noise
-floor is the same statistic on a $g=n=0$ run, where the true value is also
-zero; only departures materially above it are informative.
+$\frac{1}{T/2}\sum_{t>T/2}\log(\hat x_{t+1}/\hat x_t)$, computed over the
+years once demography has settled. It is zero under correct detrending and
+would read $g$ or $\Gamma-1$ for a variable that was left in levels. The
+earlier years are excluded because each cohort alive then faces the mortality
+of its own birth year, so the population is still changing composition. The
+noise floor is the same statistic on a $g=n=0$ run, where the true value is
+also zero; only departures materially above it are informative.
 
 \end{document}
