@@ -280,7 +280,13 @@ target is pinned off the baseline with the identical convention
 the reported ratios use. The same applies to K_g/Y = 0.745 and the NFA/Y
 target.
 
-These ratios are in steady-state units (Y_ss = 1). The transition's output
+Notation: `Y_ss` throughout means **detrended per-capita** output
+ŷ = Y_t/(Z_t·N_t), the object the stationary solve returns. With growth there
+is no stationary level of output — levels grow at Γ − 1 and per-capita terms
+at g — so normalising ŷ = 1 is a units choice, and it is what makes K_g = 0.745
+equal K_g/Y and I_g = 0.0353 equal I_g/Y.
+
+These ratios are in steady-state units (ŷ = 1). The transition's output
 level is ≈0.885·Y_ss (the SS-vs-transition normalisation gap on record), so
 along the baseline transition I_g/Y ≈ 4.0% and K_g/Y ≈ 0.84, at g = 0 already.
 

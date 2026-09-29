@@ -1,0 +1,143 @@
+% Balanced-growth calibration report -- TEMPLATE
+% Numeric cells are \np until filled.  Figures live in \rundir.
+% Compile: latexmk -pdf calibration_report.tex
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2cm,top=1.7cm,bottom=1.7cm]{geometry}
+\usepackage{booktabs,graphicx,amsmath,amstext,siunitx}
+\usepackage[labelfont=bf,font=small,skip=4pt]{caption}
+
+\sisetup{table-align-text-post=false}
+\newcommand{\rundir}{../output/calibration_growth}
+\newcommand{\np}{\ensuremath{\text{--}}}   % empty cell; safe in S columns and math
+\newcommand{\figbox}[2]{\fbox{\parbox[c][#2][c]{\dimexpr\linewidth-2\fboxsep-2\fboxrule}%
+  {\centering\small\itshape #1}}}
+
+\title{\vspace{-1.6cm}Balanced-growth calibration: Greece}
+\author{}
+\date{\small run \texttt{\np}\quad$\cdot$\quad $g=\np$,\; $n=\np$,\; $r_B=\np$,\;
+      $\Gamma-1=\np$}
+
+\begin{document}
+\maketitle
+\vspace{-1.1cm}
+
+\noindent\small
+The model is solved in per-capita detrended units: aggregates are divided by
+$Z_tN_t$ with $Z_t=(1+g)^t$, so every stock recursion carries
+$\Gamma=(1+g)(1+n)$ and the household budget carries $(1+g)$ on next-period
+assets. Preferences are $\log c-\nu\ell^{1+\varphi}/(1+\varphi)$. Government
+debt is external and official-sector: households hold domestic capital and
+foreign assets at $r$; the government pays $r_B$ abroad.
+A hat denotes a detrended per-capita quantity, $\hat x_t=X_t/(Z_tN_t)$; these
+are constant along the balanced growth path, while the corresponding levels
+$X_t$ grow at $\Gamma-1$ and per-capita terms at $g$. Total factor
+productivity is set so that $\hat y=1$, which makes every ratio to output
+readable as a level. Parameters below are annual.
+
+\vspace{0.1cm}
+\begin{table}[!htbp]\centering\footnotesize
+\caption{Parameters}\vspace{-2pt}
+\begin{tabular}{@{}llS[table-format=2.4]l@{}}
+\toprule
+Symbol & Description & {Value} & Source / identified by \\
+\midrule
+\multicolumn{4}{l}{\itshape Externally set}\\
+$g$        & labour productivity growth, per capita & \np & 2024 Ageing Report \\
+$n$        & population growth                      & \np & EUROPOP2023 \\
+$\gamma$   & curvature of consumption utility       & \np & log utility \\
+$\varphi$  & inverse Frisch elasticity              & \np & \\
+$\alpha$   & private capital share                  & \np & \\
+$\delta$   & private depreciation                   & \np & standard value \\
+$\eta_g$   & public capital elasticity              & \np & \\
+$K_g/Y$    & public capital ratio                   & \np & IMF ICSD \\
+$\delta_g$ & public capital depreciation            & \np & $I_g/K_g-(\Gamma-1)$ \\
+$r$        & world return on capital                & \np & \\
+$r_B$      & sovereign rate                         & \np & implicit rate 2012--24 \\
+$\tau_c,\tau_l,\tau_k$ & consumption, labour, capital tax rates & \np & effective rates \\
+$T$, $J_R$ & lifespan, retirement age (model periods) & \np & \\
+\midrule
+\multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
+$\nu$         & labour disutility weight  & \np & average hours \\
+$\beta$       & discount factor           & \np & $A/Y$ \\
+$\tau_p$      & payroll tax rate          & \np & payroll revenue$/Y$ \\
+$\rho^{pens}$ & pension replacement rate  & \np & pensions$/Y$ \\
+$m^{good}$    & medical cost scale        & \np & public health$/Y$ \\
+\midrule
+\multicolumn{4}{l}{\itshape Pinned outside the SMM}\\
+$A$   & total factor productivity   & \np & normalisation, $\hat y=1$ \\
+$O/Y$ & other net spending          & \np & data primary balance \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!htbp]\centering\footnotesize
+\caption{Moments}\vspace{-2pt}
+\begin{tabular}{@{}lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.2]S[table-format=3.2]@{}}
+\toprule
+ & {Data} & {Model} & {\% dev} & {Weight} \\
+\midrule
+\multicolumn{5}{l}{\itshape Targeted}\\
+Average hours            & \np & \np & \np & \np \\
+$A/Y$                    & \np & \np & \np & \np \\
+Payroll revenue$/Y$      & \np & \np & \np & \np \\
+Pensions$/Y$             & \np & \np & \np & \np \\
+Public health$/Y$        & \np & \np & \np & \np \\
+\midrule
+\multicolumn{5}{l}{\itshape Not targeted}\\
+$G/Y$                    & \np & \np & \np & \\
+$I_g/Y$                  & \np & \np & \np & \\
+UI$/Y$                   & \np & \np & \np & \\
+Out-of-pocket health$/Y$ & \np & \np & \np & \\
+Interest$/Y$ $(r_BB/Y)$  & \np & \np & \np & \\
+Primary balance$/Y$      & \np & \np & \np & \\
+$B/Y$                    & \np & \np & \np & \\
+\bottomrule
+\end{tabular}
+\caption*{\footnotesize SMM objective \np{} at $n_{sim}=\np$.}
+\end{table}
+
+\clearpage
+\section*{Simulated aggregates}
+
+\begin{figure}[htbp]\centering
+\figbox{Figure 1 --- detrended aggregates along the baseline transition:
+$\hat y$, $\hat c$, $\hat k^{dom}$, $\hat\ell$, $\hat a$, each normalised to
+its $t=0$ value. Flat paths are the balanced-growth check.}{5.5cm}
+% \includegraphics[width=\linewidth]{\rundir/agg_detrended.pdf}
+\caption{Detrended aggregates}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\figbox{Figure 2 --- ratios to output: $B/Y$, $NFA/Y$, $K_g/Y$, $A/Y$
+(ratios are invariant to the detrending).}{5.5cm}
+% \includegraphics[width=\linewidth]{\rundir/ratios.pdf}
+\caption{Ratios to output}
+\end{figure}
+
+\begin{table}[htbp]\centering\small
+\caption{Implied growth rates. Levels $X_t$ grow at $\Gamma-1$ and per-capita
+terms $X_t/N_t$ at $g$ by construction; the detrended series $\hat x$ should be
+flat, so the last column is the test.}
+\begin{tabular}{lS[table-format=1.3]S[table-format=1.3]S[table-format=1.2e2]}
+\toprule
+ & {Level (\%)} & {Per capita (\%)} & {Detrended drift} \\
+\midrule
+$Y$        & \np & \np & \np \\
+$C$        & \np & \np & \np \\
+$K^{dom}$  & \np & \np & \np \\
+$A$ (wealth) & \np & \np & \np \\
+$L$        & \np & \np & \np \\
+$K_g$      & \np & \np & \np \\
+$B$        & \np & \np & \np \\
+\midrule
+Theory    & \np & \np & {0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\footnotesize
+Detrended drift is $\max_t\lvert x_{t+1}/x_t-1\rvert$ over the baseline
+transition, measured after the first lifetime: the data survival table makes
+the opening $T$ periods non-stationary by construction.
+
+\end{document}

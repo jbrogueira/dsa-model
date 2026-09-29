@@ -1,12 +1,21 @@
 """
 Normalize A_tfp so the INITIAL-STEADY-STATE output equals a target level
-(default Y_ss = 1), at fixed theta (_derived.theta).
+(default 1), at fixed theta (_derived.theta).
+
+"Y_ss" throughout this script is DETRENDED per-capita output, Y_t/(Z_t N_t),
+which is what the stationary solve returns.  With trend growth on there is no
+stationary level of output: the levels grow at Gamma - 1 = (1+g)(1+n) - 1 and
+per-capita terms at g, while the detrended value is constant along the
+balanced growth path.  Normalizing it to 1 is a units choice.
 
 With public capital on (eta_g != 0), the K_g level in the config is a K_g/Y
 target only if Y_ss is normalized: Y_ss = 1 makes K_g = K_g/Y by construction.
 Y_ss is endogenous (Y_ss = (Y/L)_ss * L_ss, with L_ss from the household block)
 and hours respond to the wage level, so Y_ss is NOT proportional to A_tfp —
-this is a genuine 1-D root-find, not a closed-form rescaling.
+this is a genuine 1-D root-find, not a closed-form rescaling.  (With log
+consumption the intratemporal FOC is invariant to a proportional scaling of w
+and c, so the elasticity step below is near-exact; the remaining curvature
+comes from the level objects that do not scale.)
 
 Each evaluation rebuilds equilibrium prices (w, K/L from the firm FOC at the
 trial A_tfp) and re-solves + re-simulates the stationary lifecycle via

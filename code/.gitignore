@@ -27,3 +27,9 @@ output/test/
 # Health-flag generated artifacts (regenerable from build_health_*.py)
 data/health_flag_age_shares_GR.npz
 data/health_model_baseline_GR.npz
+reports/*.pdf
+reports/*.aux
+reports/*.log
+reports/*.fls
+reports/*.fdb_latexmk
+reports/*.out
