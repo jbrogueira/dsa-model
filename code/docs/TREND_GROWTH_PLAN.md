@@ -109,12 +109,18 @@ so shifting weight towards working ages raises output more than wealth.
    observed counts directly would apply survival twice.
 2. **The calibration targets that same cross-section**, not a stationary
    population. `compute_age_weights` takes the measured vector in place of
-   ω_j ∝ (1+n)^(−j)·S_j. Nothing else in the solve changes: in this SOE the
-   age distribution reaches no household decision — r is exogenous, K/L is
-   pinned by the firm FOC and w with it — so individual policies are
-   invariant to it and each SMM evaluation stays a single stationary solve.
-   The one channel that could bite, the accidental-bequest transfer, is an
-   open circuit in the calibration.
+   ω_j ∝ (1+n)^(−j)·S_j. Nothing else in the solve changes, because **with the
+   tax rates held fixed** the age distribution enters no household's problem:
+   r is exogenous, K/L is pinned by the firm FOC and w with it, so individual
+   policies are invariant to it and each SMM evaluation stays a single
+   stationary solve. The one other channel that could bite, the
+   accidental-bequest transfer, is an open circuit in the calibration.
+   This invariance holds in the calibration and in the baseline, where the
+   instruments are fixed. It does **not** hold in the τ_l-financed
+   experiments: ageing raises pension and health spending, τ_l rises to meet
+   the debt or NFA target, and household decisions move with it. That is the
+   channel through which demographics reach behaviour, and it is a result of
+   the exercise rather than a nuisance.
 3. **The closure is pinned on the same weights as the calibration.**
    `pin_baseline_closure` computes aggregate ratios; if the two use different
    weightings the primary balance will not equal its target.
@@ -157,11 +163,11 @@ so shifting weight towards working ages raises output more than wealth.
   against 0.445 in a stationary population matched on that ratio. Taking the
   measured cross-section removes this approximation, which is the reason for
   preferring it.
-- The initial condition's coherence rests on the small-open-economy closure.
-  In a closed economy K/L would respond to the age structure, so a
-  non-stationary initial population would make the constant pre-transition
-  prices behind the MIT stitching internally inconsistent. Worth stating in
-  the write-up.
+- The initial condition's coherence rests on the small-open-economy closure
+  *and* on the instruments being fixed at t = 0. In a closed economy K/L would
+  respond to the age structure, so a non-stationary initial population would
+  make the constant pre-transition prices behind the MIT stitching internally
+  inconsistent. Worth stating in the write-up.
 
 ## Step 1 — config and wiring
 

@@ -99,29 +99,27 @@ Primary balance$/Y$      & \np & \np & \np & \\
 \vspace{-0.1cm}
 
 \noindent\footnotesize
-The base year is 2023. Its age distribution enters the model as
+The base year is 2023 and its age distribution enters as
 \emph{measured}, not as a stationary population, so the calibration matches
-2023. Model ages
-$0$--$59$ are real ages $25$--$84$. Each age is weighted by the size of its
-cohort at birth, mortality being already reflected in the simulated averages,
-in which the dead hold zero; the observed cross-section counts the living, so
+2023. Model ages $0$--$59$ are real ages $25$--$84$. Each age is weighted by
+its cohort's size at birth, mortality being already reflected in the simulated
+averages in which the dead hold zero; the cross-section counts the living, so
 each age is divided by its cumulative survival probability to recover those
-weights. Survival and births then follow the projected path,
-identical across the baseline and every counterfactual, settling before the
-terminal date.\footnote{A stationary population matched on the dependency ratio
+weights. Survival and births then follow the projected path, identical across
+the baseline and every counterfactual, settling before the terminal date.\footnote{A stationary population matched on the dependency ratio
 would reproduce that ratio but not the age shape, lacking the cohort about to
-retire that drives the projected rise.} Because the base-year population is not stationary the economy is
-in transition from $t=0$ with no policy change: detrended aggregates move
-while the older cohorts retire, and settle only once the demographic
-transition is complete. The balanced-growth check in Table~5 is therefore
-computed over the years after demography has settled. In this small open economy the age
-structure reaches no household decision --- the return is exogenous, the
-capital--labour ratio is pinned by the firm's first-order condition and the
-wage with it --- so it moves aggregates and the government budget, not
-individual policies.
+retire that drives the projected rise.} Because the base-year population is not stationary the economy is in
+transition from $t=0$ with no policy change: detrended aggregates move while
+the older cohorts retire, settling once the demographic transition completes.
+The balanced-growth check in Table~5 is computed over the years after that. With tax rates fixed the age structure enters no household's
+problem --- the return is exogenous and the wage is pinned by the firm's
+first-order condition --- so ageing moves aggregates and the government budget
+alone. It reaches households once financing responds: in the tax-financed
+experiments ageing raises pension and health spending, the labour income tax
+rises to meet the debt target, and decisions move with it.
 
 \begin{table}[htbp]\centering\footnotesize
-\caption{Age structure}\vspace{-2pt}
+\caption{Age structure}\vspace{-3pt}
 \begin{tabular}{@{}lS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]@{}}
 \toprule
  & {Data, 2023} & {Model, $t=0$} & {Model, terminal} \\
@@ -130,7 +128,6 @@ Share 25--39                     & \np & \np & \np \\
 Share 40--64                     & \np & \np & \np \\
 Share 65--84                     & \np & \np & \np \\
 Dependency (65--84 / 25--64)     & \np & \np & \np \\
-Life expectancy at 25            & \np & \np & \np \\
 Population growth $n$            & \np & \np & \np \\
 \bottomrule
 \end{tabular}
@@ -143,7 +140,7 @@ Population growth $n$            & \np & \np & \np \\
 \figbox{Figure 1 --- baseline transition, two panels. \emph{Left}: detrended
 aggregates $\hat y$, $\hat c$, $\hat k^{dom}$, $\hat\ell$, $\hat a$, each
 normalised to its $t=0$ value. \emph{Right}: ratios to output $B/Y$,
-$NFA/Y$, $K_g/Y$, $A/Y$, which are invariant to the detrending.}{5.2cm}
+$NFA/Y$, $K_g/Y$, $A/Y$, which are invariant to the detrending.}{4.5cm}
 % \includegraphics[width=\linewidth]{\rundir/baseline_panels.pdf}
 \caption{Baseline transition}
 \end{figure}
