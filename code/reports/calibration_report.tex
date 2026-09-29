@@ -102,10 +102,11 @@ Primary balance$/Y$      & \np & \np & \np & \\
 The base year is 2023. Its age distribution enters the model as
 \emph{measured}, not as a stationary population, so the calibration matches
 2023. Model ages
-$0$--$59$ are real ages $25$--$84$; the birth path behind the transition
-weights is recovered from the cross-section by dividing through cumulative
-survival, the weights being births-only with mortality already inside the
-per-cohort means. Survival and births then follow the projected path,
+$0$--$59$ are real ages $25$--$84$. Each age is weighted by the size of its
+cohort at birth, mortality being already reflected in the simulated averages,
+in which the dead hold zero; the observed cross-section counts the living, so
+each age is divided by its cumulative survival probability to recover those
+weights. Survival and births then follow the projected path,
 identical across the baseline and every counterfactual, settling before the
 terminal date. A stationary population matched on the
 dependency ratio would get that ratio right but not the age \emph{shape},

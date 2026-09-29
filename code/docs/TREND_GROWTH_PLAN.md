@@ -100,10 +100,13 @@ so shifting weight towards working ages raises output more than wealth.
 ### What is assumed
 
 1. **t = 0 is the measured 2023 cross-section.** Model ages 0–59 = real ages
-   25–84, from `data/DATA_GR.xlsx`, sheet `Population by age`. The transition
-   weights are births-only with survival applied per cohort, so the birth
-   path is backed out of the cross-section by dividing through cumulative
-   survival; feeding the cross-section directly would apply survival twice.
+   25–84, from `data/DATA_GR.xlsx`, sheet `Population by age`. An aggregate is
+   Σ_j (cohort weight) × (mean over that cohort's simulated agents), and those
+   means run over all agents with the dead holding zero — so mortality is
+   already in the mean and the weight must be the cohort's size **at birth**.
+   The cross-section counts the living, so each age is divided by its
+   cumulative survival probability to recover the birth cohort; using the
+   observed counts directly would apply survival twice.
 2. **The calibration targets that same cross-section**, not a stationary
    population. `compute_age_weights` takes the measured vector in place of
    ω_j ∝ (1+n)^(−j)·S_j. Nothing else in the solve changes: in this SOE the
