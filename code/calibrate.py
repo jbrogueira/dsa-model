@@ -951,6 +951,42 @@ def compute_age_weights(T, pop_growth=0.0, survival_probs=None):
     return omega
 
 
+def _demography_path(raw):
+    """Absolute path to the configured demographic sidecar, or None."""
+    rel = raw.get('transition', {}).get('demography_file')
+    if not rel:
+        return None
+    path = rel if os.path.isabs(rel) else \
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
+    if not os.path.exists(path):
+        print(f"  [load_config] demography_file not found: {path}")
+        return None
+    return path
+
+
+def base_year_age_weights(raw, T):
+    """Share of the living population at each model age in the base year.
+
+    The calibration aggregates cross-sectional means taken among the alive, so
+    the weight on an age is that age's share of the living population. That is
+    a different object from the transition's weights, which are cohort sizes
+    at entry because its means run over all agents with the dead holding zero.
+
+    Uses the measured base-year cross-section when a demographic path is
+    configured, and the stationary approximation otherwise.
+    """
+    path = _demography_path(raw)
+    if path is not None:
+        cs = np.asarray(np.load(path)['cross_section_base'], dtype=float)
+        if len(cs) == T:
+            return cs / cs.sum()
+        print(f"  [load_config] demography age dim {len(cs)} != model T {T}; "
+              f"using the stationary weights.")
+    pop_growth = raw.get('external_params', {}).get('pop_growth', 0.0)
+    surv = np.array(raw['survival_probs']) if raw.get('survival_probs') else None
+    return compute_age_weights(T, pop_growth, surv)
+
+
 def load_config(path):
     """Load a calibration input JSON and build a CalibrationSpec.
 
@@ -971,9 +1007,7 @@ def load_config(path):
 
     # Age weights
     T = raw['model']['T']
-    pop_growth = raw.get('external_params', {}).get('pop_growth', 0.0)
-    surv = np.array(raw['survival_probs']) if raw.get('survival_probs') else None
-    age_weights = compute_age_weights(T, pop_growth, surv)
+    age_weights = base_year_age_weights(raw, T)
 
     # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]

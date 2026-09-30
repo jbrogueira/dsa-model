@@ -383,6 +383,7 @@
     "r_final": 0.04,
     "r_decay": 5,
     "n_sim": 2000,
-    "survival_data_file": "../data/survival_GR.npz"
+    "survival_data_file": "../data/survival_GR.npz",
+    "demography_file": "../data/demography_GR.npz"
   }
 }
