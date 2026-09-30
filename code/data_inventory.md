@@ -281,7 +281,17 @@ Income shares: bottom 20% = 7.5%, top 20% = 39.5%.
 | Eurostat `ilc_di12` | **Public, no application** | Gini of equivalised disposable income by broad age group for Greece. Not var(log earnings), but usable as rough validation. | `ec.europa.eu/eurostat/databrowser/view/ilc_di12` |
 | Eurostat `ilc_di03` | **Public** | Mean and median income by age and sex for Greece. | `ec.europa.eu/eurostat/databrowser/view/ilc_di03` |
 
-**Current approach (provisional):** Use Italy/Spain literature values as starting point (rho≈0.95, σ_eta≈0.13). Calibrate via SMM against Eurostat public moments (Gini=31.8, P90/P10=3.9, mean income by age). LIS access application submitted (2026-03-24) — once approved, compute var(log earnings) by age from Greek EU-SILC cross-section and re-calibrate.
+**Status: estimated from Greek microdata (2026-05-08).** LIS access was granted 2026-05-06 and the pooled Greek moments retrieved 2026-05-08; `σ_α` and `σ_η` in `calibration_input_GR.json` are the `fixed_rho` (ρ=0.95) estimates in `code/data/lis/output/ar1_estimates_GR_band.json`, subset `emp_fyft` (full-year full-time employees, n=76,255), by education:
+
+| | σ_α | σ_η |
+|---|---|---|
+| low | 0.367 | 0.0538 |
+| medium | 0.259 | 0.0858 |
+| high | 0.318 | 0.0750 |
+
+The Italy/Spain proxies (Cooper–Haan–Zhu) are superseded and survive only as the `rho_baseline` grid anchor. Note the estimation sample is stable employees, so the parameters describe their wage process; the model's cross-section adds unemployment spells and retirement on top and disperses more than the sample they were fitted to.
+
+**Comparing model income dispersion to Eurostat.** `ilc_di12`/`ilc_di01` measure *equivalised household disposable income*; the model has no households, so the comparable model statistic is *individual disposable* income — gross less income tax and contributions — computed by `_moment_disposable_income_gini` and `_moment_disposable_p90_p10` in `calibrate.py`. At the 2026-09-30 calibration: Gini 0.382 against 0.318, decile ratio 4.86 against 3.90. Netting taxes accounts for part of the gross-to-disposable gap (Gini 0.400→0.382, ratio 5.70→4.86); household pooling and equivalisation would lower both further and cannot be reproduced, so the model figures are upper bounds on the comparable statistic. Do **not** report the gross measures against these series.
 
 ### 2.2 Wealth distribution — High
 
@@ -465,13 +475,13 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 
 | Parameter / Moment | Status | Values |
 |-------------------|--------|--------|
-| `rho_y`, `sigma_y` | **Provisional** (literature proxies; LIS pending) | rho≈0.95, σ_eta≈0.13 (Italy/Spain). Eurostat: Gini=31.8, P90/P10=3.9 |
+| `rho_y`, `sigma_y` | **Estimated** (LIS Greek EU-SILC, 2026-05-08) | ρ fixed 0.95; σ_α 0.259–0.367, σ_η 0.054–0.086 by education (`ar1_estimates_GR_band.json`) |
 | Wealth Gini, zero-wealth fraction | **Obtained** (HFCS Wave 4) | Net wealth Gini=0.58 (includes housing), negative NW=1.1%. **Caveat**: model has no housing; financial-only Gini needed — see "Still missing". |
 | `job_finding_rate` | **Obtained** (Eurostat `lfsa_ugad`) | jfr≈0.50/year (2024); by education: 0.505-0.522 |
 | `m_age_profile` | **Obtained** (EU Ageing Report 2024) | EU14 aggregate profile; normalised 5-year group values available |
 | `wage_age_profile` | **Obtained** (Eurostat `ilc_di03`) | Quadratic fit to mean income by age group; rises from 0.85 (age 20) to 1.07 (age 54); normalised working-age mean = 1.0 |
 | Earnings P90/P10 | **Obtained** (Eurostat `ilc_di01`) | P90/P10=3.9 (2024, equivalised disposable income — not directly comparable to model) |
-| Income Gini | **Obtained** (Eurostat `ilc_di12`) | 31.8 (2024). **Caveat**: this is equivalised household disposable income, not individual gross income. Model income Gini is not directly comparable. |
+| Income Gini | **Obtained** (Eurostat `ilc_di12`) | 31.8 (2024). Equivalised household disposable income — compare against the model's *disposable* individual measure, never the gross one; see §2.1. |
 | Tax decomposition | **Clarified** | EC ITR on labour (40.58%) includes SSC. Correct split: tau_l≈0.10 (PIT), tau_p≈0.34 (SSC), total wedge = 40.6% |
 
 ### Still missing
@@ -498,5 +508,5 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 
 ### Remaining
 
-7. **LIS access** (application submitted 2026-03-24): once approved, compute var(log earnings) by age from Greek EU-SILC cross-section for direct `rho_y`/`sigma_y` identification. Re-calibrate and replace provisional literature proxies. Also covers consumption Gini.
+7. ~~**LIS access**: compute var(log earnings) by age from the Greek EU-SILC cross-section for direct `rho_y`/`sigma_y` identification~~ — **Done 2026-05-08**, see §2.1. Consumption Gini from the same source is still open.
 8. **Financial wealth moments (excl. housing)**: obtain financial wealth Gini and zero-financial-wealth fraction from HFCS published tables (A3/A4) or microdata. The model has no housing asset, so current net wealth targets (Gini=0.58, zero-wealth=1.1%) overstate asset equality.

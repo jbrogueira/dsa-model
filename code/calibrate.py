@@ -465,6 +465,55 @@ def _moment_income_gini(panels, spec):
     return compute_gini(np.concatenate(all_inc), np.concatenate(all_w))
 
 
+def _disposable_income(panel):
+    """Individual disposable income: gross less income tax and contributions.
+
+    EU-SILC's disposable income is gross income net of income tax and social
+    contributions. Here effective_y_sim is the wage when employed and UI
+    otherwise, pension_sim the pension; tax_l_sim is the income tax on
+    whichever of these applies, and tax_p_sim the contribution, levied on
+    wages only. Consumption and capital taxes are outside the concept.
+    """
+    return (panel.effective_y_sim + panel.pension_sim
+            - panel.tax_l_sim - panel.tax_p_sim)
+
+
+def _moment_disposable_income_gini(panels, spec):
+    """Gini of individual disposable income, age-weighted.
+
+    Brings the model onto the data's definition as far as a model without
+    households allows. Eurostat ilc_di12 measures *equivalised household*
+    disposable income: netting taxes closes the gross-to-disposable half of
+    the gap, while household pooling and equivalisation cannot be reproduced
+    here, and both would lower the statistic further. Read it as an upper
+    bound on the comparable number, not as a like-for-like match.
+    """
+    all_inc, all_w = [], []
+    for edu, panel in panels.items():
+        alive, w = _agent_weights(panel, spec, edu)
+        all_inc.append(_disposable_income(panel)[alive])
+        all_w.append(w)
+    return compute_gini(np.concatenate(all_inc), np.concatenate(all_w))
+
+
+def _moment_disposable_p90_p10(panels, spec):
+    """P90/P10 of individual disposable income among alive agents.
+
+    Same caveat as _moment_disposable_income_gini: the data counterpart
+    (Eurostat ilc_di01) is equivalised household disposable income.
+    """
+    all_inc = []
+    for edu, panel in panels.items():
+        alive = panel.alive_sim.astype(bool)
+        all_inc.append(_disposable_income(panel)[alive])
+    vals = np.concatenate(all_inc)
+    vals = vals[vals > 0]
+    if len(vals) < 10:
+        return 0.0
+    p90, p10 = np.percentile(vals, 90), np.percentile(vals, 10)
+    return float(p90 / p10) if p10 > 0 else 0.0
+
+
 def _moment_earnings_gini(panels, spec):
     """Gini of effective earnings among employed non-retired, age-weighted."""
     def _employed(p):
@@ -645,6 +694,8 @@ MOMENT_DISPATCH = {
     'average_hours': _moment_average_hours,
     'consumption_gini': _moment_consumption_gini,
     'income_gini': _moment_income_gini,
+    'disposable_income_gini': _moment_disposable_income_gini,
+    'disposable_p90_p10': _moment_disposable_p90_p10,
     'earnings_gini': _moment_earnings_gini,
     'mean_assets': _moment_mean_assets,
     'median_wealth_to_income': _moment_median_wealth_to_income,

@@ -106,9 +106,8 @@ LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
          'health_gov_over_Y': 'Public health$/Y$', 'I_g_over_Y': '$I_g/Y$',
          'ui_over_Y': 'UI$/Y$', 'interest_over_Y': 'Interest$/Y$ $(r_BB/Y)$',
          'primary_balance_over_Y': 'Household primary balance$/Y$', 'G_over_Y': '$G/Y$',
-         'income_gini': 'Income Gini', 'p90_p10_income': 'Income p90/p10',
-         'wealth_gini': 'Wealth Gini',
-         'zero_wealth_fraction': 'Zero-wealth share',
+         'disposable_income_gini': 'Disposable income Gini',
+         'disposable_p90_p10': 'Disposable income p90/p10',
          'B_over_Y': '$B/Y$', 'health_oop_over_Y': 'Out-of-pocket health$/Y$'}
 # Fiscal ratios the model does not target but the data measure. I_g/Y and the
 # household primary balance are out: the first is a policy input, the second
@@ -116,10 +115,12 @@ LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
 # Interest/Y is out too: the "data" value 0.0312 is r_B x B/Y with both taken
 # from the config (0.019 x 1.64), so the model reproduces it by construction.
 UNTARGETED = ['ui_over_Y']
-# Distributional moments carried in the config's `untargeted` block; only the
-# ones the data pin down are shown.
-UNTARGETED_DIST = ['income_gini', 'p90_p10_income', 'wealth_gini',
-                   'zero_wealth_fraction']
+# Distributional checks, as (model moment, data key in the config's
+# `untargeted` block). The model side is the disposable measure, since the
+# Eurostat series are disposable; see _moment_disposable_income_gini in
+# calibrate.py for what can and cannot be matched.
+UNTARGETED_DIST = [('disposable_income_gini', 'income_gini'),
+                   ('disposable_p90_p10', 'p90_p10_income')]
 
 
 def live_moments(panels, spec, cfg):
@@ -137,7 +138,14 @@ def live_moments(panels, spec, cfg):
         targeted.append((mom.name, mom.value, model, dev, mom.weight))
     fr = compute_fiscal_ratios(panels, spec, cfg)
     fisc = cfg.get('fiscal', {})
+    untarg_cfg = cfg.get('untargeted', {})
     untargeted = []
+    for mom_key, data_key in UNTARGETED_DIST:
+        data = untarg_cfg.get(data_key)
+        if data is None:
+            continue
+        model = float(MOMENT_DISPATCH[mom_key](panels, spec))
+        untargeted.append((mom_key, data, model, 100.0 * (model / data - 1.0)))
     for key in UNTARGETED:
         model = None if 'error' in fr else fr.get(key)
         data = fisc.get(key)
@@ -161,14 +169,6 @@ def moments_table(md, live=None):
     out.append('\\midrule\n\\multicolumn{5}{l}{\\itshape Not targeted}\\\\')
     if live:
         rows = list(live['untargeted'])
-        # Distributional moments come from the calibration report, which
-        # computes them on the same panels.
-        dist = {r[0]: r for r in parse_md_table(md, 'Untargeted Moments')}
-        for key in UNTARGETED_DIST:
-            r = dist.get(key)
-            if r and num(r[2]) is not None and num(r[1]) is not None:
-                rows.append((key, num(r[2]), num(r[1]),
-                             100.0 * (num(r[1]) / num(r[2]) - 1.0)))
     else:
         ratios = {r[0]: r for r in parse_md_table(md, 'Fiscal Ratios (model vs data, share of Y)')}
         rows = []
