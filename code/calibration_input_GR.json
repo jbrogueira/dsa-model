@@ -19,15 +19,15 @@
   },
   "_derived": {
     "theta": {
-      "nu": 13.262543096309226,
-      "beta": 1.0190369443137424,
-      "tau_p": 0.19740878344153223,
-      "pension_replacement_default": 0.1865075124091412,
-      "m_good": 0.08431797856605856
+      "nu": 13.23756173375315,
+      "beta": 1.0239568124309861,
+      "tau_p": 0.19741797982649567,
+      "pension_replacement_default": 0.23836295018393366,
+      "m_good": 0.09028620099498698
     },
     "theta_metadata": {
-      "calibration_date": "2026-09-29T10:18:10",
-      "source_report": "output/calibration/calibration_GR_20260929_101810.md"
+      "calibration_date": "2026-09-30T13:39:55",
+      "source_report": "output/calibration/calibration_GR_20260930_133955.md"
     }
   },
   "prices": {
@@ -37,7 +37,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.50284633,
+    "A_tfp": 1.42370465,
     "K_g": 0.745,
     "eta_g": 0.05,
     "delta_g": 0.035259
@@ -286,7 +286,7 @@
     "tax_revenue_over_Y": 0.4,
     "interest_over_Y": 0.0312,
     "primary_balance_target_over_Y": 0.0195,
-    "other_net_spending_over_Y": -0.106576
+    "other_net_spending_over_Y": -0.111462
   },
   "calibration": {
     "params": [
@@ -295,35 +295,35 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 13.260876217541492
+        "initial": 13.254878318061612
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 1.0187533612241715
+        "initial": 1.0237705167095417
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.19741185127369498
+        "initial": 0.19741534262356392
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.1864780636735504
+        "initial": 0.2381088593074709
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.08505347468164731
+        "initial": 0.09091880455940435
       }
     ],
     "targets": [
