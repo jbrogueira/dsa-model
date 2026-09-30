@@ -91,13 +91,13 @@ def params_table(cfg):
     ]
     out = ['\\multicolumn{4}{l}{\\itshape Externally set}\\\\']
     for sym, desc, val, src in rows_ext:
-        out.append(f'{sym} & {desc} & {fmt(val)} & {src} \\\\')
+        out.append(f'{sym} & {desc} & {fmt(val, 2)} & {src} \\\\')
     out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Calibrated jointly by SMM}\\\\')
     for sym, desc, val, src in rows_cal:
-        out.append(f'{sym} & {desc} & {fmt(val, 6)} & {src} \\\\')
+        out.append(f'{sym} & {desc} & {fmt(val, 2)} & {src} \\\\')
     out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Pinned outside the SMM}\\\\')
     for sym, desc, val, src in rows_pin:
-        out.append(f'{sym} & {desc} & {fmt(val, 6)} & {src} \\\\')
+        out.append(f'{sym} & {desc} & {fmt(val, 2)} & {src} \\\\')
     return '\n'.join(out)
 
 
@@ -105,7 +105,7 @@ LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
          'tax_p_over_Y': 'Payroll revenue$/Y$', 'pensions_over_Y': 'Pensions$/Y$',
          'health_gov_over_Y': 'Public health$/Y$', 'I_g_over_Y': '$I_g/Y$',
          'ui_over_Y': 'UI$/Y$', 'interest_over_Y': 'Interest$/Y$ $(r_BB/Y)$',
-         'primary_balance_over_Y': 'Primary balance$/Y$', 'G_over_Y': '$G/Y$',
+         'primary_balance_over_Y': 'Household primary balance$/Y$', 'G_over_Y': '$G/Y$',
          'B_over_Y': '$B/Y$', 'health_oop_over_Y': 'Out-of-pocket health$/Y$'}
 UNTARGETED = ['I_g_over_Y', 'ui_over_Y', 'interest_over_Y', 'primary_balance_over_Y']
 
@@ -425,7 +425,7 @@ def main():
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=+3.1]',
             ' & {Data} & {Model} & {\\% dev}', implied_table(stats, cfg)),
         'params_body.tex': wrap(
-            'llS[table-format=2.4]l',
+            'llS[table-format=2.2]l',
             'Symbol & Description & {Value} & Source / identified by',
             params_table(cfg)),
         'moments_body.tex': wrap(
