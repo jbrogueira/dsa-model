@@ -124,19 +124,67 @@ so shifting weight towards working ages raises output more than wealth.
 3. **The closure is pinned on the same weights as the calibration.**
    `pin_baseline_closure` computes aggregate ratios; if the two use different
    weightings the primary balance will not equal its target.
-4. **Survival and births follow EUROPOP2023 through the transition**,
-   identical across the baseline and every counterfactual, and settling to
-   constants before the terminal date.
-5. **The terminal state is a genuine balanced growth path.** Demography must
-   converge, because `terminal_debt_gdp`, the NFA target, the `K_g_ss_gap`
-   diagnostic and the rest point PD/Y = (Γ_T − 1 − r_B)·b all require it.
+4. **Survival and entering cohorts follow EUROPOP2023 through 2100**,
+   identical across the baseline and every counterfactual. Downloaded
+   2026-09-30 by `code/build_europop_GR.py` into `data/europop2023_GR.npz`,
+   Eurostat baseline variant for Greece: population on 1 January by single
+   year of age and sex, assumed age-specific mortality rates by sex, assumed
+   net migration by age. No projected life table is published, so survival is
+   built from the mortality rates — the two sexes combined at the projected
+   population weights of that age and year, then q = m/(1 + m/2). That
+   reproduces the observed 2023 `demo_mlifetable` survival, the source of
+   `data/survival_GR.npz`, to 2.3e-3 at worst, so the projected table
+   continues the historical one on one definition.
+5. **Net migration is routed through the entry age.** The model creates
+   cohorts only at real age 25, so it cannot receive a 50-year-old arrival.
+   Each year's entering cohort is instead solved as the residual that makes
+   the model's 25–84 population equal the projection's,
+   B_y = P_y − Σ_{j≥1} B_{y−j}·S_j, with the cohorts already alive in 2023
+   pinned by the measured cross-section divided by cumulative survival. The
+   aggregate population then matches EUROPOP2023 exactly and every lifecycle
+   history stays intact. What it costs is age composition: EUROPOP2023 has
+   Greece losing about 6% of a cohort to net emigration in its first decade
+   and 10% by age 55, and booking those losses at entry makes cohorts
+   entering before 2050 smaller than the projection's 25-year-olds (−16.2% in
+   2030) and later ones larger (+19.3% in 2083). The old-age dependency ratio,
+   65–84 over 25–64, then runs above the published path where ageing peaks and
+   below it afterwards: 0.685 against 0.657 in 2050, 0.638 against 0.589 in
+   2060, 0.473 against 0.529 in 2083.
+6. **The terminal state is a genuine balanced growth path**, reached by an
+   assumed tail past the projection. `terminal_debt_gdp`, the NFA target, the
+   `K_g_ss_gap` diagnostic and the rest point PD/Y = (Γ_T − 1 − r_B)·b all
+   require demography to have converged, and EUROPOP2023 has not converged at
+   its horizon — the dependency ratio still swings with the baby-boom cohorts
+   (0.657 in 2050, 0.494 in 2070, 0.529 in 2083, 0.495 in 2100), and the
+   projection's own 25-year-old counts grow at −0.75%/yr in the 2070s, −0.22%
+   in the 2080s and +0.13% in the 2090s. So: mortality is held at the 2100
+   schedule; the growth rate of entering cohorts is ramped linearly to
+   **n_∞ = 0.00%** over 2100–2120 and held there. The ramp starts from the
+   entering series of point 5, which absorbs net migration and so grows at
+   +0.93%/yr over the 2090s, not from the projection's 25-year-olds; the population reaches its stable age
+   distribution about a lifetime later, by 2180. That sets
+   **T_transition ≈ 157** against 60 today, so cohort solves go from 120 to
+   about 217 per education type.
+
+   n_∞ = 0 is an assumption, not a reading: entering-cohort growth is still
+   swinging at 2100. It is the most consequential number in Step 0, because
+   r_B − (Γ_T − 1) multiplies debt in every terminal condition — +0.20pp at
+   n_∞ = 0 against +0.81pp at the −0.60% previously assumed and +0.98pp at the
+   25–84 band's own 2023–2070 rate of −0.77%.
 
 ### What follows
 
 - **Γ becomes Γ_t = (1+g)(1+n_t)** and every stock recursion takes the time
   index rather than the scalar `olg.growth_factor`: the debt, K_g, pension
   fund and current-account laws, `new_borrowing`, `K_g_ss`, and the
-  terminal-rest-point condition, which uses **Γ_T**.
+  terminal-rest-point condition, which uses **Γ_T = (1+g)(1+n_∞)**.
+  n_t is the growth rate of the model's own population, ages 25–84, computed
+  from the same weights the aggregation uses — not the total-population rate.
+  The two differ materially: EUROPOP2023 has total population falling 0.60%
+  a year to 2070 while the 25–84 band falls 0.774%. The config's `pop_growth`
+  therefore stops being the population growth rate of the model and becomes
+  n_∞ alone, the terminal value; between 2023 and 2120 n_t comes from the
+  data.
 - **"Steady state" is retired** in favour of *base-year equilibrium*: one
   lifecycle problem at constant detrended prices, aggregated over the 2023
   cross-section, with ŷ = 1 a units normalisation of base-year output. With
@@ -158,6 +206,14 @@ so shifting weight towards working ages raises output more than wealth.
 - Lifecycle asset profiles come from a problem solved at constant prices, so
   a 60-year-old at t = 0 did not live through the crisis. Fixing that would
   mean solving pre-2023 cohorts against historical price paths.
+- Migrants carry no history of their own. Routing net migration through the
+  entry age keeps every lifecycle intact but books a departure at 40 as a
+  smaller cohort at 25, so the model's age composition departs from the
+  published one by the amounts in point 5. Representing arrivals and
+  departures at the age they occur would need agents created after age 25,
+  with their own initial wealth, income state and partial pension entitlement
+  — cohorts are currently created only at model age 0 and
+  `initial_asset_distribution` applies at entry.
 - A stationary-population device would have matched the dependency ratio but
   not the age *shape*: Greece has 0.507 of its 25–84 population aged 40–64
   against 0.445 in a stationary population matched on that ratio. Taking the
