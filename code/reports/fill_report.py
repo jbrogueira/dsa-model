@@ -356,14 +356,40 @@ def main():
         except Exception as e:                                   # noqa: BLE001
             print(f'  age distribution unavailable: {e}')
 
-    paths, w_model_t0, w_model_T, n_T = None, None, None, None
+    # The age weights come from the demographic path, so the age-structure
+    # table and its figure need no solve; only the panels and the growth table
+    # need a baseline transition.
+    from calibrate import load_config, build_olg_transition
+    L = load_config(args.config)
+    economy, tp, T_TR = build_olg_transition(L['config_data'], backend=args.backend)
+
+    def living_shares(t):
+        """Shares of the living population by age at period t.
+
+        The transition's weights are cohort sizes at entry, because its means
+        run over all agents with the dead holding zero. The data column counts
+        the living, so the weights are carried through cumulative survival
+        before the two are compared.
+        """
+        w = economy._cohort_weights(t)
+        cum = np.empty(economy.T)
+        for j in range(economy.T):
+            sched = economy._cohort_survival_schedule(t - j)
+            cum[j] = float(np.prod(np.mean(sched, axis=1)[:j])) if j else 1.0
+        out = w * cum
+        return out / out.sum()
+
+    w_model_t0 = living_shares(0)
+    w_model_T = living_shares(T_TR - 1)
+    G_path = economy.growth_factors(T_TR)
+    n = float(G_path[0] / (1.0 + g) - 1.0)          # realised, not the config scalar
+    n_T = float(G_path[-1] / (1.0 + g) - 1.0)
+
+    paths = None
     if args.run_baseline:
-        from calibrate import load_config, build_olg_transition
-        L = load_config(args.config)
-        economy, tp, T_TR = build_olg_transition(L['config_data'], backend=args.backend)
         prod = L['config_data']['production']
-        I_g = np.full(T_TR, (prod.get('delta_g', 0.05) + economy.growth_factor - 1.0)
-                      * prod.get('K_g', 0.0))
+        I_g = ((prod.get('delta_g', 0.05) + economy.growth_factors(T_TR) - 1.0)
+               * prod.get('K_g', 0.0))
         tax = {k: tp[k] for k in ('tau_c_path', 'tau_l_path', 'tau_p_path',
                                   'tau_k_path', 'pension_replacement_path')}
         print(f'baseline transition: T={T_TR}, n_sim={args.n_sim}, backend={args.backend}')
@@ -371,15 +397,12 @@ def main():
                                           n_sim=args.n_sim, verbose=False, **tax)
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
-        w_model_t0 = economy._cohort_weights(0)
-        w_model_T = economy._cohort_weights(T_TR - 1)
-        n_T = n
 
     stats = None
     if args.run_baseline or args.implied:
-        from calibrate import load_config, run_model_moments
+        from calibrate import run_model_moments
         import dataclasses
-        L2 = load_config(args.config)
+        L2 = L
         sp = dataclasses.replace(L2['spec'], backend=args.backend, n_sim=args.n_sim)
         th = np.array([cfg['_derived']['theta'][p.name] for p in sp.params])
         print(f'implied statistics: solving at n_sim={args.n_sim} ...')
