@@ -106,24 +106,78 @@ LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
          'health_gov_over_Y': 'Public health$/Y$', 'I_g_over_Y': '$I_g/Y$',
          'ui_over_Y': 'UI$/Y$', 'interest_over_Y': 'Interest$/Y$ $(r_BB/Y)$',
          'primary_balance_over_Y': 'Household primary balance$/Y$', 'G_over_Y': '$G/Y$',
+         'income_gini': 'Income Gini', 'p90_p10_income': 'Income p90/p10',
+         'wealth_gini': 'Wealth Gini',
+         'zero_wealth_fraction': 'Zero-wealth share',
          'B_over_Y': '$B/Y$', 'health_oop_over_Y': 'Out-of-pocket health$/Y$'}
-UNTARGETED = ['I_g_over_Y', 'ui_over_Y', 'interest_over_Y', 'primary_balance_over_Y']
+# Fiscal ratios the model does not target but the data measure. I_g/Y and the
+# household primary balance are out: the first is a policy input, the second
+# has no data counterpart (it excludes G, I_g, defence and the residual O/Y).
+# Interest/Y is out too: the "data" value 0.0312 is r_B x B/Y with both taken
+# from the config (0.019 x 1.64), so the model reproduces it by construction.
+UNTARGETED = ['ui_over_Y']
+# Distributional moments carried in the config's `untargeted` block; only the
+# ones the data pin down are shown.
+UNTARGETED_DIST = ['income_gini', 'p90_p10_income', 'wealth_gini',
+                   'zero_wealth_fraction']
 
 
-def moments_table(md):
-    out = ['\\multicolumn{5}{l}{\\itshape Targeted}\\\\']
-    for r in parse_md_table(md, 'Targeted Moments'):
-        name, data, model, dev, wt = (r + [''] * 5)[:5]
-        out.append(f'{LABEL.get(name, name)} & {fmt(num(data))} & {fmt(num(model))} '
-                   f'& {fmt(num(dev), 2)} & {fmt(num(wt), 2)} \\\\')
-    ratios = {r[0]: r for r in parse_md_table(md, 'Fiscal Ratios (model vs data, share of Y)')}
-    out.append('\\midrule\n\\multicolumn{5}{l}{\\itshape Not targeted}\\\\')
+def live_moments(panels, spec, cfg):
+    """Model moments at the config's own theta and A_tfp.
+
+    The calibration report is written inside an SMM round, so its moments
+    predate the last A_tfp normalisation and the closure re-pin. Recomputing
+    them here keeps the table consistent with the config it documents.
+    """
+    from calibrate import MOMENT_DISPATCH, compute_fiscal_ratios
+    targeted = []
+    for mom in spec.moments:
+        model = float(MOMENT_DISPATCH[mom.compute_key](panels, spec))
+        dev = 100.0 * (model / mom.value - 1.0) if mom.value else None
+        targeted.append((mom.name, mom.value, model, dev, mom.weight))
+    fr = compute_fiscal_ratios(panels, spec, cfg)
+    fisc = cfg.get('fiscal', {})
+    untargeted = []
     for key in UNTARGETED:
-        r = ratios.get(key)
-        if r:
-            model, data, dev = num(r[1]), num(r[2]), num(r[3])
-        else:
-            model = data = dev = None
+        model = None if 'error' in fr else fr.get(key)
+        data = fisc.get(key)
+        if data is None or model is None:
+            continue                       # nothing to compare against
+        untargeted.append((key, data, model, 100.0 * (model / data - 1.0)))
+    return {'targeted': targeted, 'untargeted': untargeted}
+
+
+def moments_table(md, live=None):
+    out = ['\\multicolumn{5}{l}{\\itshape Targeted}\\\\']
+    if live:
+        for name, data, model, dev, wt in live['targeted']:
+            out.append(f'{LABEL.get(name, name)} & {fmt(data)} & {fmt(model)} '
+                       f'& {fmt(dev, 2)} & {fmt(wt, 2)} \\\\')
+    else:
+        for r in parse_md_table(md, 'Targeted Moments'):
+            name, data, model, dev, wt = (r + [''] * 5)[:5]
+            out.append(f'{LABEL.get(name, name)} & {fmt(num(data))} & {fmt(num(model))} '
+                       f'& {fmt(num(dev), 2)} & {fmt(num(wt), 2)} \\\\')
+    out.append('\\midrule\n\\multicolumn{5}{l}{\\itshape Not targeted}\\\\')
+    if live:
+        rows = list(live['untargeted'])
+        # Distributional moments come from the calibration report, which
+        # computes them on the same panels.
+        dist = {r[0]: r for r in parse_md_table(md, 'Untargeted Moments')}
+        for key in UNTARGETED_DIST:
+            r = dist.get(key)
+            if r and num(r[2]) is not None and num(r[1]) is not None:
+                rows.append((key, num(r[2]), num(r[1]),
+                             100.0 * (num(r[1]) / num(r[2]) - 1.0)))
+    else:
+        ratios = {r[0]: r for r in parse_md_table(md, 'Fiscal Ratios (model vs data, share of Y)')}
+        rows = []
+        for key in UNTARGETED:
+            r = ratios.get(key)
+            rows.append((key, num(r[2]), num(r[1]), num(r[3])) if r else (key, None, None, None))
+    for key, data, model, dev in rows:
+        if data is None:
+            continue                       # no data counterpart, no comparison
         out.append(f'{LABEL.get(key, key)} & {fmt(data)} & {fmt(model)} & {fmt(dev, 2)} & \\\\')
     return '\n'.join(out)
 
@@ -399,6 +453,7 @@ def main():
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
 
     stats = None
+    live = None
     if args.run_baseline or args.implied:
         from calibrate import run_model_moments
         import dataclasses
@@ -410,6 +465,7 @@ def main():
         # load_config injects _derived.K_over_L; the raw JSON has it as None,
         # which makes compute_fiscal_ratios return an error instead of Y.
         stats = implied_stats(panels, sp, L2['config_data'])
+        live = live_moments(panels, sp, L2['config_data'])
         for key, lbl, dat in DATA_COUNTERPART:
             v = stats.get(key)
             print(f'  {lbl:40s} model {v if v is not None else float("nan"):.4f}'
@@ -430,7 +486,7 @@ def main():
             params_table(cfg)),
         'moments_body.tex': wrap(
             'lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.2]S[table-format=3.2]',
-            ' & {Data} & {Model} & {\\% dev} & {Weight}', moments_table(md)),
+            ' & {Data} & {Model} & {\\% dev} & {Weight}', moments_table(md, live)),
         'age_body.tex': wrap(
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]',
             ' & {Data, 2023} & {Model, $t=0$} & {Model, terminal}',
