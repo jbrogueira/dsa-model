@@ -135,6 +135,7 @@ class OLGTransition:
                  # When set, overrides survival_improvement_rate: each cohort uses the data
                  # period tables along its calendar diagonal, clamped to [years[0], years[-1]].
                  survival_table=None,
+                 demography=None,
                  # Backend selection
                  backend='numpy',
                  # JAX simulation chunk size (None = all cohorts at once; set e.g. 10 to avoid GPU OOM)
@@ -284,6 +285,17 @@ class OLGTransition:
             order = np.argsort(yrs)
             self._surv_years = yrs[order]
             self._surv_px = px[order]
+
+        # Demographic path (entering-cohort sizes and the population growth
+        # rate by calendar year), built by build_demography_GR.py. When absent
+        # the cohort weights stay at the constant-n form and Gamma is scalar.
+        self._demog = None
+        if demography is not None:
+            self._demog = {k: np.asarray(demography[k]).ravel()
+                           for k in ('entrant_years', 'entrants',
+                                     'pop_years', 'n_path')}
+            self._demog['entrant_years'] = self._demog['entrant_years'].astype(int)
+            self._demog['pop_years'] = self._demog['pop_years'].astype(int)
 
         # NEW: remember last Monte Carlo size used in simulate_transition()
         self._last_n_sim: Optional[int] = None
@@ -934,6 +946,64 @@ class OLGTransition:
                 cohort_sizes_path[t, :] = 0.0
 
         self.cohort_sizes_path = cohort_sizes_path
+
+    def _growth_at(self, t):
+        """Gamma_t = (1+g)(1+n_t) for transition period t.
+
+        Falls back to the scalar terminal Gamma when no demographic path has
+        been built, which is what every fixture without one relies on.
+        """
+        gp = getattr(self, 'growth_factor_path', None)
+        if gp is None:
+            return float(self.growth_factor)
+        return float(gp[int(np.clip(t, 0, len(gp) - 1))])
+
+    def growth_factors(self, T_tr):
+        """Gamma_t = (1+g)(1+n_t) for a transition of T_tr periods.
+
+        Public because the callers that size the baseline public-investment
+        path need Gamma_t before a transition has been run.
+        """
+        T_tr = int(T_tr)
+        if self._demog is None:
+            return np.full(T_tr, self.growth_factor)
+        yrs, n = self._demog['pop_years'], self._demog['n_path']
+        want = int(self.current_year) + np.arange(T_tr)
+        if want[0] < yrs[0]:
+            raise ValueError(
+                f"demography starts in {yrs[0]} but the transition starts in "
+                f"{want[0]}")
+        # Past the end of the table the population is stable by construction,
+        # so holding the terminal Gamma is exact. The fiscal layer extends its
+        # recursions beyond the simulated horizon with every path frozen, and
+        # asks for Gamma over that longer span.
+        idx = np.searchsorted(yrs, np.clip(want, yrs[0], yrs[-1]))
+        return (1.0 + self.trend_growth) * (1.0 + n[idx])
+
+    def _build_cohort_sizes_from_entrants(self):
+        """Cross-sectional weights from the size of each cohort at entry.
+
+        The transition's per-age means run over all simulated agents with the
+        dead holding zero, so survival is already inside the mean and the
+        weight must be the entering size rather than the living count. That is
+        the opposite convention from the calibration, whose means are taken
+        among the alive.
+        """
+        T_tr, T = int(self.T_transition), int(self.T)
+        yrs, B = self._demog['entrant_years'], self._demog['entrants']
+        first, last = int(self.current_year) - (T - 1), int(self.current_year) + T_tr - 1
+        if first < yrs[0] or last > yrs[-1]:
+            raise ValueError(
+                f"entering cohorts cover {yrs[0]}..{yrs[-1]} but the "
+                f"transition needs {first}..{last}")
+        lut = {int(y): float(b) for y, b in zip(yrs, B)}
+        path = np.empty((T_tr, T))
+        for t in range(T_tr):
+            year = int(self.current_year) + t
+            for j in range(T):
+                path[t, j] = lut[year - j]
+            path[t] /= path[t].sum()
+        self.cohort_sizes_path = path
 
     def _cohort_weights(self, t):
         """Return age weights for calendar period t (time-varying if cohort_sizes_path exists)."""
@@ -1775,8 +1845,8 @@ class OLGTransition:
             B_next = float(self.B_path[t_idx + 1]) if t_idx + 1 < len(self.B_path) else float(self.B_path[-1])
             debt_service = r_debt * B_t
             # In detrended units the stock carried into t+1 is worth
-            # growth_factor times its per-capita value next period.
-            new_borrowing = self.growth_factor * B_next - B_t
+            # Gamma_t times its per-capita value next period.
+            new_borrowing = self._growth_at(t_idx) * B_next - B_t
 
         total_spending = (total_ui + total_pension + total_gov_health
                           + G_t + I_g_t + defense_t + other_t)
@@ -1879,6 +1949,12 @@ class OLGTransition:
         r_path = np.array(r_path)
         self.T_transition = len(r_path)
 
+        # Demography: Gamma_t and, with a demographic path, the entering-cohort
+        # weights. An explicit pop_growth_path argument still overrides below.
+        self.growth_factor_path = self.growth_factors(self.T_transition)
+        if self._demog is not None:
+            self._build_cohort_sizes_from_entrants()
+
         # Resolve effective paths for this run (explicit args override object attributes)
         _I_g = np.asarray(I_g_path, dtype=float) if I_g_path is not None else self.I_g_path
         _G   = np.asarray(govt_spending_path, dtype=float) if govt_spending_path is not None else self.govt_spending_path
@@ -1924,9 +2000,9 @@ class OLGTransition:
             for t in range(1, self.T_transition):
                 I_g_t = _I_g[t - 1] if t - 1 < len(_I_g) else _I_g[-1]
                 # Per-capita detrended stock: the whole period-(t-1) right-hand
-                # side is divided by growth_factor = (1+g)(1+n).
+                # side is divided by Gamma_t = (1+g)(1+n_t).
                 K_g_path[t] = ((1 - self.delta_g) * K_g_path[t - 1]
-                               + I_g_t) / self.growth_factor
+                               + I_g_t) / self._growth_at(t - 1)
             if verbose:
                 print(f"\nPublic capital path: K_g[0]={K_g_path[0]:.4f} → K_g[-1]={K_g_path[-1]:.4f}")
 
@@ -2250,9 +2326,9 @@ class OLGTransition:
         for t in range(self.T_transition):
             r_t = float(self.r_path[t]) if self.r_path is not None else 0.0
             # Per-capita detrended stock: divide the whole right-hand side by
-            # growth_factor = (1+g)(1+n).
+            # Gamma_t = (1+g)(1+n_t).
             S_pens[t + 1] = ((1 + r_t) * S_pens[t] + budget_path['tax_p'][t]
-                             - budget_path['pension'][t]) / self.growth_factor
+                             - budget_path['pension'][t]) / self._growth_at(t)
         self.S_pens_path = S_pens
         budget_path['S_pens'] = S_pens[:-1]  # Store balance at start of each period
 

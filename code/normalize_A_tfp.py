@@ -1,15 +1,19 @@
 """
-Normalize A_tfp so the INITIAL-STEADY-STATE output equals a target level
-(default 1), at fixed theta (_derived.theta).
+Normalize A_tfp so BASE-YEAR output equals a target level (default 1), at
+fixed theta (_derived.theta).
 
-"Y_ss" throughout this script is DETRENDED per-capita output, Y_t/(Z_t N_t),
-which is what the stationary solve returns.  With trend growth on there is no
-stationary level of output: the levels grow at Gamma - 1 = (1+g)(1+n) - 1 and
-per-capita terms at g, while the detrended value is constant along the
-balanced growth path.  Normalizing it to 1 is a units choice.
+The variable named "Y_ss" throughout this script is DETRENDED per-capita
+output, Y_t/(Z_t N_t), in the base-year equilibrium: one lifecycle problem at
+constant detrended prices, aggregated over the measured 2023 cross-section.
+It is not a steady state. With trend growth on there is no stationary level of
+output -- levels grow at Gamma_t - 1 = (1+g)(1+n_t) - 1 and per-capita terms
+at g -- and with a population still in transition the detrended aggregate is
+not constant either; it settles only once demography does. Normalizing the
+base-year value to 1 is a units choice.
 
 With public capital on (eta_g != 0), the K_g level in the config is a K_g/Y
-target only if Y_ss is normalized: Y_ss = 1 makes K_g = K_g/Y by construction.
+target only if base-year output is normalized: Y_ss = 1 makes K_g = K_g/Y
+by construction.
 Y_ss is endogenous (Y_ss = (Y/L)_ss * L_ss, with L_ss from the household block)
 and hours respond to the wage level, so Y_ss is NOT proportional to A_tfp —
 this is a genuine 1-D root-find, not a closed-form rescaling.  (With log
@@ -56,7 +60,7 @@ DEFAULT_CONFIG = 'calibration_input_GR.json'
 p = argparse.ArgumentParser()
 p.add_argument('--backend', default='jax', choices=['jax', 'numpy'])
 p.add_argument('--config', default=DEFAULT_CONFIG)
-p.add_argument('--target', type=float, default=1.0, help='target initial-SS Y')
+p.add_argument('--target', type=float, default=1.0, help='target base-year output')
 p.add_argument('--tol', type=float, default=1e-4,
                help='convergence tolerance on |Y - target|')
 p.add_argument('--max-iter', type=int, default=12)

@@ -92,10 +92,11 @@ if args.config:
     # zero and harmless. The spending paths below are sized off the resulting Y.
     prod = config_data.get('production', {})
     eta_g_cfg = prod.get('eta_g', 0.0)
-    # Stationary public-investment level: (delta_g + G - 1) * K_g holds K_g flat
-    # in per-capita detrended units.
-    I_g_warmup = np.full(T_TR, (prod.get('delta_g', 0.05)
-                                + economy.growth_factor - 1.0) * prod.get('K_g', 0.0))
+    # Stationary public-investment level: (delta_g + Gamma_t - 1) * K_g holds
+    # K_g flat in per-capita detrended units. Gamma_t varies while the
+    # population is in transition, so the level does too.
+    I_g_warmup = ((prod.get('delta_g', 0.05) + economy.growth_factors(T_TR) - 1.0)
+                  * prod.get('K_g', 0.0))
 
     print("Calibrating baseline fiscal paths …")
     _calib = economy.simulate_transition(
@@ -534,6 +535,10 @@ params_out = {
                       else None),
     'trend_growth':  float(getattr(economy, 'trend_growth', 0.0)),
     'pop_growth':    float(economy.pop_growth),
+    # Gamma_t over the run's horizon. pop_growth alone no longer pins it when
+    # the population comes from a demographic path, and the evaluator needs
+    # the same sequence the recursions used.
+    'growth_factor_path': [float(x) for x in economy.growth_factors(T_TR)],
     'delta_g':       float(economy.delta_g),
     'shock_mode_G':  'ratio' if args.config else 'level',
     'shock_mode_Ig': ('ratio' if (args.config and eta_g_cfg == 0.0) else 'level')

@@ -174,6 +174,13 @@ so shifting weight towards working ages raises output more than wealth.
 
 ### What follows
 
+- **δ_g is re-derived at the base-year Γ.** The identity
+  δ_g = I_g/K_g − (Γ − 1) imposes a stationary K_g per capita at the observed
+  investment rate, and K_g/Y = 0.745 and I_g/Y = 0.0353 are base-year
+  observations, so it is the base-year Γ_0 that belongs in it. Γ_0 − 1 =
+  1.212% gives **δ_g = 0.035259**, against 0.036485 at the constant
+  Γ − 1 = 1.090%. The baseline public-investment path that holds K_g flat is
+  then (δ_g + Γ_t − 1)·K_g, a level that moves with Γ_t rather than a constant.
 - **The calendar anchor moves to 2023.** `transition.current_year` was 2020
   while t = 0 is the 2023 cross-section. Transition period t is calendar year
   `current_year + t`, and `_survival_schedule_at_year` maps the internal clock
@@ -203,6 +210,9 @@ so shifting weight towards working ages raises output more than wealth.
   growth no level was ever stationary, and with a non-stationary population
   not even the detrended aggregate is. The term goes from
   `normalize_A_tfp.py`, `pin_baseline_closure.py`, this plan and the report.
+  Only the prose changes — docstrings, comments and printed labels. The
+  identifiers (`Y_ss`, `eval_ss`, `s_SS`) keep their names, since renaming
+  variables is out of scope for a terminology fix.
 - **The baseline is a demographic transition from t = 0**, with no policy
   change. Detrended aggregates move while the 40–64 cohorts retire and settle
   only once demography has settled, so the flatness check in the report is

@@ -40,7 +40,7 @@
     "A_tfp": 1.50284633,
     "K_g": 0.745,
     "eta_g": 0.05,
-    "delta_g": 0.036485
+    "delta_g": 0.035259
   },
   "external_params": {
     "tau_c": 0.1818,
@@ -55,7 +55,7 @@
     "m_good": 0.048,
     "job_finding_rate": 0.5,
     "max_job_separation_rate": 0.1,
-    "pop_growth": -0.006,
+    "pop_growth": 0.0,
     "trend_growth": 0.017
   },
   "edu_params": {
@@ -376,7 +376,7 @@
     "seed": 42
   },
   "transition": {
-    "T_transition": 60,
+    "T_transition": 160,
     "birth_year": 1960,
     "current_year": 2023,
     "r_initial": 0.04,

@@ -1144,12 +1144,25 @@ def build_olg_transition(config_data, backend='numpy'):
     ext = config_data.get('external_params', {})
     T_tr = trans.get('T_transition', 60)
 
-    # Data-driven cohort survival: load (years, px) sidecar if configured/present.
-    # Path is resolved relative to this file's directory (code/), so callers can run
-    # from anywhere. Default to data/survival_GR.npz one level up.
+    # Demographic path: entering-cohort sizes, the population growth rate by
+    # year, and a survival table that runs to the end of the transition. When
+    # present it supersedes survival_data_file, whose historical table stops at
+    # the base year and would hold mortality fixed over the whole transition.
+    demography = None
     survival_table = None
+    demog_path = _demography_path(config_data)
+    if demog_path is not None:
+        _d = np.load(demog_path)
+        if _d['px'].shape[1] == lifecycle_config.T:
+            demography = {k: _d[k] for k in ('entrant_years', 'entrants',
+                                             'pop_years', 'n_path')}
+            survival_table = (_d['years'], _d['px'])
+        else:
+            print(f"  [build_olg_transition] demography age dim {_d['px'].shape[1]} "
+                  f"!= model T {lifecycle_config.T}; skipping.")
+
     surv_file = trans.get('survival_data_file')        # opt-in via config key
-    if surv_file:
+    if survival_table is None and surv_file:
         surv_path = surv_file if os.path.isabs(surv_file) else \
             os.path.join(os.path.dirname(os.path.abspath(__file__)), surv_file)
         if os.path.exists(surv_path):
@@ -1179,6 +1192,7 @@ def build_olg_transition(config_data, backend='numpy'):
         birth_year=trans.get('birth_year', 1960),
         current_year=trans.get('current_year', 2020),
         survival_table=survival_table,
+        demography=demography,
         education_shares=config_data.get('education_shares'),
         backend=backend,
         jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,

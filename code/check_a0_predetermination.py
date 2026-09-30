@@ -49,7 +49,7 @@ def run_backend(backend, shock):
     )
     if shock == 'Ig':
         # stationary baseline I_g level keeps K_g flat; the shock is a level delta
-        bp['I_g_path'] = np.full(T_TR, (0.05 + olg.growth_factor - 1.0) * 0.745)
+        bp['I_g_path'] = (0.05 + olg.growth_factors(T_TR) - 1.0) * 0.745
         scen = FiscalScenario(
             name='Ig_shock',
             delta_I_g_path=np.full(T_TR, 0.02),

@@ -74,10 +74,28 @@ def _arr(d, key):
 # ---------------------------------------------------------------------------
 
 def _growth_factor(params):
-    """Gamma = (1+g)(1+n) from the run's params (JSON first, --config fallback)."""
+    """Gamma_t from the run's params (JSON first, --config fallback).
+
+    Returns the path the run used when it recorded one, and the scalar
+    (1+g)(1+n) otherwise -- which is what a run with a constant population
+    growth rate, or one written before Gamma became time-varying, has.
+    """
+    path = params.get('growth_factor_path')
+    if path is not None and len(path):
+        return np.asarray(path, dtype=float)
     g = params.get('trend_growth')
     n = params.get('pop_growth')
     return (1.0 + float(g or 0.0)) * (1.0 + float(n or 0.0))
+
+
+def _growth_seq(growth_factor, n):
+    """Gamma_t for n periods; a scalar is broadcast and a short path is held."""
+    G = np.atleast_1d(np.asarray(growth_factor, dtype=float))
+    if G.size == 1:
+        return np.full(n, float(G[0]))
+    if G.size >= n:
+        return G[:n].astype(float)
+    return np.concatenate([G, np.full(n - G.size, G[-1])])
 
 
 def chk_terminal_converged(exp_data, scenario):
@@ -159,7 +177,8 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
     not the capital return r; the caller passes r_B when available.
 
     In per-capita detrended units the whole right-hand side is divided by
-    growth_factor = (1+g)(1+n); 1.0 recovers the no-growth identity."""
+    Gamma_t = (1+g)(1+n_t), passed as a scalar or a path; 1.0 recovers the
+    no-growth identity."""
     PD   = _arr(budget, 'primary_deficit')
     Ygdp = np.asarray(Y, dtype=float)
     Bgdp = np.asarray(B_gdp_path, dtype=float)
@@ -168,7 +187,7 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
     # Reconstruct B levels: B_gdp_path[t] = B[t] / Y[min(t, T-1)]
     Y_ext = np.append(Ygdp, Ygdp[-1])
     B = Bgdp * Y_ext           # length T+1
-    G = float(growth_factor)
+    G = _growth_seq(growth_factor, T)
     resid = np.abs(G * B[1:] - ((1 + r[:T]) * B[:T] + PD))
     mx = float(resid.max())
     if mx > IDENTITY_TOL * float(np.abs(B).mean() + 1):
@@ -508,7 +527,7 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
             PD = _arr(cf_bud, 'primary_deficit')
             Y_arr = np.asarray(Y, dtype=float) if len(Y) > 0 else None
             if PD is not None and Y_arr is not None and len(Y_arr) > 0:
-                G_g = _growth_factor(params)
+                G_g = float(_growth_seq(_growth_factor(params), len(Y_arr))[-1])
                 r_B_t = float(r_debt[-1]) if len(r_debt) else 0.0
                 target = float(params.get('target_debt_gdp') or 0.0)
                 rhs = (G_g - 1.0 - r_B_t) * target
