@@ -37,7 +37,9 @@ PY
   # SMM_EXTRA passes through extra calibrate.py flags, e.g. --tol/--maxiter.
   # At n_sim=10000 the Monte Carlo noise floor sits above the default tol=1e-6,
   # so Nelder-Mead exhausts maxiter and the loop aborts; --tol 1e-5 avoids that.
-  python3 calibrate.py --config "$CFG" --backend jax ${SMM_EXTRA:-} 2>&1 | tee /tmp/smm_round.log \
+  # -u: stdout is block-buffered through the pipe, so without it a long SMM
+  # round shows no progress until it ends -- a stall looks like a run.
+  python3 -u calibrate.py --config "$CFG" --backend jax ${SMM_EXTRA:-} 2>&1 | tee /tmp/smm_round.log \
     || { echo "SCALE LOOP FAILED: SMM round $r"; exit 1; }
   # calibrate.py writes _derived.theta ONLY on convergence; without it the rest
   # of the loop would silently reuse the stale theta.
@@ -45,7 +47,7 @@ PY
     || { echo "SCALE LOOP FAILED: SMM round $r did not converge (no theta write-back)"; exit 1; }
 
   echo "=== round $r: A_tfp normalization ==="
-  python3 normalize_A_tfp.py --backend jax --write --config "$CFG" \
+  python3 -u normalize_A_tfp.py --backend jax --write --config "$CFG" \
     | tee /tmp/norm_round.log
   grep -q "^CONVERGED" /tmp/norm_round.log \
     || { echo "SCALE LOOP FAILED: normalize round $r"; exit 1; }
