@@ -378,7 +378,7 @@
   "transition": {
     "T_transition": 60,
     "birth_year": 1960,
-    "current_year": 2020,
+    "current_year": 2023,
     "r_initial": 0.04,
     "r_final": 0.04,
     "r_decay": 5,

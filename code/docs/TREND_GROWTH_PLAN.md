@@ -174,6 +174,18 @@ so shifting weight towards working ages raises output more than wealth.
 
 ### What follows
 
+- **The calendar anchor moves to 2023.** `transition.current_year` was 2020
+  while t = 0 is the 2023 cross-section. Transition period t is calendar year
+  `current_year + t`, and `_survival_schedule_at_year` maps the internal clock
+  to a true year through `current_year − birth_year` before selecting a period
+  life table, so every cohort was reading the table of three years earlier —
+  and the oldest cohort alive at t = 0 sat on the 1961 clamp. Set to 2023
+  (`calibration_input_GR.json`). The population weights are unaffected, being
+  births-only and renormalised each period; what changes is the survival each
+  cohort faces, so the moments move and the fit is superseded. The three
+  hardcoded synthetic branches (`olg_transition.py:2676`, `:2794`,
+  `run_fiscal_figures.py:162`) keep their own anchors — they carry no survival
+  data file and use the legacy improvement path.
 - **Γ becomes Γ_t = (1+g)(1+n_t)** and every stock recursion takes the time
   index rather than the scalar `olg.growth_factor`: the debt, K_g, pension
   fund and current-account laws, `new_borrowing`, `K_g_ss`, and the
@@ -563,7 +575,23 @@ is a derived config — a copy of the baseline config with `trend_growth` or
 ρ_pens, m_good), δ_g, δ, A_tfp, K_g, `other_net_spending_over_Y`, r, r_B and
 the tax rates. No SMM, A_tfp normalisation or closure re-pin is run for them;
 they are the baseline's structural economy at a different growth rate, not
-economies fitted to the data (point 5 on the alternatives). Two quantities
+economies fitted to the data (point 5 on the alternatives). **What n = 0 means now that n is a data path.** The scenario holds the age
+structure at its measured 2023 shape for the whole transition: the number of
+people of each age is constant at its 2023 value, total population is
+constant, and Γ_t = 1 + g at every t. Survival is held at the 2023 life table
+as well, since the shape cannot stay fixed while mortality improves. In the
+model's weights this is the t = 0 vector — the 2023 cross-section divided by
+cumulative survival — repeated at every period, so it costs one line. Two
+things to say about it in the write-up. It is not the stationary population
+that the 2023 life table generates on its own, which is older than Greece's
+actual 2023 shape, and holding the measured shape fixed while cohorts die at
+the 2023 rates needs an age-specific inflow, so it is not produced by an
+entering cohort and survival alone. And because the baseline's terminal n_∞ is
+also zero, the baseline and this scenario share Γ_T and therefore the same
+terminal rest point; they differ only along the path, which is what the
+comparison isolates.
+
+Two quantities
 are not structural and follow from the scenario's g and n:
 
 - The code's β is β_eff = β·(1+g)^(1−γ). With the structural β held, the
