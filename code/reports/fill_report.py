@@ -148,8 +148,14 @@ def shares_from_weights(w):
     return {'young': young, 'mid': mid, 'old': old, 'oadr': old / (young + mid)}
 
 
-def growth_table(paths, gamma_minus_1, g, noise=None):
-    """paths: {label: detrended series}.  Trend = mean log growth, second half."""
+def growth_table(paths, gamma_minus_1, g, noise=None, t_stable=None):
+    """paths: {label: detrended series}.
+
+    The trend is the mean log growth per period over the periods in which the
+    population has settled, since only there is the detrended series meant to
+    be flat. t_stable is the first such period; without it the second half of
+    the horizon is used.
+    """
     order = [('$Y$', 'Y'), ('$C$', 'C'), ('$K^{dom}$', 'K_domestic'),
              ('$A$ (wealth)', 'A'), ('$L$', 'L'), ('$K_g$', 'K_g'), ('$B$', 'B')]
     out = []
@@ -158,7 +164,8 @@ def growth_table(paths, gamma_minus_1, g, noise=None):
         if x is None or len(np.asarray(x)) < 8:
             trend = None
         else:
-            x = np.asarray(x, float); h = len(x) // 2
+            x = np.asarray(x, float)
+            h = len(x) // 2 if t_stable is None else min(int(t_stable), len(x) - 3)
             trend = 100 * (np.log(x[-1]) - np.log(x[h])) / (len(x) - 1 - h)
         out.append(f'{label} & {fmt(100*gamma_minus_1, 3)} & {fmt(100*g, 3)} '
                    f'& {fmt(trend, 3)} \\\\')
@@ -315,6 +322,14 @@ def main():
     n = cfg['external_params'].get('pop_growth', 0.0)
     gamma_minus_1 = (1 + g) * (1 + n) - 1
 
+    # First period on the balanced growth path, from the demographic sidecar.
+    t_stable = None
+    demog = os.path.join(os.path.dirname(args.config), '..', 'data',
+                         'demography_GR.npz')
+    if os.path.exists(demog):
+        _d = np.load(demog)
+        t_stable = int(_d['stable_year']) - int(_d['base_year'])
+
     # data age distribution (25-84), cached next to the data if openpyxl is absent
     w_data = None
     cache = os.path.join(os.path.dirname(args.config), '..', 'data', 'agedist_2023.npy')
@@ -403,7 +418,7 @@ def main():
         'growth_body.tex': wrap(
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=+1.3]',
             ' & {Level (\\%)} & {Per capita (\\%)} & {Detrended trend (\\%)}',
-            growth_table(paths, gamma_minus_1, g)),
+            growth_table(paths, gamma_minus_1, g, t_stable=t_stable)),
     }
     for name, body in frag.items():
         with open(os.path.join(outdir, name), 'w') as fh:

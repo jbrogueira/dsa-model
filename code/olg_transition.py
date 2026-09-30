@@ -980,8 +980,8 @@ class OLGTransition:
         idx = np.searchsorted(yrs, np.clip(want, yrs[0], yrs[-1]))
         return (1.0 + self.trend_growth) * (1.0 + n[idx])
 
-    def _build_cohort_sizes_from_entrants(self):
-        """Cross-sectional weights from the size of each cohort at entry.
+    def _entrant_weights(self, t):
+        """Cross-sectional weights for period t from cohort sizes at entry.
 
         The transition's per-age means run over all simulated agents with the
         dead holding zero, so survival is already inside the mean and the
@@ -989,26 +989,30 @@ class OLGTransition:
         the opposite convention from the calibration, whose means are taken
         among the alive.
         """
-        T_tr, T = int(self.T_transition), int(self.T)
+        T = int(self.T)
         yrs, B = self._demog['entrant_years'], self._demog['entrants']
-        first, last = int(self.current_year) - (T - 1), int(self.current_year) + T_tr - 1
-        if first < yrs[0] or last > yrs[-1]:
+        year = int(self.current_year) + int(t)
+        if year - (T - 1) < yrs[0] or year > yrs[-1]:
             raise ValueError(
-                f"entering cohorts cover {yrs[0]}..{yrs[-1]} but the "
-                f"transition needs {first}..{last}")
-        lut = {int(y): float(b) for y, b in zip(yrs, B)}
-        path = np.empty((T_tr, T))
-        for t in range(T_tr):
-            year = int(self.current_year) + t
-            for j in range(T):
-                path[t, j] = lut[year - j]
-            path[t] /= path[t].sum()
-        self.cohort_sizes_path = path
+                f"entering cohorts cover {yrs[0]}..{yrs[-1]} but period "
+                f"t={t} needs {year - (T - 1)}..{year}")
+        i = np.searchsorted(yrs, year - np.arange(T))
+        w = np.asarray(B[i], dtype=float)
+        return w / w.sum()
+
+    def _build_cohort_sizes_from_entrants(self):
+        """Set cohort_sizes_path from the entering-cohort sizes."""
+        self.cohort_sizes_path = np.array(
+            [self._entrant_weights(t) for t in range(int(self.T_transition))])
 
     def _cohort_weights(self, t):
         """Return age weights for calendar period t (time-varying if cohort_sizes_path exists)."""
         if hasattr(self, "cohort_sizes_path") and self.cohort_sizes_path is not None:
             return self.cohort_sizes_path[int(t), :]
+        if self._demog is not None:
+            # The path is built inside simulate_transition; answer correctly for
+            # callers that ask before one has been run.
+            return self._entrant_weights(t)
         return self.cohort_sizes
 
     def _survival_schedule_at_year(self, cal_year):

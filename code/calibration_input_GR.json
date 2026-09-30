@@ -376,7 +376,7 @@
     "seed": 42
   },
   "transition": {
-    "T_transition": 160,
+    "T_transition": 180,
     "birth_year": 1960,
     "current_year": 2023,
     "r_initial": 0.04,

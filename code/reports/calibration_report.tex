@@ -77,13 +77,17 @@ The base year is 2023 and its age distribution enters as
 its cohort's size at birth, mortality being already reflected in the simulated
 averages in which the dead hold zero; the cross-section counts the living, so
 each age is divided by its cumulative survival probability to recover those
-weights. Survival and births then follow the projected path, identical across
-the baseline and every counterfactual, settling before the terminal date.\footnote{A stationary population matched on the dependency ratio
+weights. Survival and entering cohorts then follow the EUROPOP2023 baseline
+projection through 2100, identically across the baseline and every
+counterfactual. Past it mortality is held at the 2100 schedule and the growth
+rate of entering cohorts is taken to zero by 2120, so one lifespan later, from
+2179, the age distribution is exactly constant.\footnote{A stationary population matched on the dependency ratio
 would reproduce that ratio but not the age shape, lacking the cohort about to
 retire that drives the projected rise.} Because the base-year population is not stationary the economy is in
 transition from $t=0$ with no policy change: detrended aggregates move while
 the older cohorts retire, settling once the demographic transition completes.
-The balanced-growth check in Table~5 is computed over the years after that. With tax rates fixed the age structure enters no household's
+The balanced-growth check in Table~5 is computed over the periods after that,
+the last 24 of the horizon. With tax rates fixed the age structure enters no household's
 problem --- the return is exogenous and the wage is pinned by the firm's
 first-order condition --- so ageing moves aggregates and the government budget
 alone. It reaches households once financing responds: in the tax-financed
@@ -116,12 +120,14 @@ column is the test.}\vspace{-2pt}
 
 \noindent\footnotesize
 The detrended trend is the mean log growth per period,
-$\frac{1}{T/2}\sum_{t>T/2}\log(\hat x_{t+1}/\hat x_t)$, computed over the
-years once demography has settled. It is zero under correct detrending and
-would read $g$ or $\Gamma-1$ for a variable that was left in levels. The
-earlier years are excluded because each cohort alive then faces the mortality
-of its own birth year, so the population is still changing composition. The
-noise floor is the same statistic on a $g=n=0$ run, where the true value is
-also zero; only departures materially above it are informative.
+$\frac{1}{T-t_0}\sum_{t\ge t_0}\log(\hat x_{t+1}/\hat x_t)$, over the periods
+from $t_0$, the first on the balanced growth path. It is zero under correct
+detrending and would read $g$ or $\Gamma_T-1$ for a variable that was left in
+levels. The earlier periods are excluded because the age distribution is still
+changing: entering cohorts follow the projection and each cohort faces the
+mortality of its own birth year, so neither the population nor its composition
+is constant. The noise floor is the same statistic on a run with $g=0$ and a
+constant population, where the true value is also zero; only departures
+materially above it are informative.
 
 \end{document}

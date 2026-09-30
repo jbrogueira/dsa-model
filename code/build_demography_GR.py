@@ -45,7 +45,7 @@ BASE_YEAR = 2023                # t = 0
 PROJ_END = 2100                 # last year of EUROPOP2023
 RAMP_YEARS = 20                 # 2100 → 2120
 N_INF = 0.0                     # terminal growth of entering cohorts
-ENTRANT_END = 2185              # covers T_transition = 160 from 2023
+ENTRANT_END = 2210              # covers T_transition = 180 from 2023
 PX_END = ENTRANT_END + T        # last year the cohort entering in ENTRANT_END needs
 
 
@@ -108,13 +108,17 @@ def main():
     n_path[:-1] = level[1:] / level[:-1] - 1.0
     assert abs(n_path[-2] - N_INF) < 1e-12, 'population has not settled at the horizon'
 
+    sh = pop / pop.sum(axis=1, keepdims=True)
+    moved = np.abs(np.diff(sh, axis=0)).max(axis=1)
+    stable_year = int(p_years[1:][moved < 1e-14][0])
+
     np.savez(OUT,
              years=years.astype(int), px=px.astype(float),
              entrant_years=e_years.astype(int), entrants=entrants.astype(float),
              pop_years=p_years.astype(int), pop=pop.astype(float),
              pop_level=level.astype(float), n_path=n_path.astype(float),
              cross_section_base=cross_2023.astype(float),
-             base_year=BASE_YEAR, n_inf=N_INF,
+             base_year=BASE_YEAR, n_inf=N_INF, stable_year=stable_year,
              model_ages=np.arange(T, dtype=int),
              real_ages=np.arange(ENTRY_AGE, ENTRY_AGE + T, dtype=int))
     print(f'wrote {os.path.relpath(OUT)}')
@@ -141,13 +145,10 @@ def main():
         o = pop[i, 40:].sum() / pop[i, :40].sum()
         print(f'    {y}  n = {100*n_path[i]:+.3f}%   OADR {o:.3f}')
 
-    sh = pop / pop.sum(axis=1, keepdims=True)
-    moved = np.abs(np.diff(sh, axis=0)).max(axis=1)
-    stable = p_years[1:][moved < 1e-14][0]
-    print(f'\n  age distribution exactly constant from {stable} '
+    print(f'\n  age distribution exactly constant from {stable_year} '
           f'(entrants constant from {PROJ_END+RAMP_YEARS+1}, mortality from '
           f'{PROJ_END+1}, one lifespan later)')
-    print(f'  a transition starting {BASE_YEAR} reaches it at t = {stable-BASE_YEAR}')
+    print(f'  a transition starting {BASE_YEAR} reaches it at t = {stable_year-BASE_YEAR}')
 
 
 if __name__ == '__main__':
