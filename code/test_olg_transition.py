@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import numpy as np
 from olg_transition import OLGTransition, get_test_config
@@ -2575,6 +2577,83 @@ class TestTrendGrowthStocks:
         sizes = sizes / sizes.sum()
         np.testing.assert_allclose(sizes, compute_age_weights(n_cohorts, self.N_POP),
                                    rtol=0, atol=1e-15)
+
+
+class TestDemographicPath:
+    """Demography from data, projection and tail (plan Step 0).
+
+    The calibration and the transition weight ages differently and both have
+    to be right: the calibration's means are taken among the alive, so its
+    weights are shares of the living population, while the transition's means
+    run over all simulated agents with the dead holding zero, so its weights
+    are cohort sizes at entry. Feeding the transition's weights back through
+    cumulative survival must therefore return the measured cross-section.
+    """
+
+    CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          'calibration_input_GR.json')
+
+    @pytest.fixture(scope='class')
+    def built(self):
+        import json
+        from calibrate import build_olg_transition, load_config
+        if not os.path.exists(self.CONFIG):
+            pytest.skip('country config not present')
+        cfg = json.load(open(self.CONFIG))
+        economy, _, T_tr = build_olg_transition(cfg, backend='numpy')
+        if economy._demog is None:
+            pytest.skip('no demographic path configured')
+        demog = np.load(os.path.join(os.path.dirname(self.CONFIG), '..', 'data',
+                                    'demography_GR.npz'))
+        return economy, T_tr, demog, load_config(self.CONFIG)['age_weights']
+
+    @staticmethod
+    def _living(economy, t):
+        """Living shares by age at period t, from births-only weights."""
+        w = economy._cohort_weights(t)
+        T = economy.T
+        cum = np.empty(T)
+        for j in range(T):
+            sched = economy._cohort_survival_schedule(t - j)
+            cum[j] = float(np.prod(np.mean(sched, axis=1)[:j])) if j else 1.0
+        living = w * cum
+        return living / living.sum()
+
+    def test_calibration_weights_are_the_measured_cross_section(self, built):
+        _, _, demog, age_weights = built
+        data = demog['cross_section_base'] / demog['cross_section_base'].sum()
+        np.testing.assert_allclose(age_weights, data, rtol=1e-12, atol=0)
+
+    def test_transition_t0_living_shares_match_the_data(self, built):
+        economy, _, demog, _ = built
+        data = demog['cross_section_base'] / demog['cross_section_base'].sum()
+        np.testing.assert_allclose(self._living(economy, 0), data,
+                                   rtol=1e-10, atol=0,
+                                   err_msg='t=0 cross-section is not the measured one')
+
+    def test_terminal_state_is_a_balanced_growth_path(self, built):
+        economy, T_tr, demog, _ = built
+        t0 = int(demog['stable_year']) - int(demog['base_year'])
+        assert t0 < T_tr - 1, 'the horizon ends before the population settles'
+        G = economy.growth_factors(T_tr)
+        gamma_T = (1.0 + economy.trend_growth) * (1.0 + float(demog['n_inf']))
+        np.testing.assert_allclose(G[t0:], gamma_T, rtol=0, atol=1e-14)
+        for t in range(t0, T_tr):
+            np.testing.assert_allclose(economy._cohort_weights(t),
+                                       economy._cohort_weights(T_tr - 1),
+                                       rtol=0, atol=1e-14)
+
+    def test_gamma_path_is_used_by_the_stock_recursions(self, built):
+        economy, T_tr, _, _ = built
+        G = economy.growth_factors(T_tr)
+        assert G.min() < G.max(), 'Gamma_t should vary while demography moves'
+        economy.T_transition = T_tr
+        economy.growth_factor_path = G
+        for t in (0, T_tr // 2, T_tr - 1):
+            assert economy._growth_at(t) == pytest.approx(float(G[t]), abs=0, rel=0)
+        # Beyond the horizon the last value is held, which is what the fiscal
+        # layer relies on when it extends its recursions past the simulation.
+        assert economy._growth_at(T_tr + 5) == pytest.approx(float(G[-1]))
 
 
 if __name__ == "__main__":
