@@ -20,6 +20,9 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export XLA_PYTHON_CLIENT_PREALLOCATE=${XLA_PYTHON_CLIENT_PREALLOCATE:-false}
 
 echo "=== 1/2 cohort-batching cost ratio ==="
+# pytest is not part of the runtime dependency set, so a venv built for the
+# chain alone will not have it.
+python3 -c "import pytest" 2>/dev/null || pip install -q pytest
 python3 -u -m pytest test_olg_transition.py::TestCohortBatchedSurvival \
   -q -rw -W "always::RuntimeWarning" 2>&1 | tail -20
 
