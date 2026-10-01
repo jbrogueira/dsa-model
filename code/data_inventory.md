@@ -188,12 +188,45 @@ Sources: Eurostat `nama_10_gdp`, `nasa_10_nf_tr`; [Gollin (2002)](https://www.jo
 
 ---
 
+**Public debt and interest, base year 2023** (sheet `DATA`, codes 49 and 40).
+Public debt/GDP is **1.6428** in 2023 and 1.5417 in 2024; the base year is 2023,
+so `fiscal.B_over_Y` = 1.6428 is the right vintage and the 2024 figure is not.
+Interest payments/GDP is **0.0339** in 2023 (0.0297 in 2019, 0.0348 in 2024).
+`fiscal.interest_over_Y` had been overwritten with the model-implied
+r_B × B/Y = 0.019 × 1.64 = 0.0312; it is restored to the data value. The model's
+interest bill sits below the data because r_B = 1.9% is the implicit rate
+averaged over 2012–24, under the rate realised in 2023.
+
 ### 1.12 IMF public capital stock, Greece (pulled 2026-07-10)
 
 Pulled to discipline the model's `K_g/Y` target (public-capital channel; see `docs/archive/PUBLIC_CAPITAL_KG_PLAN.md` §5). Saved at `data/IMF_ICSD_GR.csv` — full Greece extract (all 19 indicators, 1960–2019, annual) from the IMF Investment and Capital Stock Dataset (ICSD), Fiscal Affairs Department.
 
 - **Source:** IMF Data portal SDMX API, dataflow `IMF.FAD:ICSD(1.0.0)`, publication date 2025-07-01. Values are identical to the May-2021 Excel distribution ("IMF Investment and Capital Stock Dataset, 2021", infrastructuregovern.imf.org) — the portal dataflow republishes the 2021 dataset with ICP-2017-benchmark PPPs. **Coverage ends 2019**; no vintage extends further.
 - **Key series** (general government = S13, constant prices):
+
+**Rolled forward to the 2023 base year (2026-10-01).** ICSD stops at 2019, so
+using its 74.52% as a base-year ratio mixes vintages. `code/build_public_capital_GR.py`
+extends the stock by perpetual inventory on real levels, with public investment
+from the national accounts (sheet `DATA`, code 45) and Greek real GDP in
+chain-linked 2015 prices (Eurostat `nama_10_gdp`, B1GQ, CLV15_MEUR, cached at
+`data/realgdp_GR.json`). δ_g is not assumed: it is estimated from the ICSD
+stock itself over 2000–2019 at **0.04186** (sd 0.005, range 0.034–0.058, n=19).
+
+| Year | K_g real (EUR mn, 2015p) | K_g/Y |
+|---|---|---|
+| 2019 | 138,383 | 0.7452 (ICSD) |
+| 2020 | 137,178 | 0.8135 |
+| 2021 | 136,614 | 0.7457 |
+| 2022 | 137,495 | 0.7112 |
+| 2023 | 138,813 | **0.7030** |
+
+The 2020 jump is the 9% output collapse, not a capital change — which is the
+reason to roll the stock rather than read a ratio off one year. Config values
+updated to the 2023 figures: `K_g` 0.745 → **0.7030**, `I_g_over_Y` 0.0353 →
+**0.03862** (code 45, 2023), `delta_g` 0.035259 → **0.042810**. The last comes
+from the plan's convention δ_g = I_g/K_g − (Γ_0 − 1) = 0.05494 − 0.01212, and
+lands 0.00095 from the independent ICSD estimate — a genuine cross-check, since
+the two use different information.
 
 | Year | K_g/Y (%) `CAPSTCK_S13_Q_POGDP_PT` | I_g/Y (%) `P51G_S13_Q_POGDP_PT` |
 |---|---|---|

@@ -38,9 +38,9 @@
     "alpha": 0.33,
     "delta": 0.05,
     "A_tfp": 1.42370465,
-    "K_g": 0.745,
+    "K_g": 0.703,
     "eta_g": 0.05,
-    "delta_g": 0.035259
+    "delta_g": 0.04281
   },
   "external_params": {
     "tau_c": 0.1818,
@@ -273,9 +273,9 @@
     2.3885
   ],
   "fiscal": {
-    "B_over_Y": 1.64,
+    "B_over_Y": 1.6428,
     "G_over_Y": 0.13,
-    "I_g_over_Y": 0.0353,
+    "I_g_over_Y": 0.03862,
     "defense_over_Y": 0.03,
     "pensions_over_Y": 0.16,
     "ui_over_Y": 0.006,
@@ -284,7 +284,7 @@
     "health_total_over_Y": 0.082,
     "transfers_over_Y": 0.011,
     "tax_revenue_over_Y": 0.4,
-    "interest_over_Y": 0.0312,
+    "interest_over_Y": 0.0339,
     "primary_balance_target_over_Y": 0.0195,
     "other_net_spending_over_Y": -0.111462
   },
