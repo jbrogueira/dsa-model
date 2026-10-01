@@ -48,7 +48,7 @@
     "tau_p": 0.34,
     "tau_k": 0.2236,
     "pension_replacement_default": 0.18,
-    "pension_min_floor": 0.15,
+    "pension_min_floor": 0.1671,
     "ui_replacement_rate": 0.0945,
     "transfer_floor": 0.0,
     "kappa": 0.662,

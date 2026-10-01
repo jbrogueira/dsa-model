@@ -197,6 +197,42 @@ r_B × B/Y = 0.019 × 1.64 = 0.0312; it is restored to the data value. The model
 interest bill sits below the data because r_B = 1.9% is the implicit rate
 averaged over 2012–24, under the rate realised in 2023.
 
+**Minimum pension floor `b_min` (`external_params.pension_min_floor`), calibrated
+2026-10-01.** The paper's pension is `PENS = max(rho * ybar, b_min)`, so `b_min` is
+the flat national-pension component. Greece's national pension under L.4387/2016 is
+a statutory monthly amount for at least 20 years of contributions: EUR 384 base,
+**EUR 413.76 as indexed from January 2023**, with EUR 387.90 at 15 years. Eurostat
+does not publish statutory benefit amounts, only aggregate pension expenditure, so
+the amount comes from the legislation and the 2024 Ageing Report country fiche.
+
+The denominator is the part that is easy to get wrong. The model's output is per
+**living person aged 25-84**, not per capita of the whole population, because the
+model contains no one outside that band. So
+
+    b_min = annual amount / (nominal GDP / population aged 25-84)
+
+with nominal GDP 2023 = **EUR 224.7 bn** (Eurostat `nama_10_gdp`, B1GQ, CP_MEUR,
+cached at `data/nomgdp_GR.json`) and population 25-84 = **7,559,564**
+(`data/demography_GR.npz`, `cross_section_base`), giving EUR 29,722 of output per
+living 25-84 person. Hence:
+
+| | monthly | annual | b_min |
+|---|---|---|---|
+| national pension, 20+ years, 2023 indexed | EUR 413.76 | 4,965 | **0.1671** |
+| 15 years, 2023 | EUR 387.90 | 4,655 | 0.1566 |
+| base rate before indexation | EUR 384.00 | 4,608 | 0.1550 |
+
+Config set to **0.1671**, the 2023 indexed 20-year rate, against the previous 0.15 —
+which was close to the un-indexed base and had no recorded derivation. The floor is
++11.4% higher, so it binds on more of the lower tail and moves pensions/Y; it is not
+an SMM parameter, so the SMM absorbs the change through `rho_pens`.
+
+Because the household problem is in detrended units, a constant `b_min` is a floor
+indexed at g, which is the right treatment for a statutory minimum uprated with
+earnings. And because `A_tfp` normalises base-year output to 1, the level is also a
+share of output — valid only while that normalisation holds (it is currently 0.9954,
+so the floor is 16.79% of realised output rather than 16.71%).
+
 ### 1.12 IMF public capital stock, Greece (pulled 2026-07-10)
 
 Pulled to discipline the model's `K_g/Y` target (public-capital channel; see `docs/archive/PUBLIC_CAPITAL_KG_PLAN.md` §5). Saved at `data/IMF_ICSD_GR.csv` — full Greece extract (all 19 indicators, 1960–2019, annual) from the IMF Investment and Capital Stock Dataset (ICSD), Fiscal Affairs Department.
