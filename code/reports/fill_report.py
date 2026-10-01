@@ -297,10 +297,25 @@ def implied_table(stats, cfg):
 
 # ---------------------------------------------------------------- figures ---
 def make_figures(paths, w_data, w_model_t0, outdir):
+    """Write the age-distribution figure always, the panels only with a run.
+
+    An empty panel figure would overwrite one drawn from a real baseline
+    transition, so when there is no transition the existing file is left alone
+    and the template falls back to its placeholder.
+    """
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
+    panels_pdf = os.path.join(outdir, 'baseline_panels.pdf')
+    if paths is None and os.path.exists(panels_pdf):
+        print('  kept baseline_panels.pdf (no baseline transition in this run)')
+    else:
+        _panels_figure(paths, panels_pdf, plt)
+    _age_figure(w_data, w_model_t0, outdir, plt)
+
+
+def _panels_figure(paths, out_pdf, plt):
     fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
     if paths:
         for key, lab in [('Y', r'$\hat y$'), ('C', r'$\hat c$'),
@@ -328,9 +343,12 @@ def make_figures(paths, w_data, w_model_t0, outdir):
     for a in ax:
         a.spines[['top', 'right']].set_visible(False)
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, 'baseline_panels.pdf'))
+    fig.savefig(out_pdf)
     plt.close(fig)
+    print('  wrote baseline_panels.pdf')
 
+
+def _age_figure(w_data, w_model_t0, outdir, plt):
     fig, a = plt.subplots(figsize=(5.2, 3.0))
     ages = np.arange(25, 85)
     if w_data is not None:
@@ -343,6 +361,7 @@ def make_figures(paths, w_data, w_model_t0, outdir):
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'age_distribution.pdf'))
     plt.close(fig)
+    print('  wrote age_distribution.pdf')
 
 
 # ------------------------------------------------------------------- main ---
@@ -365,9 +384,16 @@ def main():
 
     report = args.calib_report
     if report is None:
-        d = os.path.join(outdir, 'reports')
-        cands = sorted(f for f in os.listdir(d) if f.endswith('.md')) if os.path.isdir(d) else []
-        report = os.path.join(d, cands[-1]) if cands else None
+        # calibrate.py writes to output/calibration/; runs are also archived
+        # under <outdir>/reports/. Take the newest across both by filename,
+        # which carries the timestamp -- looking in only one of them is how the
+        # run label came out a day stale.
+        cands = []
+        for d in (os.path.join(outdir, 'reports'),
+                  os.path.join(os.path.dirname(args.config), 'output', 'calibration')):
+            if os.path.isdir(d):
+                cands += [os.path.join(d, f) for f in os.listdir(d) if f.endswith('.md')]
+        report = max(cands, key=os.path.basename) if cands else None
     md = open(report).read() if report else ''
     if report:
         print(f'calibration report: {os.path.basename(report)}')
@@ -384,31 +410,18 @@ def main():
         _d = np.load(demog)
         t_stable = int(_d['stable_year']) - int(_d['base_year'])
 
-    # data age distribution (25-84), cached next to the data if openpyxl is absent
+    # Base-year age distribution (25-84). The demographic sidecar carries it as
+    # cross_section_base and is tracked, whereas DATA_GR.xlsx is gitignored as
+    # *.xlsx and the .npy cache is untracked -- neither reaches a fresh
+    # checkout, which is how this column came out empty on the instance.
     w_data = None
-    cache = os.path.join(os.path.dirname(args.config), '..', 'data', 'agedist_2023.npy')
-    if os.path.exists(cache):
-        w_data = np.load(cache)
+    _demog = os.path.join(os.path.dirname(args.config), '..', 'data',
+                          'demography_GR.npz')
+    if os.path.exists(_demog):
+        _cs = np.asarray(np.load(_demog)['cross_section_base'], dtype=float)
+        w_data = _cs / _cs.sum()
     else:
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(os.path.join(os.path.dirname(args.config), '..',
-                                                     'data', 'DATA_GR.xlsx'),
-                                        read_only=True, data_only=True)
-            ws = wb['Population by age']; rows = list(ws.iter_rows(values_only=True))
-            hdr = [str(c) for c in rows[8]]
-            def colof(a):
-                lbl = 'Less than 1 year' if a == 0 else ('1 year' if a == 1 else f'{a} years')
-                for j, h in enumerate(hdr):
-                    if h.strip() == lbl:
-                        return j
-            row23 = next(r for r in rows[10:]
-                         if r[1] is not None and str(r[1])[:4] == '2023')
-            w_data = np.array([row23[colof(a)] if isinstance(row23[colof(a)], (int, float))
-                               else 0.0 for a in range(25, 85)], float)
-            np.save(cache, w_data / w_data.sum())
-        except Exception as e:                                   # noqa: BLE001
-            print(f'  age distribution unavailable: {e}')
+        print(f'  age distribution unavailable: {_demog} not found')
 
     # The age weights come from the demographic path, so the age-structure
     # table and its figure need no solve; only the panels and the growth table
@@ -499,13 +512,21 @@ def main():
             ' & {Level (\\%)} & {Per capita (\\%)} & {Detrended trend (\\%)}',
             growth_table(paths, gamma_minus_1, g, t_stable=t_stable)),
     }
+    # Without a baseline transition there is nothing to put in the growth
+    # table's trend column or in the transition panels. Writing them anyway
+    # destroys the output of a run that did have one, so skip them instead.
+    if paths is None:
+        for name in ('growth_body.tex',):
+            if os.path.exists(os.path.join(outdir, name)):
+                frag.pop(name, None)
+                print(f'  kept {name} (no baseline transition in this run)')
+
     for name, body in frag.items():
         with open(os.path.join(outdir, name), 'w') as fh:
             fh.write(body + '\n')
         print(f'  wrote {name}')
 
     make_figures(paths, w_data, w_model_t0, outdir)
-    print('  wrote baseline_panels.pdf, age_distribution.pdf')
 
     meta = {'run': os.path.basename(report) if report else None,
             'g': g, 'n': n, 'Gamma_minus_1': gamma_minus_1,
