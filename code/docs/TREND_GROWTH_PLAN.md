@@ -146,10 +146,38 @@ so shifting weight towards working ages raises output more than wealth.
    instead of lengthening the scan, and one cohort's grid search (2,500 states ×
    100 choices) badly underuses a GPU. That is an inference, not a measurement;
    `TestCohortBatchedSurvival::test_batched_cost_is_sublinear_in_cohorts` warns
-   above 8× for 16× the cohorts and is the go/no-go. Two correctness guards sit
-   with it: distinct schedules must give distinct policies — otherwise a
-   broadcast schedule would pass silently — and a cohort solved in the batch
-   must match the same cohort solved alone to 1e-10.
+   above 8× for 16× the cohorts. Two correctness guards sit with it: distinct
+   schedules must give distinct policies — otherwise a broadcast schedule would
+   pass silently — and a cohort solved in the batch must match the same cohort
+   solved alone to 1e-10.
+
+   **Measured on 2× H200, 2026-10-01.** At the test fixture's scale (T = 20,
+   n_y = 2) the batched solve costs 1.75× for 16× the cohorts. At production
+   scale (T = 60, n_a = 100, n_y = 5, n_alpha = 5) it costs **37.6×** for 60
+   cohorts — 0.096 s against 3.626 s — so the device is near saturation there
+   and batching buys only 1.6× over solving them sequentially. The test
+   certifies the wrong scale and misled this plan's first estimate; read the
+   production figure.
+
+   The solve is not the binding cost. A round takes 389 s at roughly 200
+   evaluations, about 2 s each, of which the solve is 0.096 s: **simulation is
+   ~95%**. The cross-section uses only row j of cohort j's panel and discards
+   the rest, so the simulation multiplies by the cohort count — 60× at full
+   horizon, ~30× if each cohort stops at its own age, and that halving is not
+   free because `vmap` runs every lane the full scan length, so realising it
+   means bucketing cohorts by required length. The *solve* cannot be truncated
+   at all: backward induction at age j needs every later age.
+
+   **Decided: n_sim = 2000 on the cohort path** (user, 2026-10-01), against
+   10 000 today. Per-age precision falls from 10 000 draws to 2 000, but the
+   draws are no longer the same agents contributing to every age: today one
+   lifecycle serves all 60 ages and is perfectly correlated across them, while
+   the cohort path draws independently per age, so the aggregate standard error
+   need not be 5× worse and should be measured rather than assumed. Worth
+   checking on the first run, because A/Y is the most noise-exposed target —
+   it read 4.1296 at n_sim = 4000 against 3.9820 at 10 000 on the same θ, a
+   3.7% swing, against a fit of +1.10%. A seed-variation check belongs in the
+   first cohort-path run.
 
    Rejected: giving every cohort the 2023 period table in both solves. It makes
    the two agree exactly and for free, but it removes longevity improvement
