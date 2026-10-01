@@ -340,8 +340,14 @@ def _agent_weights(panel, spec, edu, mask=None):
         aw = spec.age_weights[:T]
     else:
         aw = np.ones(T) / T
-    # Build (T, n_sim) weight array, then mask
-    w_grid = (share * aw[:, None] / n_sim) * np.ones((1, n_sim))
+    # Spread omega(t) across the agents ALIVE at t, not across n_sim. aw is
+    # already the living share of each age, so dividing by n_sim would apply
+    # survival a second time and tilt these moments toward the young: the
+    # weights at age t would sum to aw[t]*S_t instead of aw[t]. With a mask the
+    # denominator stays the alive count, so a subgroup's weight is its share of
+    # the living at that age -- which is what a cross-sectional average means.
+    n_alive = np.maximum(panel.alive_sim.astype(bool).sum(axis=1), 1)
+    w_grid = share * aw[:, None] / n_alive[:, None] * np.ones((1, n_sim))
     return alive, w_grid[alive]
 
 

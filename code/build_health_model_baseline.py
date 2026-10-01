@@ -70,7 +70,9 @@ def build(config_path, baseline_json, backend="numpy"):
     Abar = np.zeros(T_tr)
     gov_level = np.zeros(T_tr)
     for t in range(T_tr):
-        w = np.asarray(economy._cohort_weights(t), dtype=float)   # births weights (sum 1)
+        # Per-living-person weights: entry sizes divided by the living share, so
+        # this level is on the same scale as the transition's own aggregates.
+        w = np.asarray(economy._aggregation_weights(t), dtype=float)
         af = cohort_alive_frac(economy, t, T)
         stock = w * af
         s = stock.sum()
