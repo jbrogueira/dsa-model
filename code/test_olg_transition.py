@@ -2643,6 +2643,60 @@ class TestDemographicPath:
                                        economy._cohort_weights(T_tr - 1),
                                        rtol=0, atol=1e-14)
 
+    def test_aggregates_are_per_living_person(self, built):
+        """The aggregation weights must imply a living population of one.
+
+        Per-cohort means carry zeros for the dead, so the weights are sizes at
+        entry; a weighted sum is then a total per person *ever entered*, with
+        the dead in the denominator. Scaling by the living share fixes that, and
+        the invariant is sum_j w_j S_j == 1.
+
+        This cannot be caught by the balanced-growth flatness check: on the
+        balanced path the age structure is constant, so the living share is too
+        and both conventions grow at the same rate. It only shows up in the
+        level path during the transition, where the share moves from 0.899 to
+        0.970.
+        """
+        economy, T_tr, _, _ = built
+        for t in (0, T_tr // 4, T_tr // 2, T_tr - 1):
+            w = economy._aggregation_weights(t)
+            living = 0.0
+            for j in range(economy.T):
+                sched = economy._cohort_survival_schedule(t - j)
+                S = 1.0 if (sched is None or j == 0) else float(
+                    np.prod(np.mean(np.asarray(sched), axis=1)[:j]))
+                living += float(w[j]) * S
+            assert living == pytest.approx(1.0, abs=1e-12), (
+                f't={t}: the weights imply a living population of {living:.6f}, '
+                f'so aggregates are not per capita')
+            frac = economy._alive_fraction(t)
+            assert 0.5 < frac < 1.0, f't={t}: implausible living share {frac}'
+
+    def test_no_mortality_leaves_the_weights_alone(self):
+        """Without a survival schedule the scaling must be exactly neutral.
+
+        get_test_config does set one, so it is cleared here: every fixture in
+        this suite that has no mortality must be unaffected by the change.
+        """
+        olg = OLGTransition(
+            lifecycle_config=get_test_config()._replace(survival_probs=None),
+            education_shares={'medium': 1.0})
+        olg.T_transition = 3
+        assert olg._alive_fraction(0) == 1.0
+        np.testing.assert_array_equal(olg._aggregation_weights(0),
+                                      olg._cohort_weights(0))
+
+    def test_mortality_makes_the_scaling_bite(self):
+        """With a schedule the living share must be below one and scale up."""
+        olg = OLGTransition(lifecycle_config=get_test_config(),
+                            education_shares={'medium': 1.0})
+        olg.T_transition = 3
+        frac = olg._alive_fraction(0)
+        assert 0.0 < frac < 1.0, f'living share {frac} is not a share'
+        np.testing.assert_allclose(olg._aggregation_weights(0),
+                                   np.asarray(olg._cohort_weights(0)) / frac,
+                                   rtol=1e-14)
+
     def test_base_year_cohort_survival_matches_the_transition_diagonals(self, built):
         """The calibration's cohort schedules must be the transition's own.
 

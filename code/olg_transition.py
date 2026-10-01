@@ -1015,6 +1015,47 @@ class OLGTransition:
             return self._entrant_weights(t)
         return self.cohort_sizes
 
+    def _alive_fraction(self, t):
+        """Living share of the cohorts present in period t.
+
+        Each cohort's simulated means already hold zero for the dead, so the
+        weights have to be sizes at entry or mortality is counted twice. That
+        makes a weighted sum a total per person *ever entered*, which is not a
+        per-capita quantity: the dead sit in the denominator. This returns
+        sum_j w_j S_j, the factor between the two, so dividing by it gives a
+        total per person alive -- which is what the detrending assumes, since
+        Gamma_t is built from the growth of the living population.
+
+        Returns 1.0 when the model has no mortality, so fixtures without a
+        survival schedule are unaffected.
+        """
+        key = int(t)
+        cache = getattr(self, '_alive_frac_cache', None)
+        if cache is None:
+            cache = self._alive_frac_cache = {}
+        if key in cache:
+            return cache[key]
+        w = self._cohort_weights(t)
+        frac = 0.0
+        for j in range(int(self.T)):
+            sched = self._cohort_survival_schedule(int(t) - j)
+            if sched is None or j == 0:
+                S = 1.0
+            else:
+                S = float(np.prod(np.mean(np.asarray(sched), axis=1)[:j]))
+            frac += float(w[j]) * S
+        cache[key] = frac if frac > 0 else 1.0
+        return cache[key]
+
+    def _aggregation_weights(self, t):
+        """Cohort weights scaled so aggregates come out per person alive.
+
+        The defining property is sum_j w_j S_j == 1: the implied living
+        population is one, so a weighted sum of per-cohort means (which carry
+        zeros for the dead) is a per-capita average.
+        """
+        return np.asarray(self._cohort_weights(t), dtype=float) / self._alive_fraction(t)
+
     def _survival_schedule_at_year(self, cal_year):
         """Return the survival-prob age profile (T, n_h) for a given internal-clock year.
 
@@ -1536,10 +1577,12 @@ class OLGTransition:
         education_types = list(self.education_shares.keys())
         n_edu = len(education_types)
         education_shares_array = np.array([self.education_shares[edu] for edu in education_types], dtype=float)
-        cohort_sizes_t = self._cohort_weights(t)
+        cohort_sizes_t = self._aggregation_weights(t)
         # Mortality is already encoded in simulation arrays: dead agents have zero assets/income
-        # in all periods after death (NumPy: loop skips dead agents; JAX: jnp.where(alive, val, 0.0)).
-        # Multiplying cohort weights by cum_surv would double-count mortality, so no adjustment here.
+        # in all periods after death (NumPy: loop skips dead agents; JAX: jnp.where(alive, val, 0.0)),
+        # so the weights are sizes at entry and must NOT be multiplied by cumulative survival.
+        # _aggregation_weights divides them by the living share instead, which makes the result
+        # per person alive rather than per person ever entered.
 
         assets_by_age_edu      = np.zeros((n_edu, self.T), dtype=float)
         consumption_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
@@ -1719,7 +1762,7 @@ class OLGTransition:
         education_types = list(self.education_shares.keys())
         education_shares_array = np.array([self.education_shares[e] for e in education_types], dtype=float)
         for t in range(T_tr):
-            cohort_sizes_t = self._cohort_weights(t)
+            cohort_sizes_t = self._aggregation_weights(t)
             cache_key = (t, n_sim, seed_base)
             self._period_cache[cache_key] = {
                 "education_types": education_types,
@@ -2183,7 +2226,7 @@ class OLGTransition:
         for t in range(self.T_transition):
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
-            cohort_sizes_t = self._cohort_weights(t)
+            cohort_sizes_t = self._aggregation_weights(t)
             # njit returns (K, C, L) — keep the unpack order aligned with that return
             K_path[t], C_path[t], L_path[t] = self._aggregate_capital_labor_njit(
                 assets_all[t], consum_all[t], labor_all[t], cohort_sizes_t, _edu_shares_arr
