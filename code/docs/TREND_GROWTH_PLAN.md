@@ -112,8 +112,7 @@ so shifting weight towards working ages raises output more than wealth.
    ω_j ∝ (1+n)^(−j)·S_j. Nothing else in the solve changes, because **with the
    tax rates held fixed** the age distribution enters no household's problem:
    r is exogenous, K/L is pinned by the firm FOC and w with it, so individual
-   policies are invariant to it and each SMM evaluation stays a single
-   stationary solve. The one other channel that could bite, the
+   policies are invariant to it. The one other channel that could bite, the
    accidental-bequest transfer, is an open circuit in the calibration.
    This invariance holds in the calibration and in the baseline, where the
    instruments are fixed. It does **not** hold in the τ_l-financed
@@ -121,6 +120,56 @@ so shifting weight towards working ages raises output more than wealth.
    the debt or NFA target, and household decisions move with it. That is the
    channel through which demographics reach behaviour, and it is a result of
    the exercise rather than a nuisance.
+
+   What does **not** follow, and was wrongly claimed here until 2026-10-01, is
+   that each SMM evaluation therefore stays one stationary solve. The age
+   distribution is invariant to the household problem; **cohort-specific
+   survival is not**. The calibration solves one lifecycle problem against a
+   single survival vector and reads age j off it, while the transition gives
+   each of the sixty cohorts alive in 2023 its own calendar diagonal. Measured
+   cumulative survival from 25 to 84: the config vector **0.4827**, the 2023
+   period table 0.4963, the cohort entering at t = 0 **0.7352**, the terminal
+   cohorts **0.8209**. The calibration's vector sits almost on the experience
+   of the cohort aged 84 in 2023, born 1939, so an agent entering at t = 0 is
+   52% more likely to reach 84 in the transition than the same agent in the
+   calibration θ was fitted to. Re-solving the base-year problem on the t = 0
+   diagonal moves hours by +2.6% and pensions/Y by −3.1%, so θ is being fitted
+   against mortality no cohort faces.
+
+   **Decided 2026-10-01: the calibration takes cohort-specific survival**, via
+   the transition's own batched cohort solve. `_solve_cohorts_jax_batched`
+   already stacks per-cohort schedules at `in_axes=0`, so the base-year
+   cross-section can be produced by the same code path as the transition's
+   t = 0 — consistent by construction rather than by agreement, with no second
+   aggregation route to drift. The structural reason the cost is bearable:
+   backward induction is a sequential scan over T, so batching widens each step
+   instead of lengthening the scan, and one cohort's grid search (2,500 states ×
+   100 choices) badly underuses a GPU. That is an inference, not a measurement;
+   `TestCohortBatchedSurvival::test_batched_cost_is_sublinear_in_cohorts` warns
+   above 8× for 16× the cohorts and is the go/no-go. Two correctness guards sit
+   with it: distinct schedules must give distinct policies — otherwise a
+   broadcast schedule would pass silently — and a cohort solved in the batch
+   must match the same cohort solved alone to 1e-10.
+
+   Rejected: giving every cohort the 2023 period table in both solves. It makes
+   the two agree exactly and for free, but it removes longevity improvement
+   from household behaviour while leaving its cost in the pension and health
+   lines — keeping the fiscal burden of living longer and discarding the
+   private response to it, in an exercise about debt sustainability under
+   ageing. It would also require rebuilding the entering-cohort series on the
+   frozen table, after which the model's population no longer reproduces
+   EUROPOP2023. Banding birth years onto representative diagonals was also
+   considered and rejected: different survival means different c, a and l
+   profiles, so the interpolation it assumes cannot be established without the
+   solves it was meant to avoid, and need not survive θ moving.
+
+   Note what this does **not** fix. The base-year-versus-t = 0 output gap
+   measured on the 2026-10-01 calibration is **9.5%** (1.0142 against 0.9179),
+   down from 13.7% but not closed, and survival is not its cause: moving the
+   calibration onto the t = 0 diagonal raises Y by 2.9%, away from the
+   transition, not towards it. The June note in
+   `ss_vs_transition_weights` attributes a level difference of this size to
+   normalisation. It needs its own diagnosis.
 3. **The closure is pinned on the same weights as the calibration.**
    `pin_baseline_closure` computes aggregate ratios; if the two use different
    weightings the primary balance will not equal its target.
@@ -227,7 +276,10 @@ so shifting weight towards working ages raises output more than wealth.
 
 - Lifecycle asset profiles come from a problem solved at constant prices, so
   a 60-year-old at t = 0 did not live through the crisis. Fixing that would
-  mean solving pre-2023 cohorts against historical price paths.
+  mean solving pre-2023 cohorts against historical price paths. Taking
+  cohort-specific survival into the calibration makes this *more* visible, not
+  less: the cohorts become explicit objects with their own mortality while
+  still facing prices they never saw.
 - Migrants carry no history of their own. Routing net migration through the
   entry age keeps every lifecycle intact but books a departure at 40 as a
   smaller cohort at 25, so the model's age composition departs from the
