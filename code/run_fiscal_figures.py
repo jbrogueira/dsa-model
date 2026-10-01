@@ -547,6 +547,14 @@ params_out = {
     # the same sequence the recursions used.
     'growth_factor_path': [float(x) for x in economy.growth_factors(T_TR)],
     'delta_g':       float(economy.delta_g),
+    # Production parameters, so a consumer can verify identities rather than
+    # guess at them. Their absence is why no invocation of eval_fiscal_results
+    # could validate the July runs: it fell back to r for r_B and to Gamma = 1.
+    'delta':         float(economy.delta),
+    'alpha':         float(economy.alpha),
+    'eta_g':         float(economy.eta_g),
+    'K_g_initial':   float(economy.K_g_initial),
+    'A_tfp':         float(economy.A),
     'shock_mode_G':  'ratio' if args.config else 'level',
     'shock_mode_Ig': ('ratio' if (args.config and eta_g_cfg == 0.0) else 'level')
                      if 'Ig' in shock_types else None,

@@ -2948,5 +2948,109 @@ class TestPensionBaseAcrossBackends:
             'it cannot detect which one the pension base uses')
 
 
+class TestCrossRoutineLevels:
+    """The two routines must agree on LEVELS, not only on ratios.
+
+    This is the check whose absence let a 10% normalisation error survive a full
+    calibration and a reported fiscal run. Of roughly 25 quantities that ought to
+    agree between calibrate.py and olg_transition.py, none was compared by any
+    automated check; the only cross-routine tests compared demographic weights.
+    Every ratio cancels a common denominator, so a level error passes them all.
+
+    Both sides are given the SAME survival schedule here, so the only thing that
+    can differ is how each adds agents up: the calibration averages over those
+    alive at each age and weights ages by their share of the living, while the
+    transition averages over everyone ever entered with the dead at zero and
+    weights cohorts by entry size, then divides by the living share.
+    """
+
+    T, N_SIM = 12, 400
+
+    def _pieces(self):
+        import dataclasses
+        from calibrate import load_config
+        cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                'calibration_input_GR.json')
+        if not os.path.exists(cfg_path):
+            pytest.skip('country config not present')
+        L = load_config(cfg_path)
+        b = L['spec'].base_config
+        T = self.T
+        kw = {f: getattr(b, f)[:T].copy() for f in b.__dataclass_fields__
+              if isinstance(getattr(b, f), np.ndarray)
+              and getattr(b, f).ndim >= 1 and getattr(b, f).shape[0] == b.T}
+        # Real mortality over the shrunk horizon. Slicing the country vector to
+        # its first twelve ages leaves survival near 1, which makes the living
+        # share near 1 too -- and then the two aggregation conventions coincide
+        # and this fixture cannot tell them apart. The guard test below enforces
+        # that, and it failed until this was put in.
+        kw.update(T=T, n_a=30, n_y=2, n_alpha=1, retirement_age=9,
+                  survival_probs=np.linspace(0.97, 0.85, T).reshape(T, 1))
+        cfg = b._replace(**kw)
+        spec = dataclasses.replace(L['spec'], backend='numpy', n_sim=self.N_SIM,
+                                   base_config=cfg,
+                                   education_shares={'medium': 1.0},
+                                   cohort_survival=None)
+        return L['config_data'], cfg, spec
+
+    def test_output_and_ratios_agree_at_the_base_year(self):
+        from calibrate import (run_model_moments, compute_fiscal_ratios,
+                               theta_from_config, compute_age_weights)
+        raw, cfg, spec = self._pieces()
+        theta = theta_from_config(raw, spec, verbose=False)
+
+        # Calibration side: living-share weights, means among the alive.
+        surv = np.asarray(cfg.survival_probs, dtype=float).reshape(self.T, cfg.n_h)
+        import dataclasses
+        spec = dataclasses.replace(
+            spec, age_weights=compute_age_weights(self.T, 0.0, surv.ravel()))
+        _, panels = run_model_moments(theta, spec, return_panels=True)
+        ss = compute_fiscal_ratios(panels, spec, raw)
+        if 'error' in ss:
+            pytest.skip(f"compute_fiscal_ratios: {ss['error']}")
+
+        # Transition side, same survival vector for every cohort so the household
+        # problem is identical and only the aggregation can differ.
+        olg = OLGTransition(
+            lifecycle_config=cfg._replace(education_type='medium'),
+            education_shares={'medium': 1.0}, backend='numpy',
+            alpha=raw['production']['alpha'], delta=raw['production']['delta'],
+            A=raw['production']['A_tfp'], economy_type='soe',
+            r_star=spec.r, pop_growth=0.0)
+        T_tr = 2
+        res = olg.simulate_transition(np.full(T_tr, spec.r), n_sim=self.N_SIM,
+                                      verbose=False)
+
+        y_ss, y_tr = float(ss['Y']), float(np.asarray(res['Y'])[0])
+        rel = abs(y_tr / y_ss - 1.0)
+        assert rel < 0.05, (
+            f'output levels disagree by {100*rel:.2f}%: base-year equilibrium '
+            f'{y_ss:.5f} against transition t=0 {y_tr:.5f}. Both are per living '
+            f'person, so a gap of this size is an aggregation defect, not Monte '
+            f'Carlo -- the historical failure was 10% and cancelled in every ratio.')
+
+    def test_the_test_would_catch_a_denominator_swap(self):
+        """Guard: re-deriving the transition per person ever entered must trip it.
+
+        Without this the test above could pass for the wrong reason -- a loose
+        tolerance on two numbers that happen to be close.
+        """
+        raw, cfg, spec = self._pieces()
+        olg = OLGTransition(
+            lifecycle_config=cfg._replace(education_type='medium'),
+            education_shares={'medium': 1.0}, backend='numpy',
+            alpha=raw['production']['alpha'], delta=raw['production']['delta'],
+            A=raw['production']['A_tfp'], economy_type='soe',
+            r_star=spec.r, pop_growth=0.0)
+        olg.T_transition = 2
+        frac = olg._alive_fraction(0)
+        assert 0.0 < frac < 1.0, f'living share {frac} is not a share'
+        # The old convention was the new one times the living share, so a swap
+        # moves every level by at least this much.
+        assert abs(1.0 - frac) > 0.03, (
+            f'living share {frac:.4f} is too close to 1 for this fixture to '
+            f'distinguish the two conventions')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

@@ -196,6 +196,73 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
     return _pass('debt_accumulation', scenario, 'FAIL')
 
 
+def chk_goods_market(macro, budget, params, scenario):
+    """Goods market: C = Y + net factor income - I_priv - G - I_g - def - other - dNFA.
+
+    FAIL tier, because this is the one identity in the model that does NOT
+    cancel a normalisation error. Every ratio check divides a quantity by
+    another carrying the same denominator, and chk_budget_identity and
+    chk_nfa_accounting are tautologies given how primary_deficit and NFA are
+    constructed -- so a term measured per living person combined with one
+    measured per person ever entered passes all of them. A 10% error of exactly
+    that kind survived a full calibration and a reported run.
+
+    Skips, rather than failing, when the stored params lack the production
+    parameters needed to form I_priv: runs written before 2026-10-01 do not
+    carry delta, and guessing one would turn this into a different check.
+
+    The accidental-bequest leak is NOT in any term. With recompute_bequests off,
+    which every reported run uses, the wealth of the dead leaves the economy --
+    about 3.8% of output per period. The tolerance below accommodates it, and
+    tightening it requires modelling the leak, not adjusting the threshold.
+    """
+    need = ('Y', 'C', 'K_domestic')
+    if any(macro.get(k) is None for k in need):
+        return _pass('goods_market', scenario, 'FAIL')
+    if params.get('delta') is None:
+        return _skip('goods_market', scenario, 'FAIL',
+                     'params lack delta; run predates the production stamp')
+    Y = _arr(macro, 'Y'); C = _arr(macro, 'C'); Kd = _arr(macro, 'K_domestic')
+    if Y is None or C is None or Kd is None:
+        return _pass('goods_market', scenario, 'FAIL')
+    n = min(len(Y), len(C), len(Kd)) - 1
+    if n < 2:
+        return _pass('goods_market', scenario, 'FAIL')
+    G = _growth_seq(_growth_factor(params), n)
+    delta = float(params['delta'])
+    I_priv = G * Kd[1:n + 1] - (1.0 - delta) * Kd[:n]
+
+    def line(key, ratio_key):
+        v = _arr(budget, key)
+        if v is not None and len(v) >= n:
+            return np.asarray(v, dtype=float)[:n]
+        r = params.get(ratio_key)
+        return (float(r) * Y[:n]) if r is not None else np.zeros(n)
+
+    spend = (line('govt_spending', 'G_over_Y')
+             + line('public_investment', 'I_g_over_Y')
+             + line('defense_spending', 'defense_over_Y')
+             + line('other_net_spending', 'other_net_spending_over_Y'))
+
+    nfa = _arr(macro, 'NFA')
+    if nfa is None:
+        dNFA = np.zeros(n); nfi = np.zeros(n)
+    else:
+        NFA = np.asarray(nfa, dtype=float)
+        dNFA = G * NFA[1:n + 1] - NFA[:n]
+        r_ret = params.get('r')
+        nfi = (float(r_ret) * NFA[:n]) if r_ret is not None else np.zeros(n)
+
+    resid = (C[:n] - (Y[:n] + nfi - I_priv - spend - dNFA)) / Y[:n]
+    mx = float(np.max(np.abs(resid)))
+    # 8% of output: the bequest leak is ~3.8% and is in none of the terms.
+    if mx > 0.08:
+        return _fail('goods_market', scenario, 'FAIL', mx,
+                     f"max |C - (Y + r*NFA - I_priv - spending - dNFA)| / Y = "
+                     f"{mx:.3f}, beyond what the ~3.8% bequest leak explains")
+    return _pass('goods_market', scenario, 'FAIL')
+
+
 def chk_nfa_accounting(macro, B_gdp_path, scenario):
     A  = _arr(macro, 'A')
     Kd = _arr(macro, 'K_domestic')
@@ -494,6 +561,7 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
         results.append(chk_debt_accumulation(cf_bud, B_gdp, Y, r_debt, label,
                                              growth_factor=_growth_factor(params)))
     results.append(chk_nfa_accounting(cf_mac, B_gdp, label))
+    results.append(chk_goods_market(cf_mac, cf_bud, params, label))
     results += chk_tax_revenue(cf_bud, cf_mac, params, label)
 
     # Shock path checks, in the mode the run used.  Explicit shock_mode_* keys
