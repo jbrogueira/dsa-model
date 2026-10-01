@@ -306,6 +306,8 @@ class CalibrationSpec:
     r: float = 0.03
     w: float = 1.0
     age_weights: Optional[np.ndarray] = None  # (T,) stationary age distribution
+    cohort_survival: Optional[np.ndarray] = None  # (T, T) row j = cohort aged 25+j
+    n_sim_cohorts: int = 2000   # agents per cohort when cohort_survival is set
     backend: str = 'numpy'  # 'numpy' or 'jax'
     production: dict = field(default_factory=lambda: {
         'alpha': 0.33, 'delta': 0.07, 'A_tfp': 1.0,
@@ -713,8 +715,8 @@ MOMENT_DISPATCH = {
 }
 
 
-def base_year_cross_section(theta, spec, cfg, n_sim=2000, seed=None,
-                            survival=None, verbose=False):
+def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
+                            survival=None, seed_per_cohort=True, verbose=False):
     """Panels whose row j is the cohort aged 25+j in the base year, at age j.
 
     The transition's t=0 cross-section mixes sixty cohorts, each having solved
@@ -728,16 +730,27 @@ def base_year_cross_section(theta, spec, cfg, n_sim=2000, seed=None,
     only to age j, which is all the base year observes. That is 1,830 cohort
     periods instead of 3,600.
 
-    *survival* overrides the per-cohort schedules with one (T, n_h) vector for
-    every cohort, which makes the result reproduce the single-solve panel
-    exactly at the same seed; that is the regression test for this plumbing.
+    *survival* overrides the schedules: a (T, n_h) vector is used for every
+    cohort, a (T, T) array is one schedule per cohort. Otherwise they come from
+    the spec, or from the config.
+
+    Each cohort draws its own shocks (*seed_per_cohort*), so the ages are
+    statistically independent -- unlike the single-solve panel, where one
+    lifecycle serves every age and the ages are perfectly correlated. Pass
+    False to reuse one seed, which is what makes the result reproduce the
+    single-solve panel exactly and is the regression test for this plumbing.
     """
     config = apply_params(spec.base_config, spec.params, theta)
     T = config.T
-    S = survival if survival is not None else base_year_cohort_survival(cfg, T)
+    S = survival
+    if S is None:
+        S = spec.cohort_survival
+    if S is None and cfg is not None:
+        S = base_year_cohort_survival(cfg, T)
     if S is None:
         raise ValueError('no cohort survival schedules: configure '
                          'transition.demography_file')
+    n_sim = spec.n_sim_cohorts if n_sim is None else n_sim
     S = np.asarray(S, dtype=float)
     # A (T, n_h) argument is one schedule for every cohort; a (T, T) one is a
     # schedule per cohort. With n_h == T the two are ambiguous, so the caller's
@@ -760,8 +773,9 @@ def base_year_cross_section(theta, spec, cfg, n_sim=2000, seed=None,
             )
             model = cls(cfg_j, verbose=False)
             model.solve(verbose=False)
-            panel = wrap_sim_output(model.simulate(T_sim=j + 1, n_sim=n_sim,
-                                                  seed=seed))
+            panel = wrap_sim_output(model.simulate(
+                T_sim=j + 1, n_sim=n_sim,
+                seed=seed + j if seed_per_cohort else seed))
             if rows is None:
                 rows = {f: np.zeros((T, n_sim), dtype=np.asarray(getattr(panel, f)).dtype)
                         for f in panel._fields}
@@ -779,6 +793,19 @@ def run_model_moments(theta, spec, return_panels=False):
     Returns 1D array of model moments in the same order as spec.moments.
     If *return_panels* is True, returns (m_model, panels) tuple.
     """
+    if spec.cohort_survival is not None:
+        # One household per birth cohort, each facing the mortality its birth
+        # year lived, so the base-year cross-section is built the way the
+        # transition's t=0 is rather than from one representative lifecycle.
+        panels = base_year_cross_section(theta, spec)
+        m_model = np.empty(len(spec.moments))
+        for i, mom in enumerate(spec.moments):
+            fn = MOMENT_DISPATCH.get(mom.compute_key)
+            if fn is None:
+                raise ValueError(f"Unknown compute_key: {mom.compute_key!r}")
+            m_model[i] = fn(panels, spec)
+        return (m_model, panels) if return_panels else m_model
+
     config = apply_params(spec.base_config, spec.params, theta)
 
     # Build per-education-type panels
@@ -1159,6 +1186,17 @@ def load_config(path):
     T = raw['model']['T']
     age_weights = base_year_age_weights(raw, T)
 
+    # Cohort-consistent base year: one household per birth cohort alive in the
+    # base year, each on its own survival schedule. Off by default, because it
+    # makes every SMM evaluation an order of magnitude dearer.
+    cohort_survival = None
+    if raw.get('calibration', {}).get('base_year_cohorts', False):
+        cohort_survival = base_year_cohort_survival(raw, T)
+        if cohort_survival is None:
+            raise ValueError(
+                'calibration.base_year_cohorts is set but the cohort survival '
+                'schedules are unavailable; check transition.demography_file')
+
     # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]
     moments = [TargetMoment(**m) for m in raw['calibration']['targets']]
@@ -1183,6 +1221,8 @@ def load_config(path):
         r=r,
         w=w,
         age_weights=age_weights,
+        cohort_survival=cohort_survival,
+        n_sim_cohorts=sim.get('n_sim_cohorts', 2000),
         backend=sim.get('backend', 'numpy'),
         production=production,
     )

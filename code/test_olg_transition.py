@@ -2848,9 +2848,13 @@ class TestBaseYearCrossSection:
               if isinstance(getattr(b, f), np.ndarray)
               and getattr(b, f).ndim >= 1 and getattr(b, f).shape[0] == b.T}
         kw.update(T=self.T, n_a=25, n_y=2, n_alpha=1, retirement_age=9)
+        # cohort_survival cleared so run_model_moments takes the single-solve
+        # route: these tests compare the cohort path *against* it, and with the
+        # switch on it would be comparing the cohort path with itself.
         spec = dataclasses.replace(L['spec'], backend='numpy', n_sim=200,
                                    base_config=b._replace(**kw),
-                                   education_shares={'medium': 1.0})
+                                   education_shares={'medium': 1.0},
+                                   cohort_survival=None)
         theta = np.array([L['config_data']['_derived']['theta'][p.name]
                           for p in spec.params])
         return L['config_data'], spec, theta
@@ -2869,13 +2873,46 @@ class TestBaseYearCrossSection:
         S = np.asarray(spec.base_config.survival_probs, dtype=float).reshape(
             self.T, spec.base_config.n_h)
         xs = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
-                                     survival=S)['medium']
+                                     survival=S, seed_per_cohort=False)['medium']
         single = run_model_moments(theta, spec, return_panels=True)[1]['medium']
         for f in xs._fields:
             a, b = np.asarray(getattr(xs, f)), np.asarray(getattr(single, f))
             assert np.array_equal(a, b), (
                 f'{f} differs between the cohort cross-section and the single '
                 f'solve under one shared survival schedule')
+
+    def test_the_switch_routes_run_model_moments(self):
+        """The config key must decide which path run_model_moments takes.
+
+        With it off, nothing changes and the old single-solve route runs. With
+        it on, the spec carries (T, T) schedules and the moments come from the
+        cross-section of cohorts. Checked on the real config rather than the
+        shrunk one, since this is about wiring, not about solving.
+        """
+        import json
+        import tempfile
+        from calibrate import load_config
+        if not os.path.exists(self.CONFIG):
+            pytest.skip('country config not present')
+        raw = json.load(open(self.CONFIG))
+        T = raw['model']['T']
+
+        spec_on = load_config(self.CONFIG)['spec']
+        assert spec_on.cohort_survival is not None, \
+            'calibration.base_year_cohorts is set but no schedules reached the spec'
+        assert spec_on.cohort_survival.shape == (T, T)
+        assert spec_on.n_sim_cohorts > 0
+
+        raw['calibration']['base_year_cohorts'] = False
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False,
+                                         dir=os.path.dirname(self.CONFIG)) as fh:
+            json.dump(raw, fh)
+            off = fh.name
+        try:
+            assert load_config(off)['spec'].cohort_survival is None, \
+                'the switch is off but schedules were still built'
+        finally:
+            os.unlink(off)
 
     def test_per_cohort_schedules_change_the_cross_section(self):
         """Per-cohort schedules must move the cross-section.
