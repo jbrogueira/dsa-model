@@ -2198,13 +2198,18 @@ class OLGTransition:
             self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
 
         # Feature #21: Build population weights from fertility + survival.
-        # NOTE: population weights are births only (pop-growth cohort sizes); they must
-        # NOT include cumulative survival. Per-cohort survival enters aggregation via the
-        # simulation: dead agents hold 0 and per-age means divide by n_sim, so the
-        # survival/alive fraction is already baked into every per-cohort mean. Adding
-        # survival to the weights would double-count it. With data cohort survival the
-        # mortality is cohort-specific in the sim, so the time-invariant births weights
-        # (existing cohort_sizes) remain correct.
+        # Population weights are births only: per-cohort means divide by n_sim with
+        # the dead at zero, so survival is already inside every mean and putting it in
+        # the weights too would double-count it. _aggregation_weights then divides the
+        # entry weights by the living share, which is what makes the result per living
+        # person rather than per person ever entered.
+        #
+        # WARNING: _build_population_weights below does NOT respect that — it builds
+        # fertility x cumulative survival, i.e. living shares, so survival ends up
+        # applied twice and the age profile tilts by S_j (+9.5% at age 25, -43.8% at
+        # age 84). It fires only when fertility_path or survival_improvement_rate is
+        # set, neither of which build_olg_transition does. Fix it before enabling
+        # either.
         if self.fertility_path is not None or self.survival_improvement_rate != 0.0:
             self._build_population_weights()
 

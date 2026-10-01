@@ -295,6 +295,48 @@ def implied_table(stats, cfg):
     return '\n'.join(out)
 
 
+def goods_market_residual(paths, cfg, economy, T_tr):
+    """C - (Y - I_priv - G - I_g - dNFA), as a share of output, per period.
+
+    In detrended per-capita units private investment is
+    I_priv[t] = Gamma_t * K_dom[t+1] - (1 - delta) * K_dom[t], and the net
+    foreign asset change is dNFA[t] = Gamma_t * NFA[t+1] - NFA[t]. Returns None
+    when a path is missing rather than guessing.
+
+    This is the only accounting identity in the model that would catch a term
+    measured per living person being combined with one measured per person ever
+    entered: the budget and NFA checks in eval_fiscal_results are tautologies
+    given how primary_deficit and NFA are built, and every ratio cancels the
+    denominator.
+    """
+    need = ('Y', 'C', 'K_domestic')
+    if any(paths.get(k) is None for k in need):
+        return None
+    Y = np.asarray(paths['Y'], float)
+    C = np.asarray(paths['C'], float)
+    Kd = np.asarray(paths['K_domestic'], float)
+    G_arr = np.asarray(economy.growth_factors(T_tr), float)
+    delta = float(cfg['production'].get('delta', 0.07))
+    fisc = cfg.get('fiscal', {})
+    n = min(len(Y), len(C), len(Kd)) - 1
+    if n < 2:
+        return None
+    I_priv = G_arr[:n] * Kd[1:n + 1] - (1.0 - delta) * Kd[:n]
+    G_sp = fisc.get('G_over_Y', 0.0) * Y[:n]
+    I_g = np.asarray(paths.get('I_g', np.zeros(len(Y))), float)[:n] \
+        if paths.get('I_g') is not None else np.zeros(n)
+    defence = fisc.get('defense_over_Y', 0.0) * Y[:n]
+    other = fisc.get('other_net_spending_over_Y', 0.0) * Y[:n]
+    nfa = paths.get('NFA')
+    if nfa is not None:
+        NFA = np.asarray(nfa, float)
+        dNFA = G_arr[:n] * NFA[1:n + 1] - NFA[:n]
+    else:
+        dNFA = np.zeros(n)
+    resid = C[:n] - (Y[:n] - I_priv - G_sp - I_g - defence - other - dNFA)
+    return resid / Y[:n]
+
+
 # ---------------------------------------------------------------- figures ---
 def make_figures(paths, w_data, w_model_t0, outdir):
     """Write the age-distribution figure always, the panels only with a run.
@@ -483,8 +525,21 @@ def main():
         np.savez(os.path.join(outdir, 'baseline_paths.npz'),
                  **{k: v for k, v in paths.items()},
                  growth_factor=economy.growth_factors(T_TR),
+                 delta=float(L['config_data']['production'].get('delta', 0.07)),
                  base_year=int(economy.current_year))
         print('  wrote baseline_paths.npz')
+
+        # The goods market is the one identity that does not cancel a
+        # normalisation error: every other check in the repo compares two
+        # quantities that carry the same denominator, so a mismatch divides out.
+        res = goods_market_residual(paths, L['config_data'], economy, T_TR)
+        if res is not None:
+            worst = float(np.max(np.abs(res)))
+            print(f'  goods-market residual: max |C - (Y - I_priv - G - I_g '
+                  f'- dNFA)| / Y = {worst:.2e}')
+            if worst > 1e-3:
+                print('  WARNING: the resource constraint does not hold; a term '
+                      'is on a different scale or is missing')
 
     stats = None
     live = None

@@ -2643,34 +2643,47 @@ class TestDemographicPath:
                                        economy._cohort_weights(T_tr - 1),
                                        rtol=0, atol=1e-14)
 
-    def test_aggregates_are_per_living_person(self, built):
-        """The aggregation weights must imply a living population of one.
+    def test_the_living_share_matches_the_demographic_data(self, built):
+        """The living share must equal living/ever-entered from the sidecar.
 
-        Per-cohort means carry zeros for the dead, so the weights are sizes at
-        entry; a weighted sum is then a total per person *ever entered*, with
-        the dead in the denominator. Scaling by the living share fixes that, and
-        the invariant is sum_j w_j S_j == 1.
+        Written to replace a test that asserted sum_j w_j S_j == 1. That holds
+        for ANY weights, because _aggregation_weights divides by exactly that
+        sum using the same S -- a linear ramp in place of the real weights
+        satisfies it to 1e-12. It could not fail, so it checked nothing.
 
-        This cannot be caught by the balanced-growth flatness check: on the
-        balanced path the age structure is constant, so the living share is too
-        and both conventions grow at the same rate. It only shows up in the
-        level path during the transition, where the share moves from 0.899 to
-        0.970.
+        This compares the living share the code computes against the ratio of
+        two independent columns of the sidecar, so wrong weights do show up.
         """
+        economy, T_tr, demog, _ = built
+        T = economy.T
+        years = list(np.asarray(demog['years'], dtype=int))
+        px = np.asarray(demog['px'], dtype=float)
+        base = int(demog['base_year'])
+        cs = np.asarray(demog['cross_section_base'], dtype=float)
+        S = np.array([float(np.prod([px[years.index(base - j + a), a]
+                                     for a in range(j)])) if j else 1.0
+                      for j in range(T)])
+        want = cs.sum() / (cs / S).sum()        # living / ever entered, from data
+        got = economy._alive_fraction(0)
+        assert got == pytest.approx(want, rel=1e-10), (
+            f'living share {got:.9f} against {want:.9f} from the sidecar: the '
+            f'aggregation weights do not describe the measured population')
+
+    def test_corrupt_weights_change_the_living_share(self, built):
+        """Guard that the living share is sensitive to the weights at all."""
         economy, T_tr, _, _ = built
-        for t in (0, T_tr // 4, T_tr // 2, T_tr - 1):
-            w = economy._aggregation_weights(t)
-            living = 0.0
-            for j in range(economy.T):
-                sched = economy._cohort_survival_schedule(t - j)
-                S = 1.0 if (sched is None or j == 0) else float(
-                    np.prod(np.mean(np.asarray(sched), axis=1)[:j]))
-                living += float(w[j]) * S
-            assert living == pytest.approx(1.0, abs=1e-12), (
-                f't={t}: the weights imply a living population of {living:.6f}, '
-                f'so aggregates are not per capita')
-            frac = economy._alive_fraction(t)
-            assert 0.5 < frac < 1.0, f't={t}: implausible living share {frac}'
+        clean = economy._alive_fraction(0)
+        saved = getattr(economy, 'cohort_sizes_path', None)
+        try:
+            ramp = np.linspace(1.0, 5.0, economy.T)[None, :].repeat(T_tr, axis=0)
+            economy.cohort_sizes_path = ramp / ramp.sum(axis=1, keepdims=True)
+            economy._alive_frac_cache = {}
+            assert abs(economy._alive_fraction(0) - clean) > 1e-6, (
+                'the living share is insensitive to the cohort weights, so '
+                'nothing here constrains them')
+        finally:
+            economy.cohort_sizes_path = saved
+            economy._alive_frac_cache = {}
 
     def test_no_mortality_leaves_the_weights_alone(self):
         """Without a survival schedule the scaling must be exactly neutral.

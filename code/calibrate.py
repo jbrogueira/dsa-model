@@ -340,7 +340,7 @@ def _agent_weights(panel, spec, edu, mask=None):
         aw = spec.age_weights[:T]
     else:
         aw = np.ones(T) / T
-    # Spread omega(t) across the agents ALIVE at t, not across n_sim. aw is
+    # omega(t) is spread across the agents ALIVE at t, not across n_sim. aw is
     # already the living share of each age, so dividing by n_sim would apply
     # survival a second time and tilt these moments toward the young: the
     # weights at age t would sum to aw[t]*S_t instead of aw[t]. With a mask the
