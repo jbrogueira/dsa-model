@@ -265,7 +265,13 @@ class OLGTransition:
         self.sim_agent_batch_size = int(sim_agent_batch_size)
 
         # Population aging parameters (Feature #21)
-        self.fertility_path = np.asarray(fertility_path, dtype=float) if fertility_path is not None else None
+        if fertility_path is not None:
+            raise NotImplementedError(
+                "fertility_path was removed on 2026-10-01. It drove "
+                "_build_population_weights, which double-counted survival and "
+                "discarded the measured entrant path. Supply an alternative "
+                "entrant series through the demographic sidecar instead -- see "
+                "code/build_demography_GR.py and transition.demography_file.")
         self.survival_improvement_rate = float(survival_improvement_rate)
 
         # Data-driven cohort survival (period life tables by calendar year).
@@ -316,65 +322,6 @@ class OLGTransition:
         x_max = int(x_max)
         step = max(1, int(step))
         return np.arange(x_min, x_max + 1, step, dtype=int)
-
-    @staticmethod
-    @njit
-    def _slice_means_njit(a_sim, effective_y_sim, tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim,
-                         ui_sim, pension_sim, gov_m_sim, T: int):
-        """
-        Compute per-age means for a single cohort simulation (all arrays are shape (T, n_sim)).
-        Returns 9 arrays of length T.
-        """
-        n_sim = a_sim.shape[1]
-
-        a_mean = np.zeros(T)
-        labor_mean = np.zeros(T)
-
-        tax_c_mean = np.zeros(T)
-        tax_l_mean = np.zeros(T)
-        tax_p_mean = np.zeros(T)
-        tax_k_mean = np.zeros(T)
-
-        ui_mean = np.zeros(T)
-        pension_mean = np.zeros(T)
-        gov_health_mean = np.zeros(T)
-
-        for age in range(T):
-            sa = 0.0
-            sl = 0.0
-            stc = 0.0
-            stl = 0.0
-            stp = 0.0
-            stk = 0.0
-            sui = 0.0
-            spen = 0.0
-            sg = 0.0
-
-            for j in range(n_sim):
-                sa += a_sim[age, j]
-                sl += effective_y_sim[age, j]
-                stc += tax_c_sim[age, j]
-                stl += tax_l_sim[age, j]
-                stp += tax_p_sim[age, j]
-                stk += tax_k_sim[age, j]
-                sui += ui_sim[age, j]
-                spen += pension_sim[age, j]
-                sg += gov_m_sim[age, j]
-
-            inv = 1.0 / n_sim
-            a_mean[age] = sa * inv
-            labor_mean[age] = sl * inv
-            tax_c_mean[age] = stc * inv
-            tax_l_mean[age] = stl * inv
-            tax_p_mean[age] = stp * inv
-            tax_k_mean[age] = stk * inv
-            ui_mean[age] = sui * inv
-            pension_mean[age] = spen * inv
-            gov_health_mean[age] = sg * inv
-
-        return (a_mean, labor_mean,
-                tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
-                ui_mean, pension_mean, gov_health_mean)
 
     @staticmethod
     @njit
@@ -1041,6 +988,15 @@ class OLGTransition:
             cache = self._alive_frac_cache = {}
         if key in cache:
             return cache[key]
+        if int(self.n_h) > 1:
+            raise NotImplementedError(
+                f"_alive_fraction averages survival over health states "
+                f"unweighted, which is only the probability of being alive at "
+                f"n_h == 1 (this model has n_h == {self.n_h}). The correct S_j "
+                f"weights each health state by its share of the age-j "
+                f"population. Demonstrated error with two health states: a "
+                f"24.7% level error in every aggregate. Implement the "
+                f"distribution-weighted product before enabling health states.")
         w = self._cohort_weights(t)
         frac = 0.0
         for j in range(int(self.T)):
@@ -1106,56 +1062,6 @@ class OLGTransition:
             else:
                 sched[j, :] = 1.0
         return sched
-
-    def _build_population_weights(self):
-        """
-        Compute time-varying cohort size weights from fertility path and survival schedules.
-
-        Sets self.cohort_sizes_path of shape (T_transition, T).
-        """
-        if self.T_transition is None:
-            raise ValueError("T_transition must be set before building population weights.")
-
-        T_trans = int(self.T_transition)
-        T = int(self.T)
-
-        # fertility_path: relative sizes of entering cohorts by birth period index
-        # birth period index 0 = transition start; negative = pre-transition
-        # We need fertility for birth periods -(T-1) ... T_trans-1
-        # Mapped into fertility_path array as fertility_path[bp + (T-1)]
-        if self.fertility_path is not None:
-            fert = np.asarray(self.fertility_path, dtype=float)
-        else:
-            fert = np.ones(T + T_trans)
-
-        cohort_sizes_path = np.zeros((T_trans, T), dtype=float)
-
-        for t_cal in range(T_trans):
-            for age in range(T):
-                birth_period = t_cal - age
-                fert_idx = birth_period + (T - 1)
-                if 0 <= fert_idx < len(fert):
-                    fert_val = fert[fert_idx]
-                else:
-                    fert_val = fert[0] if len(fert) > 0 else 1.0
-
-                # Cumulative survival from birth to age
-                surv_sched = self._cohort_survival_schedule(birth_period)
-                if surv_sched is not None:
-                    cum_surv = 1.0
-                    for j in range(age):
-                        cum_surv *= np.mean(surv_sched[j, :])
-                else:
-                    cum_surv = 1.0
-
-                cohort_sizes_path[t_cal, age] = fert_val * cum_surv
-
-            # Normalize
-            row_sum = cohort_sizes_path[t_cal, :].sum()
-            if row_sum > 0:
-                cohort_sizes_path[t_cal, :] /= row_sum
-
-        self.cohort_sizes_path = cohort_sizes_path
 
     def solve_cohort_problems(self, r_path, w_path,
                           tau_c_path=None, tau_l_path=None,
@@ -1689,7 +1595,10 @@ class OLGTransition:
         This is more cache-friendly than the per-period loop in simulate_transition(),
         which repeated the panel lookup T times per cohort.
 
-        Returns (T_transition, n_edu, T) arrays for assets, labor, consumption plus
+        Returns (T_transition, n_edu, T) arrays in the order assets, consumption,
+        labor -- matching the return statement, NOT the historical docstring order.
+        Following the old wording swapped C and L, which is a bug this repo has
+        already had once. plus
         budget components, matching what _period_cross_section() computes individually.
         """
         T_tr = int(self.T_transition)
@@ -1793,7 +1702,11 @@ class OLGTransition:
         return assets, consum, labor, tax_c, tax_l, tax_p, tax_k, ui_arr, pension, gov_h, bequest
 
     def compute_aggregates(self, t, n_sim: Optional[int] = None):
-        """Compute aggregate household wealth (A), consumption (C), and labor (L) for period t."""
+        """Compute aggregate household wealth (A), labor (L), consumption (C).
+
+        The return order is (K, L, C) -- the njit it wraps returns (K, C, L), so
+        the two differ and the docstring used to state the njit's order. No
+        caller remains in the repo. for period t."""
         if n_sim is None:
             if self._last_n_sim is None:
                 raise ValueError("n_sim is None and no previous simulate_transition() n_sim is stored.")
@@ -2118,6 +2031,10 @@ class OLGTransition:
         # clear caches for this run
         self._birth_sim_cache = {}
         self._period_cache = {}
+        # The living share depends on _cohort_weights, so it must be dropped with
+        # them: it was previously keyed on t alone and never cleared, so a second
+        # call with different cohort weights reused shares 6-8% wrong.
+        self._alive_frac_cache = {}
         # _cohort_panel_cache is intentionally NOT cleared here — it is keyed by
         # (n_sim, seed_base, _policy_version); solve_cohort_problems() increments
         # _policy_version so stale panels are never reused.
@@ -2213,14 +2130,13 @@ class OLGTransition:
         # entry weights by the living share, which is what makes the result per living
         # person rather than per person ever entered.
         #
-        # WARNING: _build_population_weights below does NOT respect that — it builds
-        # fertility x cumulative survival, i.e. living shares, so survival ends up
-        # applied twice and the age profile tilts by S_j (+9.5% at age 25, -43.8% at
-        # age 84). It fires only when fertility_path or survival_improvement_rate is
-        # set, neither of which build_olg_transition does. Fix it before enabling
-        # either.
-        if self.fertility_path is not None or self.survival_improvement_rate != 0.0:
-            self._build_population_weights()
+        # There used to be a second mechanism here, _build_population_weights, which
+        # built fertility x cumulative survival -- the double count -- and discarded
+        # the measured entrant path. It was removed on 2026-10-01: the demographic
+        # sidecar supersedes it, since the EUROPOP2023 entrant series IS the fertility
+        # path and the projected tables ARE the longevity improvement. A counterfactual
+        # fertility path belongs in build_demography_GR.py as an alternative entrant
+        # series, not as a parallel weighting rule.
 
         if verbose:
             print("\nComputing aggregate quantities...")

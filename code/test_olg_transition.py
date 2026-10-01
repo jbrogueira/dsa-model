@@ -2214,71 +2214,21 @@ class TestPopulationAging:
         assert np.all(sched_future >= sched_base - 1e-10), \
             "Future survival schedules should be >= base with improvement"
 
-    def test_build_population_weights_sums_to_one(self):
-        """cohort_sizes_path rows sum to 1."""
-        T_tr = 4
-        r_path = np.ones(T_tr) * 0.03
-        economy = self._get_small_economy()
-        economy.simulate_transition(r_path, n_sim=50, verbose=False)
+    def test_fertility_path_is_rejected(self):
+        """fertility_path was removed; construction must say where it went.
 
-        # Manually set fertility_path and rebuild
-        economy.fertility_path = np.ones(economy.T + T_tr)
-        economy._build_population_weights()
-        for t in range(T_tr):
-            row_sum = economy.cohort_sizes_path[t, :].sum()
-            np.testing.assert_allclose(row_sum, 1.0, rtol=1e-10,
-                                       err_msg=f"Row {t} does not sum to 1")
+        It drove _build_population_weights, which multiplied the weights by
+        cumulative survival -- double-counting mortality that the per-cohort
+        means already carry -- and discarded the measured entrant path,
+        substituting ones. Three tests here exercised that function; they were
+        removed with it on 2026-10-01. The demographic sidecar supersedes the
+        capability: the EUROPOP2023 entrant series is the fertility path.
+        """
+        with pytest.raises(NotImplementedError, match='demography'):
+            OLGTransition(lifecycle_config=get_test_config(),
+                          education_shares={'medium': 1.0},
+                          fertility_path=np.ones(80))
 
-    def test_constant_fertility_no_improvement_uniform_matches_popgrowth(self):
-        """Constant fertility + no survival improvement + no base survival → uniform cohort weights."""
-        T_tr = 3
-        r_path = np.ones(T_tr) * 0.03
-        # Use constant pop_growth=0 and constant fertility=1
-        economy = OLGTransition(
-            lifecycle_config=LifecycleConfig(
-                T=5, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
-                retirement_age=4, education_type='medium',
-                pension_replacement_default=0.40, m_good=0.0,
-            ),
-            alpha=0.33, delta=0.05, A=1.0,
-            education_shares={'medium': 1.0}, output_dir='output/test',
-            pop_growth=0.0,
-            fertility_path=np.ones(5 + T_tr),
-            survival_improvement_rate=0.0,
-        )
-        economy.simulate_transition(r_path, n_sim=50, verbose=False)
-        # With uniform fertility and no mortality, cohort_sizes_path rows should be uniform
-        for t in range(T_tr):
-            row = economy.cohort_sizes_path[t, :]
-            # All should be equal (1/T each)
-            expected = np.ones(5) / 5.0
-            np.testing.assert_allclose(row, expected, rtol=1e-10,
-                                       err_msg=f"Expected uniform weights at t={t}")
-
-    def test_declining_fertility_changes_weights(self):
-        """Declining fertility should give different weights than uniform."""
-        T_tr = 3
-        r_path = np.ones(T_tr) * 0.03
-        T = 5
-        # Declining fertility: newer cohorts are smaller
-        fert = np.array([1.0, 1.0, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3])  # T + T_tr = 8
-        economy = OLGTransition(
-            lifecycle_config=LifecycleConfig(
-                T=T, beta=0.96, gamma=2.0, n_a=10, n_y=2, n_h=1,
-                retirement_age=4, education_type='medium',
-                pension_replacement_default=0.40, m_good=0.0,
-            ),
-            alpha=0.33, delta=0.05, A=1.0,
-            education_shares={'medium': 1.0}, output_dir='output/test',
-            fertility_path=fert,
-        )
-        economy.simulate_transition(r_path, n_sim=50, verbose=False)
-        # Weights should not be uniform
-        uniform = np.ones(T) / T
-        for t in range(T_tr):
-            row = economy.cohort_sizes_path[t, :]
-            diff = np.max(np.abs(row - uniform))
-            assert diff > 1e-10, f"Weights at t={t} should differ from uniform with declining fertility"
 
 
 class TestInitialAssetDistribution:

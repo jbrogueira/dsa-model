@@ -108,7 +108,7 @@ if args.config:
     # Government spending lines are fixed shares of Y(t): pass the SS-calibrated
     # ratios and let the budget multiply by each run's realized Y_path, so levels
     # move with output and the shares stay at their SS values (GDP-share mode).
-    # Exception: with eta_g != 0 the I_g line is a constant LEVEL delta_g*K_g
+    # Exception: with eta_g != 0 the I_g line is a LEVEL (delta_g + Gamma_t - 1)*K_g, an array not a constant
     # (the stationary level; a GDP-share I_g would need an I_g↔K_g↔Y fixed
     # point and is rejected by simulate_transition).
     G_over_Y       = paths.get('G_over_Y', 0.13)
