@@ -3014,5 +3014,77 @@ class TestBaseYearCrossSection:
             f'the schedules are not reaching the solve')
 
 
+class TestPensionBaseAcrossBackends:
+    """The pension base must be the same in both solves, with a sloped wage profile.
+
+    The JAX solve valued the career-average pension at the retiree's CURRENT age
+    wage multiplier instead of the one at the last working age, while the NumPy
+    solve and the JAX simulate step both used the latter. Households therefore
+    optimised against a poorer retirement than they were paid: noise-free, wealth
+    +0.51%, consumption -0.69%.
+
+    No existing cross-validation test could see it, because they all run a flat
+    wage_age_profile, under which the two readings coincide identically. The
+    slope is the whole point of this fixture.
+    """
+
+    T, R = 12, 9
+
+    def _config(self, sloped):
+        from calibrate import load_config
+        cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                'calibration_input_GR.json')
+        if not os.path.exists(cfg_path):
+            pytest.skip('country config not present')
+        b = load_config(cfg_path)['spec'].base_config
+        T = self.T
+        kw = {f: getattr(b, f)[:T].copy() for f in b.__dataclass_fields__
+              if isinstance(getattr(b, f), np.ndarray)
+              and getattr(b, f).ndim >= 1 and getattr(b, f).shape[0] == b.T}
+        prof = np.ones(T)
+        if sloped:
+            prof[:self.R] = np.linspace(1.0, 1.35, self.R)   # rises to retirement
+        kw.update(T=T, n_a=40, n_y=3, n_alpha=1, retirement_age=self.R,
+                  wage_age_profile=prof, pension_avg_weight=0.45,
+                  education_type='medium',
+                  r_path=np.full(T, 0.04), w_path=np.full(T, 2.0))
+        return b._replace(**kw)
+
+    @pytest.mark.parametrize('sloped', [False, True])
+    def test_backends_agree_on_policies(self, sloped):
+        from lifecycle_perfect_foresight import LifecycleModelPerfectForesight
+        from lifecycle_jax import LifecycleModelJAX
+        cfg = self._config(sloped)
+        mn = LifecycleModelPerfectForesight(cfg, verbose=False); mn.solve(verbose=False)
+        mj = LifecycleModelJAX(cfg, verbose=False); mj.solve(verbose=False)
+        c_np, c_jx = np.asarray(mn.c_policy), np.asarray(mj.c_policy)
+        scale = max(float(np.max(np.abs(c_np))), 1e-12)
+        rel = float(np.max(np.abs(c_np - c_jx))) / scale
+        assert rel < 1e-9, (
+            f'wage profile {"sloped" if sloped else "flat"}: consumption policies '
+            f'differ by {rel:.2e} relative between the backends')
+
+    def test_the_sloped_fixture_can_detect_a_wrong_pension_base(self):
+        """Guard that the sloped profile actually discriminates.
+
+        Values the pension at the current age instead of the last working age --
+        the old behaviour -- and requires that it moves the policy. Without this
+        the test above could pass on a fixture too flat to matter.
+        """
+        from lifecycle_jax import LifecycleModelJAX
+        cfg = self._config(sloped=True)
+        good = LifecycleModelJAX(cfg, verbose=False); good.solve(verbose=False)
+        flat_after_R = cfg.wage_age_profile.copy()
+        flat_after_R[self.R - 1] = flat_after_R[self.R]      # kill the step at R-1
+        bad = LifecycleModelJAX(cfg._replace(wage_age_profile=flat_after_R),
+                                verbose=False)
+        bad.solve(verbose=False)
+        moved = float(np.max(np.abs(np.asarray(good.c_policy)
+                                    - np.asarray(bad.c_policy))))
+        assert moved > 1e-6, (
+            'the fixture is insensitive to the wage multiplier at retirement, so '
+            'it cannot detect which one the pension base uses')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

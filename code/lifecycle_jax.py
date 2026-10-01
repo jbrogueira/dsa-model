@@ -117,6 +117,7 @@ def compute_budget_jax(
     labor_hours=1.0,
     bequest_lumpsum=0.0,
     kappa_wage_t=1.0,
+    kappa_wage_ret=None,
     pension_avg_weight=1.0,
     mean_kappa_working=1.0,
     mean_y_employed=1.0,
@@ -139,7 +140,14 @@ def compute_budget_jax(
     # --- Retired branch ---
     # Career-average pension approximation, scaled by permanent FE multiplier
     lam = pension_avg_weight
-    kappa_ret = kappa_wage_t  # wage_age_profile at retirement_age - 1 (passed as current-period value for retired)
+    # The pension is fixed at retirement, so its own-income component is valued at
+    # the wage multiplier of the LAST WORKING age, kappa(retirement_age - 1), not at
+    # the retiree's current age, where kappa is 1.0 and the base is understated. The
+    # NumPy solve (lifecycle_perfect_foresight.py) and this module's own simulate
+    # step both use kappa(retirement_age - 1). Until 2026-10-01 this kernel received
+    # kappa_wage_t, the current age's value, while its comment claimed otherwise --
+    # so the JAX solve priced a poorer retirement than the one it then paid.
+    kappa_ret = kappa_wage_t if kappa_wage_ret is None else kappa_wage_ret
     pension_base = lam * kappa_ret * y_last + (1 - lam) * mean_kappa_working * mean_y_employed
     pension = pension_replacement_t * w_at_retirement * pension_base * alpha_mult  # (1,1,1,n_y)
     # Feature #11: minimum pension floor (flat amount, not scaled by alpha)
@@ -210,7 +218,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
     period_params : dict-like tuple
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t, pension_replacement_t,
          P_h_t, P_y_t, is_retired, survival_t, child_cost_t, in_schooling_t,
-         bequest_lumpsum_t, kappa_wage_t)
+         bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret)
     model_params : dict-like tuple
         (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
          ui_replacement_rate, kappa, beta, gamma,
@@ -230,7 +238,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
     (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
      pension_replacement_t, P_h_t, P_y_t, is_retired,
      survival_t, child_cost_t, in_schooling_t,
-     bequest_lumpsum_t, kappa_wage_t) = period_params
+     bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret) = period_params
 
     (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
      ui_replacement_rate, kappa, beta, gamma,
@@ -262,6 +270,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
         in_schooling=in_schooling_t,
         bequest_lumpsum=bequest_lumpsum_t,
         kappa_wage_t=kappa_wage_t,
+        kappa_wage_ret=kappa_wage_ret,
         pension_avg_weight=pension_avg_weight,
         mean_kappa_working=mean_kappa_working,
         mean_y_employed=mean_y_employed,
@@ -367,6 +376,7 @@ def _solve_terminal_period_jax(
     nu=1.0,
     phi=2.0,
     kappa_wage_T=1.0,
+    kappa_wage_ret=None,
     pension_avg_weight=1.0,
     mean_kappa_working=1.0,
     mean_y_employed=1.0,
@@ -390,6 +400,7 @@ def _solve_terminal_period_jax(
         education_subsidy_rate=education_subsidy_rate,
         in_schooling=in_schooling_T,
         kappa_wage_t=kappa_wage_T,
+        kappa_wage_ret=kappa_wage_ret,
         pension_avg_weight=pension_avg_weight,
         mean_kappa_working=mean_kappa_working,
         mean_y_employed=mean_y_employed,
@@ -526,6 +537,7 @@ def solve_lifecycle_jax(
         nu=nu,
         phi=phi,
         kappa_wage_T=wage_age_profile[T - 1],
+        kappa_wage_ret=wage_age_profile[retirement_age - 1],
         pension_avg_weight=pension_avg_weight,
         mean_kappa_working=mean_kappa_working,
         mean_y_employed=mean_y_employed,
@@ -555,13 +567,16 @@ def solve_lifecycle_jax(
         m_grid_path[ts],
         bequest_at_age,
         wage_age_profile[ts],
+        # kappa at the last working age: constant over the lifecycle, stacked so
+        # the scan carries it alongside the per-period values.
+        jnp.full(ts.shape, wage_age_profile[retirement_age - 1]),
     )
 
     def scan_fn(V_next, period_params_slice):
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t,
-         bequest_t, kappa_wage_t) = period_params_slice
+         bequest_t, kappa_wage_t, kappa_wage_ret) = period_params_slice
 
         model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:]
 
@@ -569,7 +584,8 @@ def solve_lifecycle_jax(
             V_next,
             (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
              pension_replacement_t, P_h_t, P_y_t, is_retired,
-             survival_t, child_cost_t, in_schooling_t, bequest_t, kappa_wage_t),
+             survival_t, child_cost_t, in_schooling_t, bequest_t, kappa_wage_t,
+             kappa_wage_ret),
             model_params_t,
             alpha_mult=alpha_mult,
         )
