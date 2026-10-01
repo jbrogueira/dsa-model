@@ -386,10 +386,21 @@ def main():
 
     report = args.calib_report
     if report is None:
-        # calibrate.py writes to output/calibration/; runs are also archived
-        # under <outdir>/reports/. Take the newest across both by filename,
-        # which carries the timestamp -- looking in only one of them is how the
-        # run label came out a day stale.
+        # The config records which run wrote its theta, so use that rather than
+        # whichever markdown happens to be on the machine -- on a fresh
+        # checkout that is some other run entirely, and the label lies.
+        meta = cfg.get('_derived', {}).get('theta_metadata', {})
+        src = meta.get('source_report')
+        if src:
+            for cand in (src, os.path.join(os.path.dirname(args.config), src),
+                         os.path.join(outdir, 'reports', os.path.basename(src))):
+                if os.path.exists(cand):
+                    report = cand
+                    break
+            if report is None:
+                print(f'  calibration report named by the config is not here: '
+                      f'{os.path.basename(src)}; tables stay live from the config')
+    if report is None and args.calib_report is None:
         cands = []
         for d in (os.path.join(outdir, 'reports'),
                   os.path.join(os.path.dirname(args.config), 'output', 'calibration')):
