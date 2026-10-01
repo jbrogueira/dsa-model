@@ -134,7 +134,7 @@ Household budget constraints and all four tax bases; `HSub = κ·Σ_j m(j)N_j`; 
 
 | # | Gap | Magnitude |
 |---|---|---|
-| 1 | `L` is aggregated from `effective_y_sim`, which carries UI | `w·L − 𝓑^lab = UI`, exactly 1.887 % of `w·L`; Y and K 1.9 % above their model definitions |
+| 1 | `L` is aggregated from `effective_y_sim`, which carries UI | `w·L − 𝓑^lab = UI`, 1.680 % of `w·L` at the 2026-10-01 calibration; Y and K_domestic above their model definitions |
 | 2 | Bequest circuit open in every reported fiscal run (`recompute_bequests=False`) | 3.77 % of Y per period leaves the economy; newborns receive nothing; `τ^beq = 0` |
 | 3 | `z_last` is the previous income state, not the last *employed* one | UI pays zero from the second period of a spell; P(spell continues) = 0.5 |
 | 4 | `B_initial` sized off a 50-draw warmup Y(0) | B/Y = 1.633 at t=0, not 1.64 |

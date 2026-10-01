@@ -296,18 +296,31 @@ def implied_table(stats, cfg):
 
 
 def goods_market_residual(paths, cfg, economy, T_tr):
-    """C - (Y - I_priv - G - I_g - dNFA), as a share of output, per period.
+    """Goods-market residuals for the open economy, as shares of output.
 
-    In detrended per-capita units private investment is
-    I_priv[t] = Gamma_t * K_dom[t+1] - (1 - delta) * K_dom[t], and the net
-    foreign asset change is dNFA[t] = Gamma_t * NFA[t+1] - NFA[t]. Returns None
-    when a path is missing rather than guessing.
+    Returns a dict of progressively more complete forms, because the closed
+    form is badly wrong here and saying which term is missing is the point:
 
-    This is the only accounting identity in the model that would catch a term
-    measured per living person being combined with one measured per person ever
-    entered: the budget and NFA checks in eval_fiscal_results are tautologies
-    given how primary_deficit and NFA are built, and every ratio cancels the
-    denominator.
+      closed   C - (Y - I_priv - G - I_g - defence - other - dNFA)
+      open     the same, plus net factor income from abroad r*NFA - r_B*B
+
+    In detrended per-capita units I_priv[t] = Gamma_t*K_dom[t+1]
+    - (1-delta)*K_dom[t] and dNFA[t] = Gamma_t*NFA[t+1] - NFA[t].
+
+    The first version of this function computed only the closed form and warned
+    above 1e-3. That was wrong: with NFA/Y near -5 the model is a small open
+    economy whose GNI differs from its GDP, and the closed form came out near
+    0.19 of output for a reason unrelated to the normalisation it was added to
+    catch. The open form is the one to read.
+
+    Still unaccounted for: accidental bequests. With recompute_bequests off --
+    which every reported run uses -- the wealth of the dead leaves the economy
+    and is in none of the terms above. An audit measured the open form at -0.036
+    to -0.020 of output and found that restoring the bequest flow brings it to
+    roughly zero, so treat a residual of that order as the bequest leak rather
+    than as a new defect, and do not tighten the threshold until it is modelled.
+
+    None when a required path is absent rather than guessing.
     """
     need = ('Y', 'C', 'K_domestic')
     if any(paths.get(k) is None for k in need):
@@ -321,20 +334,30 @@ def goods_market_residual(paths, cfg, economy, T_tr):
     n = min(len(Y), len(C), len(Kd)) - 1
     if n < 2:
         return None
+
     I_priv = G_arr[:n] * Kd[1:n + 1] - (1.0 - delta) * Kd[:n]
-    G_sp = fisc.get('G_over_Y', 0.0) * Y[:n]
-    I_g = np.asarray(paths.get('I_g', np.zeros(len(Y))), float)[:n] \
-        if paths.get('I_g') is not None else np.zeros(n)
-    defence = fisc.get('defense_over_Y', 0.0) * Y[:n]
-    other = fisc.get('other_net_spending_over_Y', 0.0) * Y[:n]
+    spend = ((fisc.get('G_over_Y', 0.0) + fisc.get('defense_over_Y', 0.0)
+              + fisc.get('other_net_spending_over_Y', 0.0)) * Y[:n])
+    I_g = (np.asarray(paths['I_g'], float)[:n] if paths.get('I_g') is not None
+           else np.zeros(n))
+
+    # In a no-shock baseline there is no sovereign debt path, so the NFA that
+    # simulate_transition returns (A - K_domestic) is already the full position
+    # and r_B*B is zero.
     nfa = paths.get('NFA')
-    if nfa is not None:
+    if nfa is None:
+        dNFA = np.zeros(n)
+        nfi = np.zeros(n)
+    else:
         NFA = np.asarray(nfa, float)
         dNFA = G_arr[:n] * NFA[1:n + 1] - NFA[:n]
-    else:
-        dNFA = np.zeros(n)
-    resid = C[:n] - (Y[:n] - I_priv - G_sp - I_g - defence - other - dNFA)
-    return resid / Y[:n]
+        r = np.asarray(paths.get('r', np.full(len(Y), economy.r_star
+                                              if getattr(economy, 'r_star', None)
+                                              else 0.04)), float)
+        nfi = r[:n] * NFA[:n]
+
+    closed = C[:n] - (Y[:n] - I_priv - spend - I_g - dNFA)
+    return {'closed': closed / Y[:n], 'open': (closed - nfi) / Y[:n]}
 
 
 # ---------------------------------------------------------------- figures ---
@@ -534,12 +557,16 @@ def main():
         # quantities that carry the same denominator, so a mismatch divides out.
         res = goods_market_residual(paths, L['config_data'], economy, T_TR)
         if res is not None:
-            worst = float(np.max(np.abs(res)))
-            print(f'  goods-market residual: max |C - (Y - I_priv - G - I_g '
-                  f'- dNFA)| / Y = {worst:.2e}')
-            if worst > 1e-3:
-                print('  WARNING: the resource constraint does not hold; a term '
-                      'is on a different scale or is missing')
+            wc = float(np.max(np.abs(res['closed'])))
+            wo = float(np.max(np.abs(res['open'])))
+            print(f'  goods market, share of output: closed form {wc:.4f}, '
+                  f'open form (with net factor income) {wo:.4f}')
+            # The open form should sit at the scale of the unmodelled bequest
+            # leak, measured at 0.02-0.04 of output. Well above that means a
+            # term is missing or on a different scale.
+            if wo > 0.08:
+                print('  WARNING: the open-economy resource constraint is off by '
+                      'more than the known bequest leak explains')
 
     stats = None
     live = None
