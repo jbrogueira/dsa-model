@@ -2,6 +2,26 @@
 
 Overlapping Generations Economy with heterogeneous agents, incomplete markets, and equilibrium prices. Application: Greek fiscal transition (debt sustainability under G / I_g shocks).
 
+## What solves what
+
+One file solves the household problem. Everything else decides what each household is told it faces, and how the answers are added up.
+
+| file | what it does |
+|---|---|
+| `code/lifecycle_perfect_foresight.py` | **the solver.** One household's whole life: consumption, saving, hours, retirement. NumPy/numba |
+| `code/lifecycle_jax.py` | the same solver, rewritten in JAX. Cross-checked against the first to 1e-14 |
+| `code/calibrate.py` | calls the solver **3 times** — one household per education group. Simulates, averages, compares to data, adjusts five parameters, repeats |
+| `code/olg_transition.py` | calls the solver **720 times** — one household per education group per birth year. Simulates each, adds them up year by year |
+| `code/fiscal_experiments.py` | calls the transition twice, baseline and counterfactual, and hunts for the tax rate that hits a debt target |
+| `code/reports/fill_report.py` | calls nothing new; reads the above into the two-page calibration report |
+
+No agent solves a different problem — there is one problem, in one place. Two things differ between the callers:
+
+1. **What each household is told it faces.** The calibration gives all three households one survival table and constant prices. The transition gives each of the 720 the survival table its birth year actually lived, plus wage and interest paths.
+2. **How results are added up.** The calibration averages over those *still alive* at each age, then weights ages by their share of the living. The transition averages over *everyone ever born* into a cohort, counting the dead as zero, then weights cohorts by their size at entry. Both are correct and agree — but only if the survival in the weights is exactly the survival in the simulation, and no shared code enforces that.
+
+So there are two independent routes to "the 2023 cross-section", and a mistake in either shows up as a level difference rather than a crash. See `code/docs/TREND_GROWTH_PLAN.md` Step 0.
+
 ---
 
 ## Current status (handoff 2026-09-21)
