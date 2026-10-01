@@ -73,6 +73,10 @@ def params_table(cfg):
         ('$r_B$', 'sovereign rate', pri.get('r_B'), 'implicit rate 2012--24'),
         ('$\\tau_c,\\tau_l,\\tau_k$', 'consumption, labour, capital tax rates',
          ext.get('tau_c'), 'effective rates'),
+        ('$b_{min}$', 'minimum pension floor', ext.get('pension_min_floor'),
+         'national pension, L.4387/2016'),
+        ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
+         'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
         ('$T$, $J_R$', 'lifespan, retirement age', mod.get('T'), ''),
     ]
     rows_cal = [

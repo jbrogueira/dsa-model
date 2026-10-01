@@ -5,7 +5,8 @@
 \usepackage[margin=1.9cm,top=1.6cm,bottom=1.6cm]{geometry}
 \renewcommand{\topfraction}{.95}\renewcommand{\bottomfraction}{.95}
 \renewcommand{\textfraction}{.05}\renewcommand{\floatpagefraction}{.9}
-\usepackage{booktabs,graphicx,amsmath,amstext,siunitx}
+\usepackage{booktabs,graphicx,amsmath,amstext,siunitx,textcomp}
+\newcommand{\EUR}[1]{\texteuro#1}
 \usepackage[labelfont=bf,font=small,skip=4pt]{caption}
 
 \sisetup{table-align-text-post=false}
@@ -41,6 +42,22 @@ detrended per-capita quantity $\hat x_t=X_t/(Z_tN_t)$, constant along the
 balanced growth path while levels grow at $\Gamma-1$ and per-capita terms at
 $g$; $A$ is set so $\hat y=1$, which makes ratios to output readable as
 levels. Parameters are annual.
+
+\vspace{2pt}
+\noindent\footnotesize
+Data sources for the externally set block, where the mapping is not a direct
+read: $K_g/Y$ is the IMF ICSD stock of 2019 rolled to 2023 by perpetual
+inventory on national-accounts public investment and real GDP
+(\texttt{build\_public\_capital\_GR.py}); $\delta_g$ is estimated from the
+ICSD stock itself over 2000--2019 and cross-checked against
+$I_g/K_g-(\Gamma_0-1)$, the two agreeing to 0.001; $r_B$ is the implicit rate
+on the debt stock averaged over 2012--24; $b_{min}$ is the Greek national
+pension of \EUR{413.76} a month as indexed from January 2023, over output per
+living person aged 25--84 --- \EUR{224.7}bn of nominal GDP (Eurostat
+\texttt{nama\_10\_gdp}) over 7{,}559{,}564 people, so \EUR{29{,}722} each
+(\texttt{build\_pension\_floor\_GR.py}). Eurostat publishes aggregate pension
+expenditure, not statutory amounts, so that figure is from the legislation and
+the 2024 Ageing Report country fiche.
 
 \vspace{0.1cm}
 \begin{table}[!htbp]\centering\footnotesize
