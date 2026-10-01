@@ -11,7 +11,10 @@ of the production figures.
 Why this is not a machine-precision check
 -----------------------------------------
 The two backends use different PRNGs (NumPy MT19937 vs JAX ThreeFry) at the
-same seed.  The *solved policy functions* match to ~1e-14, but the *simulated
+same seed.  Policy functions ARE compared here (added 2026-10-01): until then
+this file asserted they "match to ~1e-14" without ever evaluating it, and the
+claim was false -- a pension-base bug in the JAX solve put them 1e-3 apart in V
+and 13 absolute in c_policy. The *simulated
 aggregates* differ by Monte-Carlo sampling noise, which falls as 1/sqrt(n_sim).
 `simulate_transition` exposes no seed argument (seed fixed at 42 internally), so
 we cannot average over seeds.  Instead we run at two n_sim values and check
@@ -89,8 +92,12 @@ def _run_baseline(config_data, backend, n_sim):
     # matching run_fiscal_figures' warmup call.
     prod = config_data.get('production', {})
     eta_g = float(prod.get('eta_g', 0.0))
-    I_g_level = np.full(T_tr, (prod.get('delta_g', 0.0)
-                               + economy.growth_factor - 1.0) * prod.get('K_g', 0.0))
+    # (delta_g + Gamma_t - 1) * K_g, the same path run_fiscal_figures uses. This
+    # used the scalar economy.growth_factor, which with the live config is 8.9%
+    # more public investment than the production baseline -- so the script was
+    # validating the backends on an economy the paper does not run.
+    I_g_level = ((prod.get('delta_g', 0.0)
+                  + economy.growth_factors(T_tr) - 1.0) * prod.get('K_g', 0.0))
 
     # Spending shares of Y(t): backend-independent budget arithmetic, but include
     # them so the primary-deficit comparison is meaningful.
@@ -122,6 +129,46 @@ def _run_baseline(config_data, backend, n_sim):
     budget = economy.compute_government_budget_path(n_sim=n_sim, verbose=False)
     elapsed = time.perf_counter() - t0
     return macro, budget, elapsed, device
+
+
+def _compare_policies(config_data, n_cohorts=3):
+    """Compare the SOLVED policies across backends, before any simulation.
+
+    Aggregates alone cannot separate a solver discrepancy from Monte Carlo
+    noise, and both backends share the aggregation code, so a weighting bug is
+    invisible here by construction. Policies are deterministic: any difference
+    is the solver. This was missing until 2026-10-01, which is how a pension-base
+    bug in the JAX solve survived -- it put V 1e-3 apart in relative terms while
+    this script asserted 1e-14 agreement in its docstring and never measured it.
+    """
+    import numpy as _np
+    from calibrate import build_olg_transition
+    print("\n--- solved policies (deterministic; any gap is the solver) ---")
+    out = {}
+    for backend in ('numpy', 'jax'):
+        economy, tp, T_tr = build_olg_transition(config_data, backend=backend)
+        economy.T_transition = min(int(T_tr), 2)
+        economy.solve_cohort_problems(
+            r_path=_np.asarray(tp['r_path'])[:economy.T_transition],
+            w_path=None, verbose=False)
+        edu = sorted(economy.birth_cohort_solutions)[0]
+        models = economy.birth_cohort_solutions[edu]
+        bps = sorted(models)[-n_cohorts:]
+        out[backend] = {b: _np.asarray(models[b].c_policy) for b in bps}
+    bps = sorted(set(out['numpy']) & set(out['jax']))
+    worst = 0.0
+    for b in bps:
+        a, c = out['numpy'][b], out['jax'][b]
+        rel = float(_np.max(_np.abs(a - c))) / max(float(_np.max(_np.abs(a))), 1e-12)
+        worst = max(worst, rel)
+        print(f"  cohort {b:>4}  max rel |Δc_policy| = {rel:.3e}")
+    verdict = "OK" if worst < 1e-9 else "SOLVER DISCREPANCY"
+    print(f"  worst over {len(bps)} cohorts: {worst:.3e}   {verdict}")
+    if worst >= 1e-9:
+        print("  The backends do not solve the same problem. Fix this before "
+              "reading anything below: aggregate agreement cannot be "
+              "interpreted when the policies differ.")
+    return worst
 
 
 def _compare(macro_np, budget_np, macro_jx, budget_jx):
@@ -180,6 +227,8 @@ def main():
     print("=" * 70)
     print("Backend equivalence: NumPy vs JAX  (baseline transition kernel)")
     print("=" * 70)
+
+    _compare_policies(config_data)
 
     reldiff_by_n = {}   # n_sim -> {path: reldiff}
     for n_sim in n_levels:

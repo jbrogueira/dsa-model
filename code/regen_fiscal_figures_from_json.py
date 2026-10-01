@@ -182,8 +182,20 @@ def regen(json_path, output_dir, shocks=None, r_b=None):
     # Gamma = (1+g)(1+n) from the run's own params, so the recomputed current
     # account matches the recursion the run used.
     _p = data.get('params', {}) or {}
-    growth_factor = ((1.0 + float(_p.get('trend_growth') or 0.0))
-                     * (1.0 + float(_p.get('pop_growth') or 0.0)))
+    # Prefer the Gamma_t path the run actually used; pop_growth is the
+    # TERMINAL rate since Step 0, so rebuilding a scalar from it gives
+    # 1.017 where the run used 1.005-1.012 early on -- an error the same
+    # order as the current account it is used to recompute.
+    _gfp = _p.get('growth_factor_path')
+    if _gfp:
+        growth_factor = np.asarray(_gfp, dtype=float)
+    else:
+        growth_factor = ((1.0 + float(_p.get('trend_growth') or 0.0))
+                         * (1.0 + float(_p.get('pop_growth') or 0.0)))
+        print('  note: no growth_factor_path in params; rebuilding a '
+              'scalar Gamma from trend_growth and pop_growth. For a run '
+              'with time-varying demography that is wrong early in the '
+              'path.')
 
     shock_keys = [k for k in data if k != 'params']
     if shocks:
@@ -246,8 +258,20 @@ def regen_budget_components(json_path, output_dir, shock, scenario):
     entry = data[shock][scenario]
     label = SCENARIO_LABELS.get(scenario, scenario).format(shock=shock)
     _p = data.get('params', {}) or {}
-    growth_factor = ((1.0 + float(_p.get('trend_growth') or 0.0))
-                     * (1.0 + float(_p.get('pop_growth') or 0.0)))
+    # Prefer the Gamma_t path the run actually used; pop_growth is the
+    # TERMINAL rate since Step 0, so rebuilding a scalar from it gives
+    # 1.017 where the run used 1.005-1.012 early on -- an error the same
+    # order as the current account it is used to recompute.
+    _gfp = _p.get('growth_factor_path')
+    if _gfp:
+        growth_factor = np.asarray(_gfp, dtype=float)
+    else:
+        growth_factor = ((1.0 + float(_p.get('trend_growth') or 0.0))
+                         * (1.0 + float(_p.get('pop_growth') or 0.0)))
+        print('  note: no growth_factor_path in params; rebuilding a '
+              'scalar Gamma from trend_growth and pop_growth. For a run '
+              'with time-varying demography that is wrong early in the '
+              'path.')
     result = _rebuild_result(entry, label, growth_factor=growth_factor)
     print(f"[{shock}/{scenario}] budget-components chart from {json_path} -> {output_dir}")
     budget_components_chart(result,

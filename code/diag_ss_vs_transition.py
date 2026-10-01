@@ -85,17 +85,25 @@ G_over_Y = paths.get('G_over_Y', 0.13)
 I_g_over_Y = paths.get('I_g_over_Y', 0.03)
 defense_over_Y = paths.get('defense_over_Y', 0.0)
 other_over_Y = paths.get('other_net_spending_over_Y', 0.0)
-G_path = np.full(T_TR, G_over_Y * meanY)
-I_g_path = np.full(T_TR, I_g_over_Y * meanY)
-defense_path = np.full(T_TR, defense_over_Y * meanY)
-other_path = np.full(T_TR, other_over_Y * meanY)
-print(f"warmup mean(Y) = {meanY:.5f}; G/Y={G_over_Y} I_g/Y={I_g_over_Y} "
-      f"def/Y={defense_over_Y} other/Y={other_over_Y}")
+# Exactly the production baseline's convention (run_fiscal_figures config
+# branch): G, defence and other are passed as RATIOS, so the budget multiplies
+# each by the run's own realised Y_path[t]; I_g is passed as the LEVEL that
+# holds K_g flat, because eta_g != 0 makes ratio mode a fixed point.
+#
+# This script previously set all four to constant levels ratio x mean(Y) over
+# the whole path. That gave 11% less public investment than the baseline and,
+# with eta_g = 0.05, a different K_g, w, Y and every ratio -- so the comparison
+# below was against an economy the paper does not run.
+I_g_path = ((prod.get('delta_g', 0.05)
+             + economy.growth_factors(T_TR) - 1.0) * prod.get('K_g', 0.0))
+print(f"spending: G/Y={G_over_Y} def/Y={defense_over_Y} other/Y={other_over_Y} "
+      f"(ratios of realised Y); I_g level {float(np.mean(I_g_path)):.6f}")
 
 print(f"baseline no-shock sim (n_sim={N_SIM}, backend={BACKEND}) ...")
 res = economy.simulate_transition(
-    r_path=r_path, govt_spending_path=G_path, I_g_path=I_g_path,
-    defense_spending_path=defense_path, other_net_spending_path=other_path,
+    r_path=r_path, I_g_path=I_g_path,
+    G_over_Y=G_over_Y, defense_over_Y=defense_over_Y,
+    other_net_over_Y=other_over_Y,
     n_sim=N_SIM, verbose=False, **tax_paths)
 Yp = np.asarray(res['Y'])
 budget = economy.compute_government_budget_path(n_sim=N_SIM, verbose=False)
