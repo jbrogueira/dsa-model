@@ -1015,6 +1015,45 @@ def _demography_path(raw):
     return path
 
 
+def base_year_cohort_survival(raw, T):
+    """Survival schedules of the cohorts alive in the base year, by model age.
+
+    Returns (T, T) with row j the schedule the cohort aged 25+j in the base
+    year faces over its whole life: `px[base - j + a, a]` at model age a, so
+    historical life tables for the ages it has already passed and projected
+    ones for those ahead. Row 0 is the cohort entering at t = 0.
+
+    This is the object the base-year equilibrium needs in order to face the
+    same mortality as the transition's t = 0 cross-section. A single vector
+    cannot: the sixty cohorts differ by up to 0.47 in the probability of
+    reaching 84, which moves hours and pensions/Y by a few percent.
+
+    None when no demographic path is configured.
+    """
+    path = _demography_path(raw)
+    if path is None:
+        return None
+    d = np.load(path)
+    years = np.asarray(d['years'], dtype=int)
+    px = np.asarray(d['px'], dtype=float)
+    base = int(d['base_year'])
+    if px.shape[1] != T:
+        print(f"  [base_year_cohort_survival] demography age dim {px.shape[1]} "
+              f"!= model T {T}; skipping cohort survival.")
+        return None
+    lo, hi = int(years[0]), int(years[-1])
+    out = np.empty((T, T))
+    for j in range(T):
+        entry = base - j                      # year this cohort reached age 25
+        if entry < lo:
+            raise ValueError(
+                f"demography starts in {lo} but the cohort aged {25 + j} in "
+                f"{base} entered in {entry}")
+        rows = np.searchsorted(years, np.clip(entry + np.arange(T), lo, hi))
+        out[j] = px[rows, np.arange(T)]
+    return out
+
+
 def base_year_age_weights(raw, T):
     """Share of the living population at each model age in the base year.
 

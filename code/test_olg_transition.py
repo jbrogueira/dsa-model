@@ -2643,6 +2643,38 @@ class TestDemographicPath:
                                        economy._cohort_weights(T_tr - 1),
                                        rtol=0, atol=1e-14)
 
+    def test_base_year_cohort_survival_matches_the_transition_diagonals(self, built):
+        """The calibration's cohort schedules must be the transition's own.
+
+        base_year_cohort_survival is what lets the base-year equilibrium face
+        the same mortality as the transition's t=0 cross-section. It is
+        re-derived here straight from the sidecar, independently of the
+        function, so an indexing slip in either shows up as a mismatch.
+        """
+        from calibrate import base_year_cohort_survival
+        economy, _, demog, _ = built
+        T = economy.T
+        S = base_year_cohort_survival(
+            __import__('json').load(open(self.CONFIG)), T)
+        assert S is not None and S.shape == (T, T)
+
+        years = list(np.asarray(demog['years'], dtype=int))
+        px = np.asarray(demog['px'], dtype=float)
+        base = int(demog['base_year'])
+        for j in (0, T // 3, T // 2, T - 1):
+            entry = base - j
+            want = np.array([px[years.index(entry + a), a] for a in range(T)])
+            np.testing.assert_allclose(
+                S[j], want, rtol=0, atol=0,
+                err_msg=f'cohort aged {25 + j} in {base}: schedule mismatch')
+
+        # Each cohort alive at t=0 must also face what the transition gives it.
+        for j in (0, T // 2, T - 1):
+            sched = np.mean(economy._cohort_survival_schedule(-j), axis=1)
+            np.testing.assert_allclose(
+                S[j], sched, rtol=1e-12, atol=0,
+                err_msg=f'cohort aged {25 + j} differs from the transition')
+
     def test_gamma_path_is_used_by_the_stock_recursions(self, built):
         economy, T_tr, _, _ = built
         G = economy.growth_factors(T_tr)
