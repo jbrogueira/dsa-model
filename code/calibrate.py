@@ -721,6 +721,28 @@ MOMENT_DISPATCH = {
 }
 
 
+def theta_from_config(raw, spec, verbose=True):
+    """Parameter vector from _derived.theta, falling back to each param's initial.
+
+    _derived.theta holds only the parameters the last SMM run fitted, so adding a
+    parameter to calibration.params breaks every caller that indexes it directly
+    until a calibration has run. This fills the gaps from `initial` and says
+    which, rather than raising a KeyError far from the cause.
+    """
+    th = raw.get('_derived', {}).get('theta', {})
+    out, missing = [], []
+    for p in spec.params:
+        if p.name in th:
+            out.append(float(th[p.name]))
+        else:
+            out.append(float(p.initial))
+            missing.append(p.name)
+    if missing and verbose:
+        print(f"  [theta_from_config] not in _derived.theta, using initial: "
+              f"{', '.join(missing)} (run the SMM to fit them)")
+    return np.array(out, dtype=float)
+
+
 def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
                             survival=None, seed_per_cohort=True, verbose=False):
     """Panels whose row j is the cohort aged 25+j in the base year, at age j.

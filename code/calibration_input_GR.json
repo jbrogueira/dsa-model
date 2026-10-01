@@ -324,6 +324,13 @@
         "lower": 0.01,
         "upper": 0.2,
         "initial": 0.09028620099498698
+      },
+      {
+        "name": "ui_replacement_rate",
+        "path": "ui_replacement_rate",
+        "lower": 0.01,
+        "upper": 0.3,
+        "initial": 0.0945
       }
     ],
     "targets": [
@@ -356,6 +363,12 @@
         "value": 0.054,
         "weight": 342.94,
         "compute_key": "health_gov_over_Y"
+      },
+      {
+        "name": "ui_over_Y",
+        "value": 0.006,
+        "weight": 27777.778,
+        "compute_key": "ui_over_Y"
       }
     ],
     "base_year_cohorts": true

@@ -2301,7 +2301,11 @@ class OLGTransition:
         S_pens = np.zeros(self.T_transition + 1)
         S_pens[0] = self.S_pens_initial
         for t in range(self.T_transition):
-            r_t = float(self.r_path[t]) if self.r_path is not None else 0.0
+            # The fund holds government liabilities, so it accrues at the
+            # sovereign rate, not the return on capital. It used r_path (4%)
+            # against r_B (1.9%) until 2026-10-01.
+            r_t = (float(self.r_B_path[t]) if getattr(self, 'r_B_path', None) is not None
+                   else (float(self.r_path[t]) if self.r_path is not None else 0.0))
             # Per-capita detrended stock: divide the whole right-hand side by
             # Gamma_t = (1+g)(1+n_t).
             S_pens[t + 1] = ((1 + r_t) * S_pens[t] + budget_path['tax_p'][t]

@@ -46,7 +46,8 @@ cfg_ss = loaded['config_data']
 spec.n_sim = N_SIM
 spec.backend = BACKEND
 theta_dict = config_data['_derived']['theta']
-theta = np.array([theta_dict[p.name] for p in spec.params])
+from calibrate import theta_from_config
+theta = theta_from_config(config_data, spec)
 print("theta:", {p.name: float(v) for p, v in zip(spec.params, theta)})
 
 m_model, panels = run_model_moments(theta, spec, return_panels=True)

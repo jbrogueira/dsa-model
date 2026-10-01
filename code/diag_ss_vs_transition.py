@@ -44,7 +44,8 @@ print("SS K_over_L =", cfg_ss.get('_derived', {}).get('K_over_L'))
 spec.n_sim = N_SIM          # dataclass: assign directly
 spec.backend = BACKEND
 theta_dict = config_data['_derived']['theta']
-theta = np.array([theta_dict[p.name] for p in spec.params])
+from calibrate import theta_from_config
+theta = theta_from_config(config_data, spec)
 print("theta:", {p.name: float(v) for p, v in zip(spec.params, theta)})
 print(f"n_sim={spec.n_sim}, seed={spec.seed}, w={spec.w:.5f}, r={spec.r:.4f}")
 

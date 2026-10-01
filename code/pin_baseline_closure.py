@@ -38,7 +38,8 @@ if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import numpy as np
 
-from calibrate import load_config, run_model_moments, compute_fiscal_ratios
+from calibrate import (load_config, run_model_moments, compute_fiscal_ratios,
+                       _demography_path)
 
 DEFAULT_CONFIG = 'calibration_input_GR.json'
 
@@ -70,7 +71,30 @@ if 'error' in ratios:
 
 fiscal = config_data.get('fiscal', {})
 G_over_Y       = fiscal.get('G_over_Y', 0.0)
-I_g_over_Y     = fiscal.get('I_g_over_Y', 0.0)
+# The transition spends I_g as a LEVEL, (delta_g + Gamma_0 - 1) * K_g, because
+# eta_g != 0 makes ratio mode a fixed point. Subtracting the config's
+# I_g_over_Y here instead would pin the closure against a different number than
+# the budget actually pays: 0.079pp of output at t=0 on the 2026-10-01
+# calibration, widening as output falls through the ageing transition. So use
+# the level the transition will spend, over this routine's own output.
+prod           = loaded['config_data']['production']
+_delta_g       = float(prod.get('delta_g', 0.05))
+_K_g           = float(prod.get('K_g', 0.0))
+_g             = float(loaded['config_data']['external_params'].get('trend_growth', 0.0))
+_n0            = 0.0
+_demog         = _demography_path(loaded['config_data'])
+if _demog is not None:
+    import numpy as _np
+    _d = _np.load(_demog)
+    _i = list(_np.asarray(_d['pop_years'], dtype=int)).index(
+        int(loaded['config_data']['transition'].get('current_year',
+                                                    int(_d['base_year']))))
+    _n0 = float(_np.asarray(_d['n_path'])[_i])
+_Gamma0        = (1.0 + _g) * (1.0 + _n0)
+_I_g_level     = (_delta_g + _Gamma0 - 1.0) * _K_g
+I_g_over_Y     = _I_g_level / float(ratios['Y'])
+print(f"  I_g: level {_I_g_level:.6f} / Y {float(ratios['Y']):.6f} = {I_g_over_Y:.6f}"
+      f"   (config ratio {fiscal.get('I_g_over_Y', 0.0)})")
 defense_over_Y = fiscal.get('defense_over_Y', 0.0)
 target         = fiscal.get('primary_balance_target_over_Y', 0.0195)
 discretionary  = G_over_Y + I_g_over_Y + defense_over_Y

@@ -304,6 +304,15 @@ class LifecycleModelPerfectForesight:
         self.phi = config.phi
         self.trend_growth = float(config.trend_growth)
         self.retirement_window = config.retirement_window
+        if self.retirement_window is not None:
+            raise NotImplementedError(
+                "retirement_window is honoured only by this NumPy solve. The JAX "
+                "solve ignores it entirely, and NEITHER simulation consults it -- "
+                "both retire mechanically at retirement_age (see "
+                "docs/bug_report.md:487), so policies and realised incomes "
+                "disagree even here. Endogenous retirement is intended but not "
+                "implemented; this refuses rather than returning a silently "
+                "inconsistent solution.")
         self.schooling_years = config.schooling_years
         self.child_cost_profile = config.child_cost_profile
         self.education_subsidy_rate = config.education_subsidy_rate

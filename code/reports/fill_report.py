@@ -575,7 +575,8 @@ def main():
         import dataclasses
         L2 = L
         sp = dataclasses.replace(L2['spec'], backend=args.backend, n_sim=args.n_sim)
-        th = np.array([cfg['_derived']['theta'][p.name] for p in sp.params])
+        from calibrate import theta_from_config
+        th = theta_from_config(cfg, sp)
         print(f'implied statistics: solving at n_sim={args.n_sim} ...')
         _, panels = run_model_moments(th, sp, return_panels=True)
         # load_config injects _derived.K_over_L; the raw JSON has it as None,

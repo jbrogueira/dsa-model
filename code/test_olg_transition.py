@@ -1905,121 +1905,33 @@ class TestLaborSupplyJAX:
         assert np.all(results['Y'] > 0), "Y should be positive"
 
 
-class TestEndogenousRetirement:
-    """Tests for Feature #7: Endogenous retirement window."""
+class TestEndogenousRetirementRefused:
+    """retirement_window is intended but not implemented; it must refuse.
 
-    @staticmethod
-    def _base_config(**overrides):
-        defaults = dict(
-            T=12, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
-            retirement_age=10, education_type='medium',
-            pension_replacement_default=0.40, m_good=0.0,
-        )
-        defaults.update(overrides)
-        return LifecycleConfig(**defaults)
+    It was honoured by the NumPy solve alone. The JAX solve ignored it entirely,
+    and NEITHER simulation consulted it -- both retire mechanically at
+    retirement_age, which docs/bug_report.md:487 already recorded -- so policies
+    and realised incomes disagreed even on NumPy while
+    docs/model_vs_implementation.md advertised the feature as working and
+    cross-validated. The tests that exercised it were removed with it on
+    2026-10-01, because they compared two solves of a problem the simulation
+    never solved.
 
-    def test_retirement_window_none_is_noop(self):
-        """retirement_window=None gives same result as default (no window)."""
-        config_default = self._base_config()
-        config_explicit = self._base_config(retirement_window=None)
-        m1 = LifecycleModelPerfectForesight(config_default, verbose=False)
-        m1.solve(verbose=False)
-        m2 = LifecycleModelPerfectForesight(config_explicit, verbose=False)
-        m2.solve(verbose=False)
-        assert np.allclose(m1.V, m2.V), "retirement_window=None should match default"
+    Endogenous retirement is wanted later. Until the JAX solve and both
+    simulations honour the window, constructing a model with one raises.
+    """
 
-    def test_retirement_window_changes_value_function(self):
-        """retirement_window=(6,10) should differ from fixed retirement at age 10."""
-        config_fixed = self._base_config()
-        config_window = self._base_config(retirement_window=(6, 10))
-        m_fixed = LifecycleModelPerfectForesight(config_fixed, verbose=False)
-        m_fixed.solve(verbose=False)
-        m_window = LifecycleModelPerfectForesight(config_window, verbose=False)
-        m_window.solve(verbose=False)
-        V_diff = np.max(np.abs(m_fixed.V - m_window.V))
-        assert V_diff > 1e-8, \
-            f"retirement_window should change value function (max diff = {V_diff:.2e})"
+    def test_setting_a_window_raises(self):
+        from lifecycle_perfect_foresight import LifecycleModelPerfectForesight
+        cfg = get_test_config()._replace(retirement_window=(6, 10))
+        with pytest.raises(NotImplementedError, match='retirement_window'):
+            LifecycleModelPerfectForesight(cfg, verbose=False)
 
-    def test_early_retirement_possible_via_value_function(self):
-        """With retirement window, value function differs from fixed retirement at middle ages."""
-        # Early retirement is available but simulation only tracks mandatory retirement;
-        # confirm that the solve correctly creates different value functions in the window.
-        config_fixed = self._base_config()
-        config_window = self._base_config(retirement_window=(6, 10))
+    def test_no_window_is_unaffected(self):
+        from lifecycle_perfect_foresight import LifecycleModelPerfectForesight
+        m = LifecycleModelPerfectForesight(get_test_config(), verbose=False)
+        assert m.retirement_window is None
 
-        m_fixed = LifecycleModelPerfectForesight(config_fixed, verbose=False)
-        m_fixed.solve(verbose=False)
-        m_window = LifecycleModelPerfectForesight(config_window, verbose=False)
-        m_window.solve(verbose=False)
-
-        # Value function in the window (ages 6-9) should differ from mandatory retirement
-        V_window_ages = m_window.V[6:10]
-        V_fixed_ages = m_fixed.V[6:10]
-        V_diff = np.max(np.abs(V_window_ages - V_fixed_ages))
-        assert V_diff > 1e-8, \
-            "Value function in retirement window should differ from fixed retirement"
-
-
-class TestEndogenousRetirementJAX:
-    """JAX cross-validation tests for endogenous retirement feature."""
-
-    @staticmethod
-    def _jax_available():
-        try:
-            import jax  # noqa: F401
-            return True
-        except Exception:
-            return False
-
-    @staticmethod
-    def _base_config(**overrides):
-        defaults = dict(
-            T=12, beta=0.96, gamma=2.0, n_a=50, n_y=2, n_h=1,
-            retirement_age=10, education_type='medium',
-            pension_replacement_default=0.40, m_good=0.0,
-        )
-        defaults.update(overrides)
-        return LifecycleConfig(**defaults)
-
-    def test_jax_retirement_window_solve_matches(self):
-        """JAX V matches NumPy within 1e-6 with retirement_window set."""
-        if not self._jax_available():
-            pytest.skip("JAX not available")
-        from lifecycle_jax import LifecycleModelJAX
-
-        config = self._base_config(retirement_window=(6, 10))
-        np_model = LifecycleModelPerfectForesight(config, verbose=False)
-        np_model.solve(verbose=False)
-        jax_model = LifecycleModelJAX(config, verbose=False)
-        jax_model.solve(verbose=False)
-        V_diff = np.max(np.abs(np_model.V - jax_model.V))
-        assert V_diff < 1e-6, f"V mismatch with retirement_window: max diff = {V_diff:.2e}"
-
-    def test_jax_retirement_window_distributional(self):
-        """Simulation distributions match within 3 SE."""
-        if not self._jax_available():
-            pytest.skip("JAX not available")
-        from lifecycle_jax import LifecycleModelJAX
-
-        config = self._base_config(retirement_window=(6, 10))
-        n_sim = 2000
-
-        np_model = LifecycleModelPerfectForesight(config, verbose=False)
-        np_model.solve(verbose=False)
-        np_results = np_model.simulate(n_sim=n_sim, seed=42)
-
-        jax_model = LifecycleModelJAX(config, verbose=False)
-        jax_model.solve(verbose=False)
-        jax_results = jax_model.simulate(n_sim=n_sim, seed=42)
-
-        np_means = np.mean(np_results[0], axis=1)
-        jax_means = np.mean(jax_results[0], axis=1)
-        np_se = np.std(np_results[0], axis=1) / np.sqrt(n_sim)
-        tolerance = 3 * np.maximum(np_se, 1e-6)
-        diff = np.abs(np_means - jax_means)
-        max_excess = np.max(diff / tolerance)
-        assert max_excess < 1.0, \
-            f"Asset distributional mismatch with retirement_window: max |diff|/tol = {max_excess:.2f}"
 
 
 class TestSimulationMortality:
@@ -2872,8 +2784,8 @@ class TestBaseYearCrossSection:
                                    base_config=b._replace(**kw),
                                    education_shares={'medium': 1.0},
                                    cohort_survival=None)
-        theta = np.array([L['config_data']['_derived']['theta'][p.name]
-                          for p in spec.params])
+        from calibrate import theta_from_config
+        theta = theta_from_config(L['config_data'], spec, verbose=False)
         return L['config_data'], spec, theta
 
     def test_shared_schedule_reproduces_the_single_solve_exactly(self):
