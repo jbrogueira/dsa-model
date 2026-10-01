@@ -59,6 +59,20 @@ def build(config_path, baseline_json, backend="numpy"):
 
     # Baseline equilibrium output path (paper's n_sim=2000 run).
     jd = json.load(open(baseline_json))
+    # The analytic level below is per living person. The Y and gov_health read
+    # from this JSON must be on the same convention or the share and the
+    # self-check are both meaningless: runs written before 2026-10-01 divided by
+    # everyone ever entered, 11% smaller at t=0. Refuse rather than warn --
+    # there is no arithmetic that converts one to the other after the fact,
+    # because the living share depends on the demography that run used.
+    conv = jd.get('params', {}).get('aggregation')
+    if conv != 'per_living_person':
+        raise SystemExit(
+            f"{baseline_json} reports aggregation={conv!r}, not "
+            f"'per_living_person'. It predates the normalisation fix, so its Y "
+            f"is on a different scale from the analytic level computed here. "
+            f"Re-run run_fiscal_figures.py and point --baseline-json at the "
+            f"result.")
     shock = "G" if "G" in jd else next(k for k in jd if k != "params")
     base = jd[shock]["debt_financed"]
     Y_json = np.asarray(base["baseline"]["Y"], dtype=float)
@@ -88,7 +102,12 @@ def build(config_path, baseline_json, backend="numpy"):
     rel = np.max(np.abs(gov_level - gh_json[:T_tr]) / np.maximum(gh_json[:T_tr], 1e-12))
     print(f"analytic vs live gov_health level: max rel err = {rel:.2e}")
     if rel > 5e-3:
-        print("  WARNING: analytic health level departs from the live baseline by >0.5%")
+        raise SystemExit(
+            f"analytic health level departs from the live baseline by "
+            f"{rel:.2%} (>0.5%). Previously this warned and wrote the npz "
+            f"anyway, so a wrong coverage term reached the Shapley "
+            f"decomposition silently. Check m_good, kappa and the demography "
+            f"against the run that produced {baseline_json}.")
 
     return dict(
         model_age=np.arange(T), real_age=25 + np.arange(T), a_profile=a,
@@ -102,8 +121,12 @@ def build(config_path, baseline_json, backend="numpy"):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default="calibration_input_GR.json")
-    ap.add_argument("--baseline-json",
-                    default="output/fiscal_test_kg_rB0/fiscal_results.json")
+    # No default: pointing this at a stale run is exactly how the share came to
+    # mix two conventions, and the right run changes with every recalibration.
+    ap.add_argument("--baseline-json", required=True,
+                    help="fiscal_results.json from a run on the CURRENT "
+                         "aggregation convention (params.aggregation must be "
+                         "'per_living_person')")
     ap.add_argument("--out", default="data/health_model_baseline_GR.npz")
     args = ap.parse_args()
 

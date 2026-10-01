@@ -533,6 +533,11 @@ params_out = {
     'delta_Ig_path': [float(x) for x in delta_Ig] if 'Ig' in shock_types else None,
     'r_B':           (float(economy.r_B) if getattr(economy, 'r_B', None) is not None
                       else None),
+    # Which population the aggregates are divided by. Consumers of this JSON
+    # must refuse it if they work on a different convention: before 2026-10-01
+    # the transition divided by everyone ever entered, which is 11% smaller than
+    # per living person at t=0, and nothing recorded the difference.
+    'aggregation':   'per_living_person',
     'trend_growth':  float(getattr(economy, 'trend_growth', 0.0)),
     'pop_growth':    float(economy.pop_growth),
     # Gamma_t over the run's horizon. pop_growth alone no longer pins it when
