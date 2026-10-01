@@ -466,6 +466,14 @@ def main():
                                           n_sim=args.n_sim, verbose=False, **tax)
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
+        # Keep the paths, not just the picture of them. Questions about the
+        # baseline -- why a ratio moves, where output turns -- otherwise cost a
+        # full transition to answer again.
+        np.savez(os.path.join(outdir, 'baseline_paths.npz'),
+                 **{k: v for k, v in paths.items()},
+                 growth_factor=economy.growth_factors(T_TR),
+                 base_year=int(economy.current_year))
+        print('  wrote baseline_paths.npz')
 
     stats = None
     live = None
