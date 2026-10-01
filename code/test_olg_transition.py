@@ -2804,6 +2804,10 @@ class TestCohortBatchedSurvival:
 
         t1, tn = timed(1), timed(16)
         ratio = tn / max(t1, 1e-9)
+        # Record it either way: a measurement reported only when it fails is a
+        # measurement you do not have.
+        print(f'\nbatched solve: 1 cohort {t1:.3f}s, 16 cohorts {tn:.3f}s, '
+              f'ratio {ratio:.2f}x (linear would be 16x)')
         if ratio > 8.0:
             warnings.warn(
                 f'batched solve scales at {ratio:.1f}x for 16x the cohorts '
