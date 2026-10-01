@@ -196,8 +196,14 @@ def compute_budget_jax(
     net_child_cost = (1.0 - education_subsidy_rate) * child_cost_t
     budget = jnp.where(in_schooling, budget - net_child_cost, budget)
 
-    # Feature #15: means-tested transfers (consumption floor)
-    transfer = jnp.maximum(0.0, transfer_floor - budget)
+    # Feature #15: means-tested transfers (consumption floor). Gated on the floor
+    # being positive, as the NumPy solve is: at transfer_floor == 0 the
+    # unconditional form reduces to max(0, -budget), which hands free resources
+    # to any state with a negative budget and silently made the two backends
+    # disagree wherever that happened. Infeasibility belongs to the consumption
+    # clamp, not to a transfer nobody legislated.
+    transfer = jnp.where(transfer_floor > 0.0,
+                         jnp.maximum(0.0, transfer_floor - budget), 0.0)
     budget = budget + transfer
 
     return budget

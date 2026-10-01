@@ -593,6 +593,12 @@ def _apply_shock(scenario: FiscalScenario,
     elif fin == 'pension_replacement':
         cf['pension'] = cf['pension'] + instrument_delta * psi
     elif fin == 'transfer_floor':
+        # NOTE: this financing mode cannot currently be run. A positive
+        # transfer_floor tops up household budgets but is not an outlay in
+        # compute_government_budget, so the transfer is paid by nobody and the
+        # government budget it is supposed to balance omits it. The household
+        # constructor refuses a positive floor for that reason. Booking it needs
+        # the simulation to carry the per-agent transfer so it can be aggregated.
         cf['transfer_floor_delta'] = instrument_delta  # scalar uniform shift
     elif fin == 'debt':
         pass  # no adjustment to any instrument
