@@ -22,7 +22,8 @@ def _get_lifecycle_model_class(backend: str):
 # Suppress RuntimeWarning from numpy
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# Indices into the raw 21-tuple simulation output for the variables needed downstream.
+# Indices into the raw simulation output; both backends return 22-tuples since
+# Phase 8, and _panel_to_age_means accepts 21 or 22 for the variables needed downstream.
 # Order matches the return of _slice_mean_single_age_njit + bequest as 11th element:
 #   a, c, eff_y, tax_c, tax_l, tax_p, tax_k, ui, pension, gov_h, bequest
 _PANEL_MEANS_IDX = (0, 1, 5, 11, 12, 13, 14, 7, 16, 10, 20)
@@ -591,7 +592,8 @@ class OLGTransition:
 
             # Pre-compute per-cohort initial conditions and PRNG keys
             # (replicates LifecycleModelJAX.simulate() setup per cohort)
-            # Cache: keyed by (edu_type, n_sim, seed_base); independent of policy functions.
+            # Cache: keyed by (edu_type, n_sim, seed_base, n_cohorts). Independent of the
+        # policies, but it does depend on the config's initial assets and earnings.
             if not hasattr(self, '_sim_init_cache'):
                 self._sim_init_cache = {}
             _init_key = (edu_type, int(n_sim), int(seed_base), n_cohorts)
@@ -1316,7 +1318,8 @@ class OLGTransition:
             self._solve_cohorts_jax_batched(birth_cohort_solutions, verbose)
 
         # MIT shock stitching for JAX backend (post batch-solve).
-        # Baseline models were built with NumPy during the loop above (and cached).
+        # Baseline models were built during the loop above; on the JAX backend they
+        # are LifecycleModelJAX instances deferred to _solve_cohorts_jax_batched.
         if self.backend == 'jax' and pre_transition_paths is not None:
             for edu_type_jax in self.education_shares.keys():
                 for bp in range(min_birth_period, 0):
@@ -1374,7 +1377,8 @@ class OLGTransition:
         during the transition. This eliminates repeated cohort simulations inside
         per-period aggregation routines.
 
-        Cache key: (n_sim, seed_base).
+        Cache key: (n_sim, seed_base, _policy_version); the cached object is a
+        dict[edu_type][birth_period] of 11-tuples of per-age MEAN arrays, not panels.
         Cached object: dict[edu_type][birth_period] -> tuple of simulation arrays.
         """
         if n_sim is None:

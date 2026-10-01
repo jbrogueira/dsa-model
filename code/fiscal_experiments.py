@@ -379,7 +379,7 @@ def _check_terminal_convergence(cf_macro: dict,
     for macro stocks (K, K_g, L, Y, C, A) and fiscal flows
     (total_revenue, total_spending, S_pens).
 
-    NFA is excluded: in an SOE it equals A - K - B, so it drifts whenever B
+    NFA IS tracked, at tol_slow (see below). In an SOE it equals A - K - B, so it drifts whenever B
     is still accumulating even if real variables have converged.
     primary_deficit is excluded: it can be near zero, making relative changes
     numerically meaningless.
@@ -388,7 +388,7 @@ def _check_terminal_convergence(cf_macro: dict,
     because pension funds and the external position converge slowly.
 
     Also checks whether K_g has reached its new steady state:
-    K_g_ss = I_g_terminal / delta_g.  A large K_g_ss_gap means T_transition
+    K_g_ss = I_g_terminal / (delta_g + Gamma_T - 1).  A large K_g_ss_gap means T_transition
     is too short for the public-capital block to have converged.
 
     Parameters

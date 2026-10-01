@@ -284,7 +284,9 @@ class TargetMoment:
     """One empirical target moment."""
     name: str              # identifier
     value: float           # empirical value
-    weight: float = 1.0    # diagonal weight (e.g. 1/variance)
+    weight: float = 1.0    # diagonal weight; the live configs use 1/target**2,
+                           # which makes the objective equal-weighted squared
+                           # RELATIVE deviations, not inverse variances
     compute_key: str = ''  # key into moment computation dispatch
 
 
@@ -1350,7 +1352,7 @@ def build_lifecycle_config(raw, w=None):
 def build_olg_transition(config_data, backend='numpy'):
     """Build an OLGTransition and transition paths from parsed JSON dict.
 
-    Returns (economy, paths) where paths is a dict with r_path, tau paths,
+    Returns (economy, paths, T_tr) where paths is a dict with r_path, tau paths,
     pension_replacement_path, G_path, I_g_path, B_path, etc.
     """
     from olg_transition import OLGTransition
@@ -1479,7 +1481,8 @@ def compute_fiscal_ratios(panels, spec, config_data):
     r = spec.r
     w = spec.w
 
-    # Age weights (T,) — stationary cross-section
+    # Age weights (T,) — the measured base-year living cross-section, not a
+    # stationary one; see base_year_age_weights
     aw = spec.age_weights if spec.age_weights is not None else np.ones(T) / T
 
     # --- Aggregate per-period means across education types ---
