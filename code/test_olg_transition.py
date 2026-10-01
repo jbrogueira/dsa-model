@@ -1867,9 +1867,16 @@ class TestLaborSupplyJAX:
         np_l = np_results[18]
         jax_l = jax_results[18]
 
-        # With labor_supply=False, both should be all 1.0
-        assert np.allclose(np_l, 1.0), "NumPy l_sim should be 1.0"
-        assert np.allclose(jax_l, 1.0), "JAX l_sim should be 1.0"
+        # With labor_supply=False the WORKING ages supply 1.0; retirees supply 0
+        # by design (lifecycle_perfect_foresight sets l_sim = 0 once retired), so
+        # asserting 1.0 everywhere failed in the NumPy reference before JAX was
+        # even compared. Check the working ages, and that both agree everywhere.
+        R = config.retirement_age
+        assert np.allclose(np_l[:R], 1.0), "NumPy l_sim should be 1.0 while working"
+        assert np.allclose(jax_l[:R], 1.0), "JAX l_sim should be 1.0 while working"
+        np.testing.assert_allclose(
+            np_l, jax_l, rtol=0, atol=1e-12,
+            err_msg="the backends disagree on simulated hours")
 
         # Also check distributional match for assets (regression)
         np_means = np.mean(np_results[0], axis=1)

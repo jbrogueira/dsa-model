@@ -1821,6 +1821,16 @@ class OLGTransition:
             # Gamma_t times its per-capita value next period.
             new_borrowing = self._growth_at(t_idx) * B_next - B_t
 
+        if float(getattr(self.lifecycle_config, 'transfer_floor', 0.0) or 0.0) > 0.0:
+            raise NotImplementedError(
+                "transfer_floor tops up household budgets but is not a line in "
+                "total_spending, so the means-tested transfer is paid by nobody -- "
+                "an open circuit alongside accidental bequests, and one that makes "
+                "financing='transfer_floor' balance a budget omitting the transfer "
+                "it finances. Booking it needs the simulation to carry the "
+                "per-agent transfer so it can be aggregated. The household problem "
+                "itself is fine, which is why this refuses here and not there.")
+
         total_spending = (total_ui + total_pension + total_gov_health
                           + G_t + I_g_t + defense_t + other_t)
         total_revenue_with_borrowing = total_revenue + new_borrowing

@@ -298,15 +298,6 @@ class LifecycleModelPerfectForesight:
         self.tax_kappa = config.tax_kappa
         self.tax_eta = config.tax_eta
         self.transfer_floor = config.transfer_floor
-        if self.transfer_floor > 0.0:
-            raise NotImplementedError(
-                "transfer_floor tops up a household's budget but is NOT an outlay "
-                "in compute_government_budget, so the means-tested transfer is "
-                "paid by nobody -- a second open circuit alongside accidental "
-                "bequests. Booking it needs the simulation to carry the transfer "
-                "per agent so it can be aggregated. Until then this refuses rather "
-                "than running an economy whose government budget omits a transfer "
-                "it is paying.")
         self.bequest_lumpsum = config.bequest_lumpsum
         self.labor_supply = config.labor_supply
         self.nu = config.nu
