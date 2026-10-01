@@ -713,6 +713,66 @@ MOMENT_DISPATCH = {
 }
 
 
+def base_year_cross_section(theta, spec, cfg, n_sim=2000, seed=None,
+                            survival=None, verbose=False):
+    """Panels whose row j is the cohort aged 25+j in the base year, at age j.
+
+    The transition's t=0 cross-section mixes sixty cohorts, each having solved
+    its own lifecycle problem against its own survival diagonal; they differ by
+    up to 0.47 in the probability of reaching 84. A single stationary solve
+    cannot represent that, which is why the calibration's moments and the
+    transition's t=0 disagree.
+
+    Each cohort is solved over the full horizon -- backward induction at age j
+    needs every later age, so the solve cannot be truncated -- but simulated
+    only to age j, which is all the base year observes. That is 1,830 cohort
+    periods instead of 3,600.
+
+    *survival* overrides the per-cohort schedules with one (T, n_h) vector for
+    every cohort, which makes the result reproduce the single-solve panel
+    exactly at the same seed; that is the regression test for this plumbing.
+    """
+    config = apply_params(spec.base_config, spec.params, theta)
+    T = config.T
+    S = survival if survival is not None else base_year_cohort_survival(cfg, T)
+    if S is None:
+        raise ValueError('no cohort survival schedules: configure '
+                         'transition.demography_file')
+    S = np.asarray(S, dtype=float)
+    # A (T, n_h) argument is one schedule for every cohort; a (T, T) one is a
+    # schedule per cohort. With n_h == T the two are ambiguous, so the caller's
+    # (T, T) per-cohort form wins only when it cannot be a single vector.
+    shared = survival is not None and S.shape == (T, config.n_h) and config.n_h != T
+    cls = (LifecycleModelJAX if (spec.backend == 'jax' and _JAX_AVAILABLE)
+           else LifecycleModelPerfectForesight)
+    seed = spec.seed if seed is None else seed
+
+    panels = {}
+    for edu_type in spec.education_shares:
+        rows = None
+        for j in range(T):
+            surv_j = S if shared else S[j].reshape(T, config.n_h)
+            cfg_j = config._replace(
+                education_type=edu_type,
+                survival_probs=surv_j,
+                r_path=np.full(T, spec.r),
+                w_path=np.full(T, spec.w),
+            )
+            model = cls(cfg_j, verbose=False)
+            model.solve(verbose=False)
+            panel = wrap_sim_output(model.simulate(T_sim=j + 1, n_sim=n_sim,
+                                                  seed=seed))
+            if rows is None:
+                rows = {f: np.zeros((T, n_sim), dtype=np.asarray(getattr(panel, f)).dtype)
+                        for f in panel._fields}
+            for f in panel._fields:
+                rows[f][j] = np.asarray(getattr(panel, f))[j]
+            if verbose and (j + 1) % 10 == 0:
+                print(f'    {edu_type}: cohort {j + 1}/{T}', flush=True)
+        panels[edu_type] = SimPanel(**rows)
+    return panels
+
+
 def run_model_moments(theta, spec, return_panels=False):
     """Solve + simulate for each education type, compute target moments.
 

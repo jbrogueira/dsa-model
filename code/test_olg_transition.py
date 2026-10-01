@@ -2818,5 +2818,97 @@ class TestCohortBatchedSurvival:
             f'solving them sequentially would suggest -- batching is not working')
 
 
+class TestBaseYearCrossSection:
+    """The cross-section of cohorts that replaces the single stationary solve.
+
+    Row j is the cohort aged 25+j in the base year, observed at age j. Each
+    cohort is solved over its full horizon, because backward induction at age j
+    needs every later age, but simulated only to age j -- 1,830 cohort periods
+    instead of 3,600.
+    """
+
+    CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          'calibration_input_GR.json')
+    T = 12
+
+    def _small(self):
+        """The country config shrunk to something a CPU can solve in seconds.
+
+        Every age-indexed array has to be sliced with T or the config rejects
+        itself, so they are found by shape rather than listed.
+        """
+        import dataclasses
+        from calibrate import load_config
+        if not os.path.exists(self.CONFIG):
+            pytest.skip('country config not present')
+        L = load_config(self.CONFIG)
+        b = L['spec'].base_config
+        kw = {f: getattr(b, f)[:self.T].copy()
+              for f in b.__dataclass_fields__
+              if isinstance(getattr(b, f), np.ndarray)
+              and getattr(b, f).ndim >= 1 and getattr(b, f).shape[0] == b.T}
+        kw.update(T=self.T, n_a=25, n_y=2, n_alpha=1, retirement_age=9)
+        spec = dataclasses.replace(L['spec'], backend='numpy', n_sim=200,
+                                   base_config=b._replace(**kw),
+                                   education_shares={'medium': 1.0})
+        theta = np.array([L['config_data']['_derived']['theta'][p.name]
+                          for p in spec.params])
+        return L['config_data'], spec, theta
+
+    def test_shared_schedule_reproduces_the_single_solve_exactly(self):
+        """With one schedule for every cohort, this must be the old panel.
+
+        Cohort j simulated to age j at the same seed is the single panel's
+        first j+1 rows, so the assembled cross-section has to match row for
+        row with no tolerance at all. Any slip in the assembly, the truncation
+        or the seeding shows up here, and it is the only test that separates
+        plumbing errors from the change in economics.
+        """
+        from calibrate import base_year_cross_section, run_model_moments
+        cfg, spec, theta = self._small()
+        S = np.asarray(spec.base_config.survival_probs, dtype=float).reshape(
+            self.T, spec.base_config.n_h)
+        xs = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                     survival=S)['medium']
+        single = run_model_moments(theta, spec, return_panels=True)[1]['medium']
+        for f in xs._fields:
+            a, b = np.asarray(getattr(xs, f)), np.asarray(getattr(single, f))
+            assert np.array_equal(a, b), (
+                f'{f} differs between the cohort cross-section and the single '
+                f'solve under one shared survival schedule')
+
+    def test_per_cohort_schedules_change_the_cross_section(self):
+        """Per-cohort schedules must move the cross-section.
+
+        Synthetic schedules with a strong calendar gradient, not the real
+        diagonals: the cohorts' actual differences sit in old-age mortality --
+        0.735 against 0.505 over sixty ages, but only 0.0045 over the first
+        twelve -- so a horizon short enough to run on a CPU never reaches where
+        the variation is. This checks that a schedule per cohort reaches the
+        solve, which is the thing that can silently break; whether the real
+        spread matters is a question for the production run, and the measured
+        answer there is +2.6% on hours and -3.1% on pensions/Y.
+        """
+        from calibrate import base_year_cross_section, MOMENT_DISPATCH
+        cfg, spec, theta = self._small()
+        T, n_h = self.T, spec.base_config.n_h
+        shared = np.asarray(spec.base_config.survival_probs,
+                            dtype=float).reshape(T, n_h)
+        per_cohort = np.clip(
+            shared.ravel()[None, :] - np.linspace(0.0, 0.25, T)[:, None], 0.01, 0.999)
+        assert abs(np.prod(per_cohort[0]) - np.prod(per_cohort[-1])) > 1e-2
+
+        a = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                   survival=shared)
+        b = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                   survival=per_cohort)
+        moved = {k: (float(MOMENT_DISPATCH[k](a, spec)),
+                     float(MOMENT_DISPATCH[k](b, spec)))
+                 for k in ('average_hours', 'A_over_Y')}
+        assert any(abs(x - y) > 1e-8 for x, y in moved.values()), (
+            f'per-cohort schedules left the cross-section unchanged ({moved}): '
+            f'the schedules are not reaching the solve')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
