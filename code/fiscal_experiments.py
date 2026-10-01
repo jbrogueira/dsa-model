@@ -326,8 +326,13 @@ def _balance_residual(budget_path: dict,
     cond = scenario.balance_condition
 
     if cond == 'terminal_debt_gdp':
-        # B_path has length T_full+1; index T_bal is the end-of-balance-horizon level
-        B_T = B_path[T_bal]
+        # Date the stock and the flow together. B_path has length T_full+1 and
+        # B_path[t] is the end-of-period-t stock, so the stock contemporaneous
+        # with Y_path[T_bal-1] is B_path[T_bal-1]. Until 2026-10-01 this used
+        # B_path[T_bal] over Y_path[T_bal-1], one period apart, while
+        # terminal_nfa_gdp below paired them correctly -- so the two balance
+        # conditions targeted differently dated ratios.
+        B_T = B_path[T_bal - 1]
         Y_T = float(Y_path[T_bal - 1])
         return float(B_T / Y_T - scenario.target_debt_gdp)
 
@@ -1429,8 +1434,13 @@ def fiscal_multiplier(
     cf: FiscalScenarioResult,
     shock_variable: str = 'G',
     output_variable: str = 'Y',
+    growth_factors=None,
 ) -> np.ndarray:
     """Compute per-period ΔOutput_t / ΔShock_t.
+
+    *growth_factors* is Gamma_t, scalar or path. Supply it for the cumulative
+    statistic to be a ratio of aggregate flows; without it the paths are summed
+    untrended, which over-weights early periods.
 
     Returns array of length T_transition.  Where ΔShock_t = 0 the multiplier
     is set to NaN.
@@ -1455,10 +1465,24 @@ def fiscal_multiplier(
     with np.errstate(divide='ignore', invalid='ignore'):
         mult = np.where(delta_G != 0.0, delta_Y / delta_G, np.nan)
 
-    total_dG = np.sum(delta_G)
+    # Cumulative multiplier. The paths are per-capita detrended, so summing them
+    # directly would weight early periods far too heavily: an aggregate flow at
+    # date t carries prod_{s<t} Gamma_s, which reaches about 9.6 over a 200-period
+    # horizon. Re-trend before summing so the statistic is a ratio of aggregate
+    # cumulative flows, which is what a cumulative multiplier means.
+    gam = growth_factors
+    if gam is None:
+        scale = np.ones(len(delta_Y))
+    else:
+        g_seq = _growth_seq(gam, len(delta_Y))
+        scale = np.concatenate([[1.0], np.cumprod(g_seq[:-1])])
+    total_dG = np.sum(scale * delta_G)
     if total_dG != 0.0:
-        cum = np.sum(delta_Y) / total_dG
-        print(f"Cumulative multiplier Σ(Δ{output_variable}) / Σ(Δ{shock_variable}) = {cum:.4f}")
+        cum = np.sum(scale * delta_Y) / total_dG
+        flat = (np.sum(delta_Y) / np.sum(delta_G)
+                if np.sum(delta_G) != 0.0 else float('nan'))
+        print(f"Cumulative multiplier Σ(Δ{output_variable}) / Σ(Δ{shock_variable}) "
+              f"= {cum:.4f}   (untrended, as reported before 2026-10-01: {flat:.4f})")
 
     return mult
 

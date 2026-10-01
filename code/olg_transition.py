@@ -425,7 +425,12 @@ class OLGTransition:
             self._birth_sim_cache = {}
 
         seed = self._seed_u32(seed)
-        key = (edu_type, int(birth_period), n_sim, seed)
+        # Keyed by _policy_version: without it a re-solve inside one
+        # simulate_transition call -- which is what the bequest fixed point does --
+        # is served the previous policy's panels, so iteration 2 reports a
+        # bit-exact zero change and the loop "converges" after one step.
+        key = (edu_type, int(birth_period), n_sim, seed,
+               getattr(self, '_policy_version', 0))
         if key in self._birth_sim_cache:
             return self._birth_sim_cache[key]
 
@@ -803,7 +808,8 @@ class OLGTransition:
                     b = birth_periods[ci]
                     panel = tuple(np.asarray(arr[ci_local]) for arr in chunk_results)
                     panels[edu_type][int(b)] = panel
-                    cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci])
+                    cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci],
+                                 getattr(self, '_policy_version', 0))
                     self._birth_sim_cache[cache_key] = panel
 
         return panels
@@ -1566,7 +1572,10 @@ class OLGTransition:
         t = int(t)
         seed_base = 42
         n_sim = int(n_sim)
-        key = (t, n_sim, int(seed_base))
+        # Same policy-version key as the writer in _compute_all_cross_sections:
+        # a re-solve within one simulate_transition must not be served the
+        # previous policy's cross-sections.
+        key = (t, n_sim, int(seed_base), getattr(self, '_policy_version', 0))
 
         if key in self._period_cache:
             return self._period_cache[key]
@@ -1763,7 +1772,7 @@ class OLGTransition:
         education_shares_array = np.array([self.education_shares[e] for e in education_types], dtype=float)
         for t in range(T_tr):
             cohort_sizes_t = self._aggregation_weights(t)
-            cache_key = (t, n_sim, seed_base)
+            cache_key = (t, n_sim, seed_base, getattr(self, '_policy_version', 0))
             self._period_cache[cache_key] = {
                 "education_types": education_types,
                 "education_shares_array": education_shares_array,

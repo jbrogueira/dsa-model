@@ -435,7 +435,8 @@ for shock_type, (res_base, res_debt, res_taul, res_nfa, (label_debt, label_taul,
           f"final B/Y = {res_nfa.B_gdp_path[-1]*100:.1f}%  ({res_nfa.adjustment_label})")
 
     shock_var = 'govt_spending' if shock_type == 'G' else 'public_investment'
-    mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var)
+    mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var,
+                             growth_factors=economy.growth_factors(T_TR))
     print(f"  [{shock_type}] Fiscal multiplier ({shock_type} shock, debt): {np.nanmean(mult):.3f}")
 
     compare_scenarios(res_base, res_debt, res_taul, res_nfa,
@@ -506,7 +507,8 @@ def _result_to_dict(res):
 results_out = {}
 for shock_type, (res_base, res_debt, res_taul, res_nfa, (label_debt, label_taul, label_nfa)) in experiment_results.items():
     shock_var = 'govt_spending' if shock_type == 'G' else 'public_investment'
-    mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var)
+    mult = fiscal_multiplier(res_base, res_debt, shock_variable=shock_var,
+                             growth_factors=economy.growth_factors(T_TR))
     results_out[shock_type] = {
         'baseline': _result_to_dict(res_base),
         'debt_financed': _result_to_dict(res_debt),
