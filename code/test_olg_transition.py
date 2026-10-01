@@ -2656,5 +2656,131 @@ class TestDemographicPath:
         assert economy._growth_at(T_tr + 5) == pytest.approx(float(G[-1]))
 
 
+class TestCohortBatchedSurvival:
+    """Per-cohort survival inside the batched solve.
+
+    The calibration is to be rebuilt on the transition's own batched cohort
+    solve, so that the base-year cross-section and the transition's t=0 come
+    from one code path rather than two that can drift. Three things have to
+    hold for that and none is checked elsewhere: distinct schedules must reach
+    the solve and produce distinct policies; a cohort solved inside the batch
+    must match the same cohort solved alone; and the batch must not cost its
+    cohort count in wall-clock, or an SMM inner loop cannot afford it.
+
+    The first two fail hard. The third warns, because it is a property of the
+    machine and is informative rather than wrong.
+    """
+
+    YEARS = np.arange(1900, 2101)
+
+    @classmethod
+    def _survival_table(cls):
+        """Synthetic px[year, age] improving strongly with calendar year.
+
+        Exaggerated relative to real life tables so that a schedule failing to
+        reach the solve is unmistakable rather than lost in rounding.
+        """
+        T = get_test_config().T
+        base = np.linspace(0.97, 0.80, T)
+        gain = np.linspace(0.0, 0.18, len(cls.YEARS))[:, None]
+        return cls.YEARS, np.clip(base[None, :] + gain, 0.0, 0.999)
+
+    def _economy(self, backend='jax', birth_year=1960, current_year=2023):
+        yrs, px = self._survival_table()
+        return OLGTransition(lifecycle_config=get_test_config(),
+                             education_shares={'medium': 1.0},
+                             survival_table=(yrs, px),
+                             birth_year=birth_year, current_year=current_year,
+                             backend=backend)
+
+    def _solved(self, backend='jax'):
+        olg = self._economy(backend)
+        T_tr = 4
+        r_path = np.full(T_tr, 0.04)
+        olg.T_transition = T_tr
+        olg.solve_cohort_problems(r_path=r_path,
+                                  w_path=np.full(T_tr, 1.0), verbose=False)
+        return olg
+
+    def test_distinct_survival_gives_distinct_policies(self):
+        """Cohorts facing different mortality must not share a policy.
+
+        If the schedule were broadcast rather than stacked per cohort, every
+        cohort would solve the same problem and this is the only test that
+        would notice.
+        """
+        olg = self._solved()
+        models = olg.birth_cohort_solutions['medium']
+        bps = sorted(models)
+        young, old = models[bps[-1]], models[bps[0]]
+        surv_gap = abs(float(np.prod(np.mean(young.survival_probs, axis=1)))
+                       - float(np.prod(np.mean(old.survival_probs, axis=1))))
+        assert surv_gap > 1e-3, \
+            f'fixture gives the two cohorts near-identical survival ({surv_gap:.2e})'
+        c_gap = float(np.max(np.abs(np.asarray(young.c_policy)
+                                    - np.asarray(old.c_policy))))
+        assert c_gap > 1e-6, (
+            'cohorts with different survival solved to the same consumption '
+            'policy: the per-cohort schedule is not reaching the batched solve')
+
+    def test_cohort_in_batch_matches_cohort_alone(self):
+        """A cohort's policy must not depend on who it was batched with."""
+        olg = self._solved()
+        models = olg.birth_cohort_solutions['medium']
+        bp = sorted(models)[len(models) // 2]
+        batched = models[bp]
+        cls = type(batched)
+        alone = cls(batched.config, verbose=False)
+        alone.solve(verbose=False)
+        for field in ('c_policy', 'a_policy'):
+            b = np.asarray(getattr(batched, field))
+            a = np.asarray(getattr(alone, field))
+            assert b.shape == a.shape, f'{field} shape {b.shape} vs {a.shape}'
+            np.testing.assert_allclose(
+                b, a, rtol=1e-10, atol=1e-10,
+                err_msg=f'{field} differs between the batched and standalone solve')
+
+    def test_batched_cost_is_sublinear_in_cohorts(self):
+        """Warn if batching costs its cohort count rather than a small multiple.
+
+        Backward induction is a sequential scan over T, so batching widens each
+        step instead of lengthening the scan; on a GPU the narrow version
+        underuses the device and the extra cohorts should be largely absorbed.
+        If the ratio approaches the cohort count the device was already
+        saturated and a cohort-batched SMM inner loop is not affordable.
+        """
+        import time
+        import warnings
+        try:
+            import jax
+        except ImportError:
+            pytest.skip('jax not installed')
+        if not any(d.platform == 'gpu' for d in jax.devices()):
+            pytest.skip('cost ratio is only meaningful on a GPU')
+
+        def timed(n_cohorts):
+            olg = self._economy()
+            olg.T_transition = n_cohorts
+            r = np.full(n_cohorts, 0.04)
+            olg.solve_cohort_problems(r_path=r, w_path=np.full(n_cohorts, 1.0),
+                                      verbose=False)          # warm the compile
+            t0 = time.perf_counter()
+            olg._policy_version = 0
+            olg.solve_cohort_problems(r_path=r, w_path=np.full(n_cohorts, 1.0),
+                                      verbose=False)
+            return time.perf_counter() - t0
+
+        t1, tn = timed(1), timed(16)
+        ratio = tn / max(t1, 1e-9)
+        if ratio > 8.0:
+            warnings.warn(
+                f'batched solve scales at {ratio:.1f}x for 16x the cohorts '
+                f'({t1:.3f}s -> {tn:.3f}s): a cohort-batched calibration would '
+                f'cost roughly that factor per SMM evaluation', RuntimeWarning)
+        assert ratio < 40.0, (
+            f'batched solve costs {ratio:.1f}x for 16x the cohorts, worse than '
+            f'solving them sequentially would suggest -- batching is not working')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
