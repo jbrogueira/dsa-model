@@ -327,7 +327,8 @@ def _panels_figure(paths, out_pdf, plt):
             x = np.asarray(x, float)
             ax[0].plot(x / x[0], label=lab, lw=1.4)
         ax[0].axhline(1.0, color='0.7', lw=0.8, zorder=0)
-        ax[0].set_title('Detrended aggregates, $t=0$ = 1'); ax[0].set_xlabel('period')
+        ax[0].set_title('Detrended aggregates, each indexed to 1 in 2023')
+        ax[0].set_xlabel('period ($t=0$ is 2023)')
         ax[0].legend(frameon=False, ncol=3, fontsize=8)
         Y = np.asarray(paths.get('Y'), float)
         for key, lab in [('B', '$B/Y$'), ('NFA', '$NFA/Y$'),
@@ -338,7 +339,8 @@ def _panels_figure(paths, out_pdf, plt):
             x = np.asarray(x, float)[:len(Y)]
             ax[1].plot(x / Y[:len(x)], label=lab, lw=1.4)
         ax[1].axhline(0.0, color='0.7', lw=0.8, zorder=0)
-        ax[1].set_title('Ratios to output'); ax[1].set_xlabel('period')
+        ax[1].set_title('Ratios to output')
+        ax[1].set_xlabel('period ($t=0$ is 2023)')
         ax[1].legend(frameon=False, ncol=2, fontsize=8)
     for a in ax:
         a.spines[['top', 'right']].set_visible(False)
