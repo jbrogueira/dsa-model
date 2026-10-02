@@ -596,7 +596,8 @@ def _compute_ss_aggregates(panels, spec):
     aw = spec.age_weights if spec.age_weights is not None else np.ones(T) / T
 
     keys = ['labor_income', 'consumption', 'assets', 'pension', 'ui',
-            'oop_health', 'gov_health', 'tax_c', 'tax_l', 'tax_p', 'tax_k']
+            'oop_health', 'gov_health', 'tax_c', 'tax_l', 'tax_p', 'tax_k',
+            'bequest']
     agg = {k: 0.0 for k in keys}
     for edu, panel in panels.items():
         share = spec.education_shares[edu]
@@ -617,6 +618,10 @@ def _compute_ss_aggregates(panels, spec):
             agg['tax_l']        += wt * float(np.mean(panel.tax_l_sim[t, a_t]))
             agg['tax_p']        += wt * float(np.mean(panel.tax_p_sim[t, a_t]))
             agg['tax_k']        += wt * float(np.mean(panel.tax_k_sim[t, a_t]))
+            # Accidental bequests of those who die at age t, per person alive
+            # at t (bequest_sim is nonzero only for the dying, who are alive
+            # at the start of the period).
+            agg['bequest']      += wt * float(np.mean(panel.bequest_sim[t, a_t]))
 
     prod = spec.production or {}
     alpha = prod.get('alpha', 0.33)
@@ -1489,7 +1494,7 @@ def compute_fiscal_ratios(panels, spec, config_data):
     # For each variable, compute age-weighted cross-sectional mean
     agg = {k: 0.0 for k in ['labor_income', 'consumption', 'assets',
                               'pension', 'ui', 'oop_health', 'gov_health',
-                              'tax_c', 'tax_l', 'tax_p', 'tax_k']}
+                              'tax_c', 'tax_l', 'tax_p', 'tax_k', 'bequest']}
     for edu, panel in panels.items():
         share = spec.education_shares[edu]
         alive = panel.alive_sim.astype(bool)
@@ -1511,6 +1516,7 @@ def compute_fiscal_ratios(panels, spec, config_data):
             agg['tax_l'] += wt * np.mean(panel.tax_l_sim[t, a_t])
             agg['tax_p'] += wt * np.mean(panel.tax_p_sim[t, a_t])
             agg['tax_k'] += wt * np.mean(panel.tax_k_sim[t, a_t])
+            agg['bequest'] += wt * np.mean(panel.bequest_sim[t, a_t])
 
     # --- Production side ---
     prod = config_data.get('production', {})
@@ -1537,6 +1543,11 @@ def compute_fiscal_ratios(panels, spec, config_data):
     r_B = config_data.get('prices', {}).get('r_B', r)
 
     tax_revenue = agg['tax_c'] + agg['tax_l'] + agg['tax_p'] + agg['tax_k']
+    # Bequest tax: the same line the transition's budget books
+    # (olg_transition.compute_government_budget), so the base-year primary
+    # balance that pins the closure sees the same revenue the transition does.
+    tau_beq = float(getattr(spec.base_config, 'tau_beq', 0.0))
+    bequest_tax = tau_beq * agg['bequest']
     expenditure = (agg['pension'] + agg['ui'] + agg['gov_health'] +
                    r_B * B_over_Y * Y)  # interest on debt at sovereign rate
 
@@ -1557,13 +1568,15 @@ def compute_fiscal_ratios(panels, spec, config_data):
         'health_oop_over_Y': agg['oop_health'] / Y,
         'health_total_over_Y': (agg['gov_health'] + agg['oop_health']) / Y,
         'interest_over_Y': r_B * B_over_Y,
-        'primary_balance_over_Y': (tax_revenue - expenditure + r_B * B_over_Y * Y) / Y,
-        'total_balance_over_Y': (tax_revenue - expenditure) / Y,
+        'bequests_over_Y': agg['bequest'] / Y,
+        'bequest_tax_over_Y': bequest_tax / Y,
+        'primary_balance_over_Y': (tax_revenue + bequest_tax - expenditure + r_B * B_over_Y * Y) / Y,
+        'total_balance_over_Y': (tax_revenue + bequest_tax - expenditure) / Y,
     }
 
     # --- Full primary balance & baseline closure, pinned at the initial SS ---
     # primary_balance_over_Y above is the household-side balance
-    # (tax_revenue - pension - ui - gov_health)/Y, interest cancelled out.
+    # (tax_revenue + bequest_tax - pension - ui - gov_health)/Y, interest cancelled out.
     # The transition's primary balance also nets out the discretionary spending
     # lines (G, I_g, defense) and the other-net closure residual, and excludes
     # interest — so add those here for a like-for-like full SS primary balance.

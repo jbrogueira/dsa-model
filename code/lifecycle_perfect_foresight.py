@@ -1246,11 +1246,14 @@ class LifecycleModelPerfectForesight:
                 
                 # --- Survival draw (current-period state) ---
                 # Must occur before state transitions so that death probability
-                # uses (age t, h_t) and bequest equals current-period assets.
+                # uses (age t, h_t). The bequest is the wealth the household
+                # carried out of the period, (1+g) a', in current detrended
+                # units: what it set aside this period and never consumes.
                 if self.config.survival_probs is not None:
                     survival_t = self.survival_probs[lifecycle_age, i_h[i]]
                     if np.random.random() > survival_t:
-                        bequest_sim[t_sim, i] = self.a_grid[i_a[i]]
+                        a_next_idx = self.a_policy_alpha[alpha_idx_sim[i], lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                        bequest_sim[t_sim, i] = (1.0 + self.trend_growth) * self.a_grid[a_next_idx]
                         alive[i] = False
                         continue  # skip state transitions for dead agent
 

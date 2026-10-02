@@ -749,6 +749,7 @@ class OLGTransition:
                     ref.wage_age_profile,
                     ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
                     calpha_idx, calpha_mult,
+                    ref.trend_growth,
                 )
 
                 # Store only actual (non-padded) cohorts

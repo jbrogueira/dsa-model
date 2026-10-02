@@ -41,7 +41,16 @@ along the transition rise a further 1.9 % (see item 5).
 
 ---
 
-## 2. Bequest circuit is open in the reported experiments — Open, decision needed
+## 2. Bequest circuit is open in the reported experiments — Closed 2026-10-02 (taxed away)
+
+**Resolution (2026-10-02).** Option (i): `external_params.tau_beq = 1.0` in
+`calibration_input_GR.json`; the bequest tax enters `total_revenue` in the
+transition budget and `primary_balance_over_Y` in `compute_fiscal_ratios`, so
+the base-year closure and the transition book the same line. The recorded
+bequest is now the wealth the dying agent carried out of the period,
+`(1+g)·a'`, in both backends (it was beginning-of-period `a`). The closure
+`other_net_spending_over_Y` and the calibration are to be re-run; the
+rB0 config is untouched. The text below describes the state before the change.
 
 **Behaviour.** `FiscalScenario.recompute_bequests` defaults to `False`
 (`fiscal_experiments.py:130`) and `run_fiscal_figures.py` never sets it, while

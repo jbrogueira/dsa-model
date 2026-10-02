@@ -677,7 +677,8 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     mean_kappa_working=1.0,
                     mean_y_employed=1.0,
                     alpha_idx=0,
-                    alpha_mult=1.0):
+                    alpha_mult=1.0,
+                    trend_growth=0.0):
     """
     Single time-step for one agent.
 
@@ -796,10 +797,12 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
 
     # --- Mortality ---
     # Survival draw uses current-period state (age t, h_t), not next-period.
-    # Bequest equals current-period assets (before savings choice for next period).
+    # The bequest is the wealth the household carried out of the period,
+    # (1+g) a', in current detrended units (zero at the terminal age, where
+    # a' = 0).
     surv_t = survival_probs[lifecycle_age, i_h]
     dies = alive & (u_alive > surv_t)
-    bequest_this_period = jnp.where(dies, a_grid[i_a], 0.0)
+    bequest_this_period = jnp.where(dies, (1.0 + trend_growth) * a_grid[a_pol_val], 0.0)
     new_alive = alive & ~dies
 
     new_carry = (new_i_a.astype(jnp.int32), new_i_y.astype(jnp.int32),
@@ -859,6 +862,7 @@ def simulate_lifecycle_jax(
     mean_y_employed=1.0,
     alpha_idx_sim=None,
     alpha_mult_sim=None,
+    trend_growth=0.0,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
@@ -937,6 +941,7 @@ def simulate_lifecycle_jax(
             mean_y_employed=mean_y_employed,
             alpha_idx=alpha_idx_self,
             alpha_mult=alpha_mult_self,
+            trend_growth=trend_growth,
         )
         xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
@@ -990,6 +995,7 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None,                    # wage_age_profile (shared)
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
         0, 0,                    # alpha_idx_sim, alpha_mult_sim (per-cohort: each cohort has its own draw)
+        None,                    # trend_growth (shared scalar; must be passed positionally)
     )),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
@@ -1279,6 +1285,7 @@ class LifecycleModelJAX:
             mean_y_employed=self.mean_y_employed,
             alpha_idx_sim=alpha_idx_sim,
             alpha_mult_sim=alpha_mult_sim,
+            trend_growth=self.trend_growth,
         )
 
         # Convert all outputs to numpy arrays (now 22-tuple including alpha_idx_panel)
