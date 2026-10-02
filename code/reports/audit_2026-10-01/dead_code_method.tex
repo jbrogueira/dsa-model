@@ -1,0 +1,82 @@
+
+
+\textbf{Mechanical inventory.} \texttt{b6\_tools/inventory.py} (standard
+library only) parses the 28 Python files (\texttt{code/*.py},
+\texttt{code/reports/*.py}) with \texttt{ast} and records every
+\texttt{FunctionDef}/\texttt{AsyncFunctionDef}/\texttt{ClassDef} with
+its decorators (\texttt{njit}, \texttt{staticmethod},
+\texttt{pytest.mark.*}), its enclosing class, and its line range:
+\textbf{611 definitions} (324 in non-test modules, 287 in
+\texttt{test\_*.py}). It then records every \texttt{ast.Name} and
+\texttt{ast.Attribute} reference in all files with file:line, every
+string constant that contains a definition name (string-only hits are
+reported separately and never counted as callers), and every
+word-boundary hit in the five \texttt{*.sh} drivers (comments stripped).
+A reference inside the definition\textquotesingle s own line range is a
+self-reference, not a caller. The raw result, one row per definition
+with caller counts by class (\texttt{n\_refs\_nontest},
+\texttt{n\_refs\_test}, \texttt{n\_refs\_shell}, \texttt{n\_self\_refs},
+\texttt{n\_string\_hits}) and the first twelve call sites, is
+\texttt{B6\_inventory.csv} next to this file (a
+\texttt{class}/\texttt{note} column has been appended after the manual
+pass).
+
+\textbf{Caller classes.} (i) production drivers:
+\texttt{run\_scale\_loop.sh}, \texttt{run\_step0\_baseline.sh},
+\texttt{chain\_fiscal\_after\_loop.sh},
+\texttt{run\_cost\_and\_figure.sh} and the scripts they invoke
+(\texttt{calibrate.py\ -\/-config\ …\ -\/-backend\ jax},
+\texttt{normalize\_A\_tfp.py\ -\/-backend\ jax\ -\/-write},
+\texttt{pin\_baseline\_closure.py\ -\/-backend\ jax\ -\/-write},
+\texttt{diag\_ss\_vs\_transition.py\ jax},
+\texttt{check\_a0\_predetermination.py} (runs \textbf{both} backends),
+\texttt{reports/fill\_report.py\ -\/-backend\ jax\ -\/-run-baseline\ -\/-implied},
+\texttt{run\_fiscal\_figures.py\ -\/-config\ …\ -\/-shock\ both\ -\/-backend\ jax},
+\texttt{pytest\ test\_olg\_transition.py::TestCohortBatchedSurvival});
+the manual CLIs the task lists (\texttt{eval\_fiscal\_results.py},
+\texttt{regen\_fiscal\_figures\_from\_json.py},
+\texttt{validate\_backends.py}, \texttt{diag\_bequest\_decomp.py},
+\texttt{health\_flag\_decomposition.py}, the \texttt{build\_*.py}
+builders) --- none of the \texttt{.sh} drivers invokes these, they count
+as callers only for what they themselves reach; (ii)
+\texttt{test\_*.py}. Dictionary dispatch (\texttt{MOMENT\_DISPATCH},
+calibrate.py:698-723), \texttt{getattr} lookups
+(\texttt{\_as\_alpha\_indexed}, olg\_transition.py:575-579), the
+\texttt{multiprocessing} wrappers and the shell drivers were counted as
+callers. Every candidate was then confirmed by reading the call sites
+and, for flags, the production config
+\texttt{calibration\_input\_GR.json} and the drivers.
+
+\textbf{Config keys.} \texttt{calibration\_input\_GR.json} is read by
+\texttt{load\_config}/\texttt{build\_lifecycle\_config}/\texttt{build\_olg\_transition}
+(calibrate.py:1197-1454): every \texttt{model.*} and
+\texttt{external\_params.*} key is forwarded as a
+\texttt{LifecycleConfig} kwarg (1296-1302, \texttt{pop\_growth}
+excepted), \texttt{\_derived.theta} overwrites the matching fields
+(1314-1329), \texttt{fiscal.*} keys are read by name in
+\texttt{compute\_fiscal\_ratios}/\texttt{build\_olg\_transition}/\texttt{pin\_baseline\_closure.py}/\texttt{run\_fiscal\_figures.py}/\texttt{eval\_fiscal\_results.py}/\texttt{reports/fill\_report.py},
+and \texttt{untargeted.*} by \texttt{generate\_report} and
+\texttt{fill\_report}. A key counts as read only if the read has an
+effect on a production output; keys read into an object that nothing
+then consults are listed under (e).
+
+\textbf{Production configuration facts used for class (c)/(d):}
+\texttt{model.n\_h=1}, \texttt{model.n\_alpha=5},
+\texttt{model.labor\_supply=true},
+\texttt{model.tax\_progressive=false},
+\texttt{external\_params.transfer\_floor=0.0},
+\texttt{production.eta\_g=0.05}, \texttt{prices.r\_B=0.019},
+\texttt{transition.demography\_file=../data/demography\_GR.npz}
+(present; \texttt{px} shape (310, 60), \texttt{cross\_section\_base}
+length 60 = \texttt{model.T}),
+\texttt{transition.r\_initial=r\_final=0.04},
+\texttt{calibration.base\_year\_cohorts=true},
+\texttt{simulation.n\_sim=10000},
+\texttt{simulation.n\_sim\_cohorts=2000},
+\texttt{transition.n\_sim=2000}; \texttt{run\_fiscal\_figures.py}
+scenarios use
+\texttt{financing\ in\ \{\textquotesingle{}debt\textquotesingle{},\textquotesingle{}tau\_l\textquotesingle{}\}},
+\texttt{balance\_condition\ in\ \{\textquotesingle{}terminal\_debt\_gdp\textquotesingle{},\textquotesingle{}terminal\_nfa\_gdp\textquotesingle{}\}},
+\texttt{recompute\_bequests=False}, \texttt{adjustment\_profile=None},
+\texttt{n\_post=20}, no \texttt{nfa\_limit}/\texttt{ca\_limit}.
+

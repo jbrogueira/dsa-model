@@ -1,0 +1,829 @@
+
+
+\subsubsection*{(a) Unreachable}\label{a-unreachable}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & \texttt{lifecycle\_jax.py:50} & function solve\_labor\_hours\_jax &
+\texttt{\textbackslash{}bsolve\_labor\_hours\_jax\textbackslash{}b\ over\ code/**.py,\ *.sh}
+& definition only (0 callers, 0 string hits) & solve\_period\_jax:303
+and \_solve\_terminal\_period\_jax:426 call solve\_labor\_robust\_jax;
+second implementation of the labour FOC without the (1+tau\_c) wedge \\
+2 & \texttt{lifecycle\_perfect\_foresight.py:821} & method
+LifecycleModelPerfectForesight.\_solve\_labor\_hours &
+\texttt{\textbackslash{}b\_solve\_labor\_hours\textbackslash{}b} &
+definition only & \_solve\_state\_choice:956,979 call
+\_solve\_labor\_newton; this version omits kappa(t) and the (1+tau\_c)
+wedge \\
+3 & \texttt{olg\_transition.py:839} & staticmethod @njit
+OLGTransition.\_compute\_wage\_path\_njit &
+\texttt{\textbackslash{}b\_compute\_wage\_path\_njit\textbackslash{}b} &
+definition only & simulate\_transition computes w inline from the firm
+FOC at 2002-2004 \\
+4 & \texttt{olg\_transition.py:1458} & method
+OLGTransition.\_get\_cached\_cohort\_panel &
+\texttt{\textbackslash{}b\_get\_cached\_cohort\_panel\textbackslash{}b}
+& definition only & all consumers read \_cohort\_panel\_cache directly
+(1521, 1615) \\
+5 & \texttt{olg\_transition.py:1708} & method
+OLGTransition.compute\_aggregates &
+\texttt{\textbackslash{}bcompute\_aggregates\textbackslash{}b} &
+definition only; 1 string hit (compute\_government\_budget docstring
+1739) & simulate\_transition aggregates inline at 2160-2167; own
+docstring says no caller remains \\
+6 & \texttt{fiscal\_experiments.py:1341-1342,\ 1394-1397} & branches in
+compare\_scenarios (variables=None default; direct NFA/CA keys) &
+\texttt{compare\_scenarios\textbackslash{}(\ call\ sites;\ variables=} &
+run\_fiscal\_figures 442-466, regen 224-239,
+test\_fiscal\_experiments:612 all pass variables; none lists NFA or CA &
+the default list {[}Y, primary\_deficit, B\_gdp\_path, NFA{]} and the
+NFA/CA key branches have no caller \\
+\end{longtable}
+
+\subsubsection*{(b) Test-only}\label{b-test-only}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & \texttt{calibrate.py:134} & function compute\_wealth\_gini &
+\texttt{\textbackslash{}bcompute\_wealth\_gini\textbackslash{}b} &
+test\_calibrate.py:102,104,110,114 only & unweighted single-panel
+versions; the SMM/report use the age- and education-weighted
+\emph{moment}* functions (372-584), which do not call these \\
+2 & \texttt{calibrate.py:151} & function compute\_zero\_wealth\_fraction
+&
+\texttt{\textbackslash{}bcompute\_zero\_wealth\_fraction\textbackslash{}b}
+& test\_calibrate.py:120,126,134 only & unweighted single-panel
+versions; the SMM/report use the age- and education-weighted
+\emph{moment}* functions (372-584), which do not call these \\
+3 & \texttt{calibrate.py:160} & function
+compute\_wealth\_to\_income\_by\_age &
+\texttt{\textbackslash{}bcompute\_wealth\_to\_income\_by\_age\textbackslash{}b}
+& test\_calibrate.py:217 only & unweighted single-panel versions; the
+SMM/report use the age- and education-weighted \emph{moment}* functions
+(372-584), which do not call these \\
+4 & \texttt{calibrate.py:177} & function compute\_unemployment\_rate &
+\texttt{\textbackslash{}bcompute\_unemployment\_rate\textbackslash{}b} &
+test\_calibrate.py:142,150,159 only & unweighted single-panel versions;
+the SMM/report use the age- and education-weighted \emph{moment}*
+functions (372-584), which do not call these \\
+5 & \texttt{calibrate.py:185} & function
+compute\_health\_distribution\_by\_age &
+\texttt{\textbackslash{}bcompute\_health\_distribution\_by\_age\textbackslash{}b}
+& test\_calibrate.py:167,178 only & unweighted single-panel versions;
+the SMM/report use the age- and education-weighted \emph{moment}*
+functions (372-584), which do not call these \\
+6 & \texttt{calibrate.py:198} & function compute\_average\_hours &
+\texttt{\textbackslash{}bcompute\_average\_hours\textbackslash{}b} &
+test\_calibrate.py:188,198 only & unweighted single-panel versions; the
+SMM/report use the age- and education-weighted \emph{moment}* functions
+(372-584), which do not call these \\
+7 & \texttt{calibrate.py:206} & function compute\_consumption\_gini &
+\texttt{\textbackslash{}bcompute\_consumption\_gini\textbackslash{}b} &
+test\_calibrate.py:206 only & unweighted single-panel versions; the
+SMM/report use the age- and education-weighted \emph{moment}* functions
+(372-584), which do not call these \\
+8 & \texttt{fiscal\_experiments.py:186,191,201,207} & functions
+uniform\_profile, linear\_phase\_in, back\_loaded,
+exponential\_convergence &
+\texttt{\textbackslash{}b(uniform\_profile\textbar{}linear\_phase\_in\textbar{}back\_loaded\textbar{}exponential\_convergence)\textbackslash{}b}
+& test\_fiscal\_experiments.py:185-209, 458-463 only &
+FiscalScenario.adjustment\_profile is never set outside tests (grep
+adjustment\_profile: run\_fiscal\_figures/check\_a0 none), so
+\_get\_psi:467 always returns ones \\
+9 & \texttt{olg\_transition.py:851,\ 856,\ 788} & methods
+production\_function, factor\_prices; staticmethod @njit
+\_production\_function\_njit &
+\texttt{\textbackslash{}b(production\_function\textbar{}factor\_prices\textbar{}\_production\_function\_njit)\textbackslash{}b}
+& test\_olg\_transition.py:80,89,117,1593-1594,1608-1609;
+\_production\_function\_njit called only from production\_function:854 &
+the transition uses \_compute\_output\_path\_njit (2198) and inline
+FOCs \\
+10 & \texttt{olg\_transition.py:2687} & function get\_test\_config &
+\texttt{\textbackslash{}bget\_test\_config\textbackslash{}b} & 29 test
+refs; one non-test caller run\_fast\_test:2721 (CLI only, see f) & test
+fixture \\
+11 & \texttt{fiscal\_experiments.py:1250-1252} & branch
+run\_fiscal\_scenario: \textquotesingle base\_macro\textquotesingle{} in
+base\_paths & \texttt{\textquotesingle{}base\_macro\textquotesingle{}} &
+test\_fiscal\_experiments.py:354-358 builds bp2 with
+base\_macro/base\_budget; run\_fiscal\_figures never does & production
+always re-runs the baseline inside run\_fiscal\_scenario \\
+\end{longtable}
+
+\subsubsection*{(c) Switched off in
+production}\label{c-switched-off-in-production}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 &
+\texttt{calibrate.py:881,\ 908-964\ (nested\ de\_callback:911,\ polish\_obj:942,\ polish\_cb:947)}
+& function smm\_objective\_bounded; differential-evolution branch of
+calibrate() &
+\texttt{-\/-method\textbar{}differential\_evolution\textbar{}smm\_objective\_bounded}
+& callers: calibrate():913,921 only inside the DE branch;
+run\_scale\_loop.sh:42 passes no -\/-method (default Nelder-Mead); no
+test passes method= & CLI flag never set by a driver or test \\
+2 & \texttt{calibrate.py:1772,\ 1828-1845,\ 1860-1863,\ 1899-1919} &
+function default\_spec; main() branches -\/-test, no -\/-config,
+-\/-output &
+\texttt{default\_spec\textbar{}args\textbackslash{}.test\textbar{}args\textbackslash{}.output}
+& default\_spec: main:1861 (no -\/-config) and test\_calibrate.py:401;
+drivers always pass -\/-config and never -\/-test/-\/-output &
+run\_scale\_loop.sh:42 is the only production invocation \\
+3 & \texttt{calibrate.py:839-864} & single-solve branch of
+run\_model\_moments &
+\texttt{cohort\_survival\ is\ not\ None\textbar{}base\_year\_cohorts} &
+production config calibration.base\_year\_cohorts=true
+(calibration\_input\_GR.json:373) -\textgreater{} load\_config:1223 sets
+cohort\_survival -\textgreater{} run\_model\_moments takes the 826-837
+branch; tests at test\_olg\_transition.py:2786,2993 clear
+cohort\_survival & the non-cohort stationary panel is reached only by
+tests \\
+4 & \texttt{calibrate.py:1263\ (w\ argument)} & parameter w of
+build\_lifecycle\_config &
+\texttt{build\_lifecycle\_config\textbackslash{}(} & all callers
+(load\_config:1206, build\_olg\_transition:1360,
+test\_income\_process.py:18,34) pass raw only & the w is not None branch
+1271-1272 never runs \\
+5 &
+\texttt{lifecycle\_perfect\_foresight.py:1041,\ 1352,\ 1314,\ 1402,\ 1340}
+& methods \_solve\_backward\_parallel, \_simulate\_parallel,
+\_combine\_simulation\_results; functions \_solve\_period\_wrapper,
+\_simulate\_agent\_batch & \texttt{parallel=\textbar{}n\_jobs=} & only
+lifecycle\_perfect\_foresight.py:1467,1471 (the module \textbf{main}
+-\/-test block) pass parallel=True; no driver, script or test does &
+multiprocessing path; its only caller is itself broken (see d:
+1472-1475) \\
+6 & \texttt{lifecycle\_perfect\_foresight.py:394} & method
+\_print\_income\_diagnostics &
+\texttt{LifecycleModelPerfectForesight\textbackslash{}(\textbar{}LifecycleModelJAX\textbackslash{}(\textbar{}cls\textbackslash{}(cfg}
+& every constructor call in calibrate.py:804,850,
+olg\_transition.py:1200,1251,1254, lifecycle\_jax.py:1015(forwards),
+tests passes verbose=False; only lifecycle\_perfect\_foresight.py:1465
+(\textbf{main}) passes True & reached only from the module
+\textbf{main} \\
+7 &
+\texttt{lifecycle\_perfect\_foresight.py:734-737,753-756,831-832,863,1239-1241,1247-1249;\ lifecycle\_jax.py:44\ (\_hsv\_tax),156-160,173-177,299,422,751-759}
+& HSV progressive-tax branches & \texttt{tax\_progressive} & config
+model.tax\_progressive=false (json:18); set True only in
+test\_olg\_transition.py:1127,1330,1435 & under JAX the jnp.where
+evaluates \_hsv\_tax eagerly but discards it; tax\_progressive is a
+static argname so XLA removes it \\
+8 &
+\texttt{lifecycle\_perfect\_foresight.py:166-168,\ 775-778;\ lifecycle\_jax.py:195-197,\ 497-501,\ 539-541,\ 572}
+& schooling\_years / child\_cost\_profile / education\_subsidy\_rate
+feature &
+\texttt{schooling\_years\textbar{}child\_cost\_profile\textbar{}education\_subsidy\_rate}
+& no config key, no driver; test\_olg\_transition.py:1226,1392,1438 only
+& feature defaults 0 / zeros / 0.0 \\
+9 &
+\texttt{lifecycle\_perfect\_foresight.py:175,\ 364-370,\ 789-790,\ 796-797;\ lifecycle\_jax.py:489,\ 504-505,\ 781-785,\ 1069-1072}
+& P\_y\_by\_age\_health (4-D income transitions) feature &
+\texttt{P\_y\_by\_age\_health=} & never set anywhere: only forwarded as
+\_lc.P\_y\_by\_age\_health (olg\_transition:1101) and self.P\_y\_4d; no
+test sets it & the P\_y\_age\_health=True branches have no caller at all
+(a-adjacent) \\
+10 &
+\texttt{lifecycle\_perfect\_foresight.py:178-179,\ 1147-1153;\ lifecycle\_jax.py:1212-1223;\ olg\_transition.py:634-636}
+& initial\_assets / initial\_asset\_distribution &
+\texttt{initial\_assets=\textbar{}initial\_asset\_distribution=} &
+test\_olg\_transition.py:2162-2204 only & production starts every agent
+at a\_grid{[}0{]} \\
+11 &
+\texttt{lifecycle\_perfect\_foresight.py:146;\ olg\_transition.py:1108,\ 1780-1782,\ 1866-1877}
+& tau\_beq (bequest tax) & \texttt{tau\_beq} & no config key;
+test\_olg\_transition.py:2041,2059,2079 only & in production
+bequest\_tax=0 and bequest\_transfers=total\_bequests identically \\
+12 &
+\texttt{lifecycle\_perfect\_foresight.py:147,\ 771-772;\ lifecycle\_jax.py:193,\ 557;\ olg\_transition.py:1181-1185,\ 1853-1884,\ 2064-2111}
+& bequest\_lumpsum / recompute\_bequests loop /
+\_compute\_bequest\_lumpsum\_path &
+\texttt{recompute\_bequests=True\textbar{}bequest\_lumpsum} &
+run\_fiscal\_figures leaves FiscalScenario.recompute\_bequests=False;
+set True only by diag\_bequest\_decomp.py:90 (case C) and
+test\_fiscal\_experiments.py:119,136 & off in the
+calibration/fiscal/report chain; reached by one diagnostic script and
+tests \\
+13 &
+\texttt{lifecycle\_perfect\_foresight.py:84-120,\ 224-260,\ 378-382,\ 568-625}
+& n\_h\textgreater1 health machinery:
+h\_moderate/h\_poor/m\_moderate/m\_poor/P\_h\_young/middle/old/P\_h,
+\textbf{post\_init} P\_h build, \_health\_process n\_h in \{2,3\}
+branches & \texttt{n\_h=2\textbar{}n\_h=3\textbar{}P\_h=} & config
+model.n\_h=1; test\_olg\_transition.py:39 builds n\_h=2 (constructor
+only); run\_full\_simulation:2819 uses n\_h=2 (CLI, cannot complete, see
+d); nobody passes P\_h= & with n\_h=1:
+m\_grid\_base=linspace(m\_good,m\_poor,1)={[}m\_good{]},
+h\_grid={[}h\_good{]}, P\_h=ones \\
+14 &
+\texttt{lifecycle\_perfect\_foresight.py:803-804;\ lifecycle\_jax.py:492-493,\ 897-898;\ olg\_transition.py:438-441,\ 695-698}
+& survival\_probs is None fallbacks (no-mortality) &
+\texttt{survival\_probs\ is\ None\textbar{}\_ones\_surv} & production
+always has schedules (config survival\_probs + demography);
+test\_olg\_transition.py:2000 and fixtures without a schedule & fallback
+to ones \\
+15 & \texttt{olg\_transition.py:132,\ 276,\ 1044-1045,\ 1114} &
+survival\_improvement\_rate (legacy longevity scaling) &
+\texttt{survival\_improvement\_rate} & default 0.0 everywhere in
+production; test\_olg\_transition.py:2121 only & the data path
+(\_surv\_px) supersedes it: \_survival\_schedule\_at\_year returns at
+1040 before the legacy branch \\
+16 &
+\texttt{olg\_transition.py:104,122,126,129\ (ctor\ paths),\ 1806-1809\ obj\_level\ fallbacks;\ fiscal\_experiments.py:1227-1230}
+& constructor-level I\_g\_path / govt\_spending\_path /
+defense\_spending\_path / other\_net\_spending\_path &
+\texttt{govt\_spending\_path=\textbar{}defense\_spending\_path=\textbar{}other\_net\_spending\_path=\textbar{}I\_g\_path=}
+& production passes per-call paths/ratios (run\_fiscal\_figures 195-205
+via \_apply\_shock); ctor forms set only in
+test\_olg\_transition.py:1266 and diag\_bequest\_decomp.py:88-89 (per
+call) & the \_spend(..., obj\_level) fallback is never the value used in
+production \\
+17 & \texttt{olg\_transition.py:108,\ 183-186,\ 1814-1822} & constructor
+B\_path and the debt-service block of compute\_government\_budget &
+\texttt{B\_path=} & test\_olg\_transition.py:1552 only;
+fiscal\_experiments computes B outside the OLG object
+(compute\_debt\_path) & in production debt\_service=0, new\_borrowing=0
+and fiscal\_deficit==primary\_deficit for every t \\
+18 & \texttt{olg\_transition.py:124,\ 213,\ 2306} & constructor
+S\_pens\_initial & \texttt{S\_pens\_initial} &
+test\_olg\_transition.py:1624,1656 only & the S\_pens recursion itself
+(2305-2318) is live: it starts at 0 and accumulates tax\_p - pension \\
+19 & \texttt{olg\_transition.py:863-903,\ 1897,\ 1965-1966} &
+set\_cohort\_sizes\_path\_from\_pop\_growth / pop\_growth\_path kwarg &
+\texttt{pop\_growth\_path} & olg\_transition.py:2773, 2891
+(run\_fast\_test / run\_full\_simulation, CLI only); no driver or test &
+production builds cohort weights from the demographic entrants
+(1928-1929) \\
+20 &
+\texttt{olg\_transition.py:1988-1990;\ fiscal\_experiments.py:1236-1239;\ run\_fiscal\_figures.py:365-367;\ eval\_fiscal\_results.py:549-551}
+& r\_B is None fallbacks to the capital rate & \texttt{r\_B} & config
+prices.r\_B=0.019 (json:35) is always set by build\_olg\_transition:1410
+& legacy fallback \\
+21 & \texttt{olg\_transition.py:1886\ (w\_path\ kwarg),\ 2009-2012} &
+simulate\_transition \textquotesingle Using provided wage
+path\textquotesingle{} branch &
+\texttt{simulate\_transition\textbackslash{}(.*w\_path=} &
+test\_olg\_transition.py:431,557,617,707,792,869 pass a constant
+w\_path; every script passes None & production derives w from the firm
+FOC (1993-2008) \\
+22 & \texttt{olg\_transition.py:1414-1438} & multi-agent-batch branch of
+\_ensure\_cohort\_panel\_cache (n\_agent\_batches\textgreater1) &
+\texttt{sim\_agent\_batch\_size} & production n\_sim=2000
+(transition.n\_sim) vs batch 10000 (calibrate.py:1419 default)
+-\textgreater{} n\_agent\_batches==1; no test sets
+sim\_agent\_batch\_size & reached only if n\_sim exceeds 10000 \\
+23 &
+\texttt{olg\_transition.py:1201-1202,\ 1253-1277,\ 1439-1450,\ 366-404\ (\_simulate\_birth\_cohort\_cached)}
+& NumPy-backend branches of the transition &
+\texttt{backend\ !=\ \textquotesingle{}jax\textquotesingle{}\textbar{}\_simulate\_birth\_cohort\_cached}
+& drivers: run\_scale\_loop/run\_step0/chain/run\_cost all pass
+-\/-backend jax to calibrate, normalize, pin, fill\_report,
+run\_fiscal\_figures; the NumPy branches are reached by
+check\_a0\_predetermination.py:74 (both backends; called by
+run\_step0\_baseline.sh:46 and chain\_fiscal\_after\_loop.sh:27),
+validate\_backends.py:236, and diag\_*.py when given numpy & switched
+off in the calibration/fiscal/report chain; on in two diagnostic drivers
+and the tests \\
+24 &
+\texttt{fiscal\_experiments.py:350-366\ (terminal\_flow\_balance,\ pv\_balance,\ period\_balance);\ 862-884\ (+\_objective:865);\ 120\ (discount\_rate);\ 303\ (r\_terminal)}
+& \_balance\_residual conditions other than terminal\_debt\_gdp /
+terminal\_nfa\_gdp; run\_tax\_financed period\_balance block &
+\texttt{balance\_condition\textbackslash{}s*=} &
+run\_fiscal\_figures.py:327,335 set only
+\textquotesingle terminal\_debt\_gdp\textquotesingle{} and
+\textquotesingle terminal\_nfa\_gdp\textquotesingle; check\_a0:57,65
+\textquotesingle terminal\_debt\_gdp\textquotesingle;
+pv\_balance/period\_balance only in
+test\_fiscal\_experiments.py:296,305,410,430 & three balance conditions
+and the discount\_rate / r\_terminal inputs are unused in production \\
+25 &
+\texttt{fiscal\_experiments.py:587-602\ (tau\_c,\ tau\_k,\ tau\_p,\ pension\_replacement,\ transfer\_floor\ financing);\ 90-93\ (delta\_tau\_c/k/p\_path,\ delta\_pension\_path)}
+& \_apply\_shock financing branches and shock fields other than
+G/I\_g/tau\_l &
+\texttt{financing\textbackslash{}s*=\textbar{}delta\_tau\_c\_path\textbar{}delta\_tau\_k\_path\textbar{}delta\_tau\_p\_path\textbar{}delta\_pension\_path}
+& production: financing in
+\{\textquotesingle debt\textquotesingle,\textquotesingle tau\_l\textquotesingle\}
+(run\_fiscal\_figures 223-297), shocks delta\_G\_path/delta\_I\_g\_path;
+check\_a0 uses delta\_tau\_l\_path; tests: tau\_c (409), transfer\_floor
+(258); the four delta\_tau\_c/k/p/pension fields are set nowhere, not
+even in tests & transfer\_floor financing is also dead by construction
+(see d) \\
+26 &
+\texttt{fiscal\_experiments.py:126-127,\ 691-713,\ 1000-1187\ (+\_full\_nfa\_ca:1037,\ \_feasible:1064,\ \_nfa\_ok\_at:1104)}
+& nfa\_limit / ca\_limit, \_check\_nfa\_violation, run\_nfa\_constrained
+& \texttt{nfa\_limit\textbar{}ca\_limit} & run\_fiscal\_figures never
+sets nfa\_limit/ca\_limit (its \textquotesingle nfa\textquotesingle{}
+scenarios use balance\_condition terminal\_nfa\_gdp through
+run\_tax\_financed); test\_fiscal\_experiments.py:541 sets
+nfa\_limit=200 & the dispatcher at 1295-1301 never routes a production
+scenario here \\
+27 &
+\texttt{fiscal\_experiments.py:564-566;\ run\_fiscal\_figures.py:202-203,\ 266;\ validate\_backends.py:109-112}
+& GDP-share I\_g (I\_g\_over\_Y) mode & \texttt{I\_g\_over\_Y} & enabled
+only when eta\_g==0; production eta\_g=0.05 (json:42);
+simulate\_transition:1952 refuses it otherwise & level-mode I\_g is the
+live path \\
+28 & \texttt{fiscal\_experiments.py:1480-1481} & fiscal\_multiplier
+growth\_factors=None branch &
+\texttt{fiscal\_multiplier\textbackslash{}(} &
+run\_fiscal\_figures.py:438,510 pass growth\_factors;
+test\_fiscal\_experiments.py:630 does not & untrended fallback \\
+29 & \texttt{run\_fiscal\_figures.py:136-193,\ 206-211,\ 229,\ 269} &
+hardcoded fast-test branch (no -\/-config) &
+\texttt{run\_fiscal\_figures\textbackslash{}.py} &
+chain\_fiscal\_after\_loop.sh:35 always passes -\/-config; no other
+driver or test invokes the script & demo configuration \\
+30 & \texttt{reports/fill\_report.py:169-172,\ 177-181} &
+markdown-parsed fallback of moments\_table (live is None) &
+\texttt{-\/-implied\textbar{}-\/-run-baseline} &
+run\_step0\_baseline.sh:52-54 and run\_cost\_and\_figure.sh:31-33 pass
+both flags, so live is always set & parse\_md\_table/num remain live for
+header.tex:642 \\
+31 & \texttt{eval\_fiscal\_results.py:592-608;\ 86-88} &
+bisection\_flow\_target branch; scalar Gamma fallback in
+\_growth\_factor &
+\texttt{terminal\_flow\_balance\textbar{}growth\_factor\_path} &
+production JSON carries balance\_condition
+\textquotesingle terminal\_debt\_gdp\textquotesingle{}
+(run\_fiscal\_figures 327) and params.growth\_factor\_path (548) &
+legacy-JSON paths \\
+\end{longtable}
+
+\subsubsection*{(d) Dead inside live code}\label{d-dead-inside-live-code}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & \texttt{calibrate.py:75-77} & wrap\_sim\_output 21-tuple padding
+branch &
+\texttt{return\ \textbackslash{}(a\_sim.*alpha\_idx\_panel\textbar{}result\_21\ \textbackslash{}+}
+& both simulate() implementations return 22 arrays
+(lifecycle\_perfect\_foresight.py:1282-1285; lifecycle\_jax.py:963);
+test\_calibrate.py:384 feeds a 21-tuple & condition cannot hold for a
+real panel \\
+2 & \texttt{calibrate.py:587-637\ vs\ 1474-1527} &
+\_compute\_ss\_aggregates and compute\_fiscal\_ratios: two
+implementations of the age-weighted aggregates and Y &
+\texttt{\_compute\_ss\_aggregates\textbar{}compute\_fiscal\_ratios} &
+both live: the first behind the SMM ratio moments and
+normalize\_A\_tfp:95, the second behind pin\_baseline\_closure:68,
+fill\_report:143,270, diag\_*; they take K\_over\_L from different
+places (spec.production vs config\_data{[}\_derived{]}) & same loop body
+duplicated; identical only when load\_config built both \\
+3 & \texttt{calibrate.py:1099,\ 1192-1194} & compute\_age\_weights via
+the base\_year\_age\_weights fallback &
+\texttt{compute\_age\_weights\textbar{}cross\_section\_base} &
+data/demography\_GR.npz exists with cross\_section\_base of length 60 ==
+model.T, so base\_year\_age\_weights returns at 1189; fallback reached
+only by tests (test\_olg\_transition.py:2436,2440,3006) & fallback masks
+a missing sidecar by printing a message and using the stationary
+approximation \\
+4 & \texttt{calibrate.py:1337-1347} & pension\_avg\_weight derivation &
+\texttt{pension\_avg\_weight\textbar{}p\textbackslash{}{[}\textquotesingle{}name\textquotesingle{}\textbackslash{}{]}\ ==\ \textquotesingle{}rho\_y\textquotesingle{}}
+& config has no pension\_avg\_weight key and no
+\textquotesingle rho\_y\textquotesingle{} entry in calibration.params,
+so rho\_init stays the literal 0.95 (1342); edu\_params.*.rho\_y
+(json:65,72,79) is not consulted & coincides numerically today
+(rho\_y=0.95) but the config value does not reach this formula \\
+5 & \texttt{calibrate.py:1384-1397} & survival\_data\_file block of
+build\_olg\_transition &
+\texttt{survival\_data\_file\textbar{}survival\_table\ is\ None} &
+demography\_GR.npz loads first (1373-1379, px (310,60) matches T=60) so
+survival\_table is already set at 1385 & dead in production; see also
+(e) transition.survival\_data\_file \\
+6 & \texttt{calibrate.py:1427} & exponential r-path branch (r\_i !=
+r\_f) & \texttt{r\_initial\textbar{}r\_final\textbar{}r\_decay} & config
+r\_initial=r\_final=0.04 (json:396-397) -\textgreater{} np.full branch &
+transition.r\_decay has no effect \\
+7 &
+\texttt{calibrate.py:1314-1329\ (effect\ on\ model.beta,\ model.nu,\ external\_params.tau\_p,\ pension\_replacement\_default,\ m\_good)}
+& \_derived.theta overwrite of config values &
+\texttt{derived\_theta\textbar{}\_derived} & json model.beta=0.96 (13),
+model.nu=68.35 (16), external\_params.tau\_p=0.34 (48),
+pension\_replacement\_default=0.18 (50), m\_good=0.048 (55) are replaced
+by \_derived.theta (22-26) at 1329; build\_olg\_transition:\_tax reads
+theta first (1434-1436); generate\_report:1655 still prints the
+external\_params values & five parameter values in the file are read but
+never used while \_derived.theta exists \\
+8 &
+\texttt{calibrate.py:1249,\ 783,\ 826-830\ (spec.n\_sim\ vs\ n\_sim\_cohorts)}
+& simulation.n\_sim read into spec.n\_sim but unused for the production
+panels & \texttt{spec\textbackslash{}.n\_sim\textbar{}n\_sim\_cohorts} &
+with base\_year\_cohorts=true, run\_model\_moments -\textgreater{}
+base\_year\_cross\_section(theta, spec) with n\_sim=None -\textgreater{}
+spec.n\_sim\_cohorts (783); spec.n\_sim is then only printed
+(calibrate.py:903,1628; pin\_baseline\_closure.py:64); same for
+calibrate.py -\/-n-sim, diag\_ss\_vs\_transition.py:44 and
+fill\_report.py:581 (its -\/-n-sim does govern the baseline transition
+at 546) & simulation.n\_sim=10000 (json:388) does not determine the SMM
+Monte Carlo size; n\_sim\_cohorts=2000 (json:390) does \\
+9 &
+\texttt{lifecycle\_perfect\_foresight.py:781-783,\ 301-309;\ lifecycle\_jax.py:205-207;\ olg\_transition.py:1958-1962,\ 2251-2252,\ 1234-1236;\ fiscal\_experiments.py:595-602,\ 621-623,\ 640}
+& transfer\_floor machinery & \texttt{transfer\_floor} &
+LifecycleModelPerfectForesight.\textbf{init}:301 raises
+NotImplementedError for transfer\_floor\textgreater0 (LifecycleModelJAX
+builds that object at 1015), so every branch that handles a positive
+floor is unreachable; config external\_params.transfer\_floor=0.0
+(json:53) & dead by construction; tests at
+test\_olg\_transition.py:1160,1410,1436,2368 construct positive floors
+(not checked here whether they are expected to raise) \\
+10 &
+\texttt{lifecycle\_perfect\_foresight.py:809-812,\ 815-819,\ 912-929;\ 1359,\ 1370-1388}
+& retirement\_window branches (\_is\_retired\_at window case,
+\_in\_retirement\_window, dual solve in \_solve\_period and
+\_solve\_period\_wrapper) & \texttt{retirement\_window} &
+\textbf{init}:316-324 raises for any non-None window
+(test\_olg\_transition.py:1926 asserts the raise), so
+\_in\_retirement\_window always returns False & dead by construction \\
+11 &
+\texttt{lifecycle\_perfect\_foresight.py:1160-1163;\ lifecycle\_jax.py:1230-1232;\ olg\_transition.py:644-646}
+& initial\_avg\_earnings is None else-branches &
+\texttt{initial\_avg\_earnings} & LifecycleConfig.initial\_avg\_earnings
+defaults to 0.0 (180) and nothing sets it to None (grep
+initial\_avg\_earnings=None: none) & branch cannot run \\
+12 & \texttt{lifecycle\_perfect\_foresight.py:45,\ 294} &
+LifecycleConfig.N\_earnings\_history / self.N\_earnings\_history &
+\texttt{N\_earnings\_history} & assigned at 294, read nowhere &
+parameter read and never used \\
+13 & \texttt{lifecycle\_perfect\_foresight.py:1414-1690} & \textbf{main}
+-\/-test block & \texttt{=\ results\$\ (1472-1475)} & unpacks 19 names
+from the 22-tuple simulate() returns (1282-1285) -\textgreater{}
+ValueError before any output & the only caller of the parallel code path
+(see c) cannot complete \\
+14 &
+\texttt{lifecycle\_jax.py:101-103\ (P\_y,\ P\_h\_t),\ 117\ (labor\_hours)}
+& compute\_budget\_jax parameters P\_y, P\_h\_t unused in the body;
+labor\_hours never varied &
+\texttt{def\ compute\_budget\_jax\textbar{}compute\_budget\_jax\textbackslash{}(}
+& body 134-209 references neither P\_y nor P\_h\_t; both call sites
+(261-284, 392-414) omit labor\_hours (default 1.0) & parameters read and
+never used \\
+15 & \texttt{lifecycle\_jax.py:1052,\ 1122-1152} &
+LifecycleModelJAX.bequest\_lumpsum not forwarded by
+LifecycleModelJAX.solve & \texttt{bequest\_lumpsum} & solve() passes no
+bequest\_lumpsum= to \_solve\_lifecycle\_jax\_jit (default 0.0); the
+attribute is read only by the batched solve in olg\_transition.py:433 &
+on the single-model JAX path (calibrate.py SMM) a non-zero
+config.bequest\_lumpsum would be ignored; moot while recompute\_bequests
+is off \\
+16 & \texttt{lifecycle\_jax.py:1102,\ 1173\ (**kwargs)} &
+LifecycleModelJAX.solve/simulate accept and ignore **kwargs &
+\texttt{def\ solve\textbackslash{}(self,\ verbose=False,\ \textbackslash{}*\textbackslash{}*kwargs\textbackslash{})\textbar{}def\ simulate\textbackslash{}(.*\textbackslash{}*\textbackslash{}*kwargs}
+& parallel/n\_jobs accepted for interface parity, never read &
+parameters never used \\
+17 & \texttt{olg\_transition.py:42-45} & \_panel\_to\_age\_means legacy
+\textgreater=19 branch &
+\texttt{len\textbackslash{}(panel\_data\textbackslash{})} & both
+backends return 22 (see wrap\_sim\_output item) & condition cannot
+hold \\
+18 & \texttt{olg\_transition.py:329-364;\ 1535-1558;\ 1648-1668} &
+\_slice\_mean\_single\_age\_njit and the raw-panel branches of
+\_period\_cross\_section / \_compute\_all\_cross\_sections &
+\texttt{len\textbackslash{}(panel\_data\textbackslash{})\ ==\ 11\textbar{}\_slice\_mean\_single\_age\_njit}
+& \_cohort\_panel\_cache is filled with 11-tuples of per-age means on
+both backends (1412-1413, 1436-1438, 1445-1450 via
+\_simulate\_birth\_cohort\_cached:402), so len(panel\_data)==11 always &
+njit kernel and two else-branches unreachable; a third implementation of
+the per-age mean \\
+19 & \texttt{olg\_transition.py:1493-1591} & \_period\_cross\_section
+body (cache miss path) &
+\texttt{\_period\_cross\_section\textbackslash{}(\textbar{}\_period\_cache\textbackslash{}{[}}
+& \_compute\_all\_cross\_sections:1686-1704 pre-populates
+\_period\_cache for every t with key (t, n\_sim, 42, pv);
+compute\_government\_budget\_path is called with the same n\_sim right
+after simulate\_transition (fiscal\_experiments.py:646,
+diag/fill/validate), so 1490-1491 hits; a miss needs a different n\_sim;
+\_compute\_bequest\_lumpsum\_path (recompute\_bequests only) also hits &
+second implementation of the per-period cross-section, reached only on
+cache miss \\
+20 & \texttt{olg\_transition.py:762} & \_birth\_sim\_cache write in the
+JAX batched simulate & \texttt{\_birth\_sim\_cache} & the only reader is
+\_simulate\_birth\_cohort\_cached:382 (NumPy branch of
+\_ensure\_cohort\_panel\_cache:1445); under backend=jax nothing reads
+the entry; it also stores a raw 22-tuple where the reader expects an
+11-tuple & cache written and never read \\
+21 & \texttt{olg\_transition.py:766-784,\ 971} & \_create\_cohort\_sizes
+/ \_cohort\_sizes\_njit -\textgreater{} self.cohort\_sizes &
+\texttt{self\textbackslash{}.cohort\_sizes\textbackslash{}b} & read only
+at \_cohort\_weights:971 when no cohort\_sizes\_path and no demography;
+production has demography (json:401) so simulate\_transition:1928-1929
+builds cohort\_sizes\_path; tests at test\_olg\_transition.py:2438 read
+\_cohort\_sizes\_njit directly & computed in \textbf{init} and unused in
+production \\
+22 &
+\texttt{olg\_transition.py:189,\ 195\ (pop\_growth,\ growth\_factor)} &
+OLGTransition.pop\_growth and scalar growth\_factor &
+\texttt{self\textbackslash{}.growth\_factor\textbackslash{}b\textbar{}self\textbackslash{}.pop\_growth}
+& growth\_factor read by \_growth\_at:913 only when growth\_factor\_path
+is None (simulate\_transition sets it at 1927 first) and by
+growth\_factors:924 only when \_demog is None; pop\_growth feeds
+\_cohort\_sizes\_njit (unused, above) and run\_fiscal\_figures
+params\_out:544 & with the demographic sidecar both are inert; see (e)
+external\_params.pop\_growth \\
+23 & \texttt{olg\_transition.py:196-197,\ 1037,\ 1044,\ 1060} &
+OLGTransition.birth\_year & \texttt{birth\_year} & in
+\_cohort\_survival\_schedule cal\_year=birth\_year+birth\_period+j
+(1060) and \_survival\_schedule\_at\_year
+true\_cal=cal\_year+(current\_year-birth\_year) (1037): birth\_year
+cancels; remaining readers \_cohort\_sizes\_njit (unused) and
+set\_cohort\_sizes\_path\_from\_pop\_growth (CLI only) & parameter with
+no effect on production output; see (e) transition.birth\_year \\
+24 & \texttt{olg\_transition.py:1041-1045} & legacy branch of
+\_survival\_schedule\_at\_year & \texttt{\_surv\_px\ is\ not\ None} &
+production passes survival\_table (calibrate.py:1414) so 1036-1040
+returns & reached only without a survival table (tests/fixtures) \\
+25 & \texttt{olg\_transition.py:106,\ 179,\ 2181,\ 2195} & economy\_type
+and the closed-economy branch (K\_domestic is None) &
+\texttt{economy\_type=} & only calibrate.py:1408 passes
+economy\_type=\textquotesingle soe\textquotesingle; default is
+\textquotesingle soe\textquotesingle; nothing passes anything else &
+closed-economy branch unreachable \\
+26 &
+\texttt{olg\_transition.py:120,\ 231-233,\ 2472,\ 2554,\ 2678;\ run\_fiscal\_figures.py:81}
+& OLGTransition.output\_dir & \texttt{output\_dir} & read only by the
+three plot\_* methods, which no driver or test calls; \textbf{init}
+still mkdirs it; run\_fiscal\_figures:81 assigns it and never reads it &
+parameter whose only readers are unreachable; side effect: creates
+./output at construction \\
+27 & \texttt{olg\_transition.py:131,\ 269-275} & fertility\_path
+tombstone & \texttt{fertility\_path} & raises NotImplementedError;
+test\_olg\_transition.py:2142 asserts the raise & parameter kept only to
+refuse \\
+28 &
+\texttt{olg\_transition.py:1814-1822\ -\textgreater{}\ keys\ debt\_service,\ new\_borrowing,\ fiscal\_deficit}
+& budget keys constant in production & \texttt{B\_path\ is\ not\ None} &
+B\_path is never set on the object in production (see c), so
+debt\_service=new\_borrowing=0 and fiscal\_deficit==primary\_deficit;
+run\_fiscal\_figures writes them to fiscal\_results.json;
+eval\_fiscal\_results reads none of them (grep
+debt\_service\textbar new\_borrowing\textbar fiscal\_deficit: none) &
+three JSON series that carry no information in production \\
+29 & \texttt{olg\_transition.py:2809-2914} & run\_full\_simulation &
+\texttt{n\_h=\_n\_h\textbar{}\_alive\_fraction} & builds n\_h=2
+(2819,2839); simulate\_transition -\textgreater{}
+\_compute\_all\_cross\_sections -\textgreater{} \_aggregation\_weights
+-\textgreater{} \_alive\_fraction raises NotImplementedError for
+n\_h\textgreater1 (993-1001) & the default branch of
+\texttt{python\ olg\_transition.py} cannot complete \\
+30 & \texttt{olg\_transition.py:2605-2606} & plot\_lifecycle\_comparison
+use\_crn=False legacy seed & \texttt{use\_crn} & no caller passes
+use\_crn & inside an already unreachable method \\
+31 & \texttt{fiscal\_experiments.py:1432} & \texttt{if\ not\ False:} in
+compare\_scenarios & \texttt{if\ not\ False} & constant condition &
+always prints \\
+32 &
+\texttt{fiscal\_experiments.py:530-533\ (G,\ I\_g,\ defense,\ other)\ in\ ratio\ mode}
+& \_apply\_shock computes level paths that ratio mode discards &
+\texttt{ratio\_mode} & production always ratio\_mode=True
+(run\_fiscal\_figures 201-205); the G/defense/other level reads at
+530-533 are then unused (I\_g is used) & minor \\
+33 & \texttt{run\_fiscal\_figures.py:70-71,\ 118,\ 208-211} &
+defense\_path / other\_path level variables &
+\texttt{defense\_path\textbar{}other\_path} & None on both branches (71,
+118); the \texttt{is\ not\ None} tests at 208 and 210 can never be true
+& dead conditionals \\
+34 &
+\texttt{regen\_fiscal\_figures\_from\_json.py:31-65\ vs\ run\_fiscal\_figures.py:377-413;\ 184-198\ vs\ 260-274}
+& duplicated panel definitions and duplicated Gamma-rebuild block &
+\texttt{MACRO\_VARS\textbar{}growth\_factor\_path} & regen:30 says
+\textquotesingle kept in sync manually\textquotesingle; the Gamma block
+is copy-pasted inside regen() and regen\_budget\_components() & two
+implementations of one table / one computation \\
+35 &
+\texttt{reports/fill\_report.py:108-115\ (I\_g\_over\_Y,\ interest\_over\_Y,\ primary\_balance\_over\_Y,\ G\_over\_Y,\ B\_over\_Y,\ health\_oop\_over\_Y\ entries)}
+& LABEL dict entries never looked up &
+\texttt{LABEL\textbackslash{}.get\textbar{}UNTARGETED} & LABEL is
+consulted for targeted names (108-110 subset, 166,171) and for
+UNTARGETED={[}\textquotesingle ui\_over\_Y\textquotesingle{]} (121) and
+UNTARGETED\_DIST keys (126-127); the six listed keys are never passed &
+dead dictionary entries \\
+36 & \texttt{reports/fill\_report.py:358-360} & r\_star fallback in
+goods\_market\_residual &
+\texttt{paths\textbackslash{}.get\textbackslash{}(\textquotesingle{}r\textquotesingle{}}
+& paths always contains \textquotesingle r\textquotesingle{}
+(simulate\_transition result 2257 -\textgreater{} fill\_report 547-548),
+so the default argument is built and discarded; this is the only reader
+of OLGTransition.r\_star (olg\_transition.py:180) besides tests &
+fallback that can never apply; r\_star is otherwise an attribute set and
+never used \\
+37 & \texttt{reports/fill\_report.py:580} & L2 = L alias & \texttt{L2} &
+alias of the same object & trivial \\
+38 & \texttt{diag\_ss\_vs\_transition.py:44,\ 46,\ 83,\ 85} &
+spec.n\_sim override, theta\_dict, meanY, I\_g\_over\_Y &
+\texttt{theta\_dict\textbar{}meanY\textbar{}I\_g\_over\_Y\textbar{}spec\textbackslash{}.n\_sim}
+& theta\_dict (46), meanY (83) and I\_g\_over\_Y (85) are assigned and
+never read; spec.n\_sim=N\_SIM (44) does not change the SS panels
+(cohort path uses n\_sim\_cohorts) & the script argument n\_sim governs
+only the transition side \\
+39 & \texttt{diag\_bequest\_decomp.py:48} & theta\_dict &
+\texttt{theta\_dict} & assigned, never read & trivial \\
+\end{longtable}
+
+\subsubsection*{(e) Config keys without production
+effect}\label{e-config-keys-without-production-effect}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 &
+\texttt{calibration\_input\_GR.json:400\ transition.survival\_data\_file}
+& config key & \texttt{survival\_data\_file} & read at
+calibrate.py:1384; consulted only if survival\_table is None (1385),
+which the demography block (1373-1379) already set & no effect in
+production \\
+2 &
+\texttt{calibration\_input\_GR.json:398\ transition.r\_decay\ (and\ r\_initial/r\_final\ 396-397\ equal\ to\ prices.r)}
+& config key & \texttt{r\_decay\textbar{}r\_initial\textbar{}r\_final} &
+calibrate.py:1423-1427: r\_decay enters only the r\_i != r\_f branch;
+r\_i==r\_f==0.04 & r\_decay has no effect; r\_initial/r\_final matter
+only as a constant level \\
+3 & \texttt{calibration\_input\_GR.json:394\ transition.birth\_year} &
+config key & \texttt{birth\_year} & calibrate.py:1412 -\textgreater{}
+OLGTransition.birth\_year; cancels in the survival lookups
+(olg\_transition.py:1037,1060), otherwise feeds only cohort\_sizes
+(unused with demography) and the CLI-only pop\_growth\_path device & no
+effect on production output \\
+4 &
+\texttt{calibration\_input\_GR.json:58\ external\_params.pop\_growth} &
+config key & \texttt{pop\_growth} & skipped for LifecycleConfig
+(calibrate.py:1300-1301); OLGTransition.pop\_growth inert with the
+demographic sidecar (see d); base\_year\_age\_weights fallback dead;
+remaining readers: reports/fill\_report.py:60,484-485 (params table,
+Level column, header Gammaval), run\_fiscal\_figures.py:544
+(params\_out), eval\_fiscal\_results.py:87,714 (fallback) & affects
+report text only, not the model solution \\
+5 & \texttt{calibration\_input\_GR.json:89-150\ survival\_probs} &
+config key (60-vector) & \texttt{survival\_probs} & read into
+LifecycleConfig (calibrate.py:1330-1331); overridden per cohort in the
+calibration (calibrate.py:797-800, base\_year\_cohorts=true) and in the
+transition (olg\_transition.py:1112-1116,1178-1180, survival\_table
+set); residual readers are the recompute\_bequests gate (2066), the
+legacy survival branch (1041) and the age-weights fallback (1193), all
+inactive in production & the 60 numbers do not enter any production
+computation \\
+6 &
+\texttt{calibration\_input\_GR.json:13\ model.beta,\ :16\ model.nu,\ :48\ external\_params.tau\_p,\ :50\ pension\_replacement\_default,\ :55\ m\_good}
+& config values overwritten by \_derived.theta &
+\texttt{\_derived.*theta} & see (d) calibrate.py:1314-1329 & read, then
+replaced; printed unchanged by generate\_report \\
+7 & \texttt{calibration\_input\_GR.json:388\ simulation.n\_sim} & config
+key & \texttt{n\_sim} & see (d) calibrate.py:1249/783: with
+base\_year\_cohorts=true only simulation.n\_sim\_cohorts (390) sizes the
+SMM panels; simulation.n\_sim is printed only & no effect on production
+numbers \\
+8 &
+\texttt{calibration\_input\_GR.json:381-385\ untargeted.\{earnings\_var\_mean,\ earnings\_var\_slope,\ consumption\_gini,\ mean\_assets,\ median\_wealth\_to\_income\}\ =\ null}
+& config keys &
+\texttt{config\_data\textbackslash{}.get\textbackslash{}(\textquotesingle{}untargeted\textquotesingle{}}
+& read by generate\_report:1701-1714 and rendered as an em-dash when
+None; fill\_report reads only income\_gini and p90\_p10\_income
+(126-127) & inert null entries \\
+9 & \texttt{calibration\_input\_GR.json:286\ fiscal.interest\_over\_Y} &
+config key & \texttt{interest\_over\_Y} & read only through the
+comparisons loop of compute\_fiscal\_ratios (1585-1591) and
+generate\_report (1736-1739); fill\_report excludes it on purpose
+(116-120) and its LABEL entry is dead & report-only; the model value is
+r\_B*B\_over\_Y by construction \\
+10 &
+\texttt{calibration\_input\_GR.json:283-285\ fiscal.health\_oop\_over\_Y,\ health\_total\_over\_Y,\ tax\_revenue\_over\_Y}
+& config keys &
+\texttt{health\_oop\_over\_Y\textbar{}health\_total\_over\_Y\textbar{}tax\_revenue\_over\_Y}
+& generate\_report comparisons; copied into fiscal\_results.json params
+(run\_fiscal\_figures.py:564-566) and eval params
+(eval\_fiscal\_results.py:703-705) but chk\_calibration\_ratios checks
+only pensions/ui/health\_gov/G (500-505) & read, carried into outputs,
+never used by a check \\
+11 & \texttt{calibration\_input\_GR.json:278\ fiscal.I\_g\_over\_Y} &
+config key & \texttt{I\_g\_over\_Y} & calibrate.py:1449 -\textgreater{}
+paths (consumed by run\_fiscal\_figures/validate\_backends only when
+eta\_g==0, by diag\_bequest\_decomp.py:82 as a level),
+compute\_fiscal\_ratios:1571 (report ratio
+primary\_balance\_full\_over\_Y), pin\_baseline\_closure.py:97
+(printed); the production transition sizes I\_g from K\_g instead
+(pin\_baseline\_closure.py:74-95, run\_fiscal\_figures.py:98-99) &
+report/diagnostic-only in production \\
+12 &
+\texttt{calibration\_input\_GR.json:29\ \_derived.theta\_metadata.calibration\_date}
+& config key & \texttt{calibration\_date\textbar{}theta\_metadata} &
+written by calibrate.py:1891-1894; fill\_report.py:461-462 reads
+source\_report only & never read \\
+13 & \texttt{code/calibration\_input\_GR\_rB0.json} & config file &
+\texttt{rB0\textbar{}calibration\_input\_GR\_rB0} & no reference in
+code/\emph{.py, code/}.sh, code/reports/*.py & config file nothing
+reads \\
+\end{longtable}
+
+\subsubsection*{(f) Scripts / outputs nothing
+reads}\label{f-scripts--outputs-nothing-reads}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & \texttt{olg\_transition.py:2712,\ 2809,\ 2917,\ 2925,\ 2959,\ 2993}
+& CLI: run\_fast\_test, run\_full\_simulation, \_parse\_backend,
+run\_from\_config, main & \texttt{olg\_transition\textbackslash{}.py} &
+no .sh driver and no test runs \texttt{python\ olg\_transition.py};
+outputs output/test/\emph{.png and output/}.png are read by nothing in
+code/; run\_full\_simulation cannot complete (see d) & together with
+plot\_government\_budget:2358, plot\_transition:2481,
+plot\_lifecycle\_comparison:2563, \_default\_plot\_filename:2346,
+\_sparse\_int\_ticks:320, whose only callers are these \\
+2 & \texttt{lifecycle\_jax.py:1292-1371} & CLI -\/-test block of
+lifecycle\_jax.py & \texttt{lifecycle\_jax\textbackslash{}.py\ -\/-test}
+& no driver or test; setup\_jax.sh:51 only prints a suggestion to run
+\texttt{olg\_transition.py\ -\/-test} & standalone smoke test \\
+3 & \texttt{build\_public\_capital\_GR.py} & builder script &
+\texttt{build\_public\_capital\_GR\textbar{}realgdp\_GR} & prints K\_g/Y
+and delta\_g; writes only its download cache data/realgdp\_GR.json; no
+code reads either & hand-run calibration aid; result transcribed into
+production.K\_g/delta\_g by hand \\
+4 & \texttt{build\_pension\_floor\_GR.py} & builder script &
+\texttt{pension\_floor\_GR\textbar{}nomgdp\_GR} & writes
+data/pension\_floor\_GR.json and cache data/nomgdp\_GR.json; grep over
+code/ finds no reader of either & hand-run aid for
+external\_params.pension\_min\_floor \\
+5 & \texttt{build\_survival\_GR.py} & builder script &
+\texttt{survival\_GR} & writes data/survival\_GR.npz; read by
+build\_demography\_GR.py:53 (live chain) and by the dead
+survival\_data\_file branch & live only as an input to
+build\_demography\_GR.py \\
+\end{longtable}
+
+\subsubsection*{Observations (not dead
+code)}\label{observations-not-dead-code}
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{3.3cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.5cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.4cm}@{}}
+\toprule\noalign{}
+\# & definition (file:line) & kind & pattern searched & result (callers)
+& evidence read \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & \texttt{olg\_transition.py:1793-1799} & \_ratio\_at array branch in
+compute\_government\_budget &
+\texttt{G\_over\_Y=\textbar{}defense\_over\_Y=\textbar{}other\_net\_over\_Y=}
+& all production callers pass scalars (run\_fiscal\_figures 201-205 via
+\_apply\_shock \_rbase -\textgreater{} arrays of length T; NOTE: \_rbase
+returns arrays, so the array branch IS live for fiscal runs; the scalar
+branch is live for diag\_ss\_vs\_transition/validate\_backends) & both
+branches reached; listed to record the check (not dead) \\
+2 & \texttt{eval\_fiscal\_results.py:723,\ 729-734} & scenario\_keys
+omits \textquotesingle nfa\_constrained\textquotesingle{} &
+\texttt{scenario\_keys} & run\_fiscal\_figures writes four scenario
+blocks per shock (512-516); eval checks three; regen reads all four
+(209-212) & not dead code: an output block no check reads \\
+3 & \texttt{calibrate.py:1655-1656} & generate\_report prints
+external\_params verbatim &
+\texttt{config\_data\textbackslash{}{[}.external\_params.\textbackslash{}{]}}
+& prints tau\_p=0.34, pension\_replacement\_default=0.18, m\_good=0.048
+although \_derived.theta replaced them at build time (1314-1329) &
+report shows values the run did not use \\
+\end{longtable}
+
+\subsubsection*{Definitions flagged test-only by count but not
+tabulated}\label{4-definitions-flagged-test-only-by-count-but-not-tabulated}
+
+The mechanical pass flagged four definitions test-only by count that the
+location map did not attach to a §3 row directly:
+\texttt{fiscal\_experiments.py:191\ linear\_phase\_in},
+\texttt{:201\ back\_loaded}, \texttt{:207\ exponential\_convergence}
+(all inside the (b) row for the adjustment profiles) and
+\texttt{olg\_transition.py:856\ OLGTransition.factor\_prices} (inside
+the (b) row with \texttt{production\_function}). They are confirmed (b).
+The \texttt{ref\_sites} column of \texttt{B6\_inventory.csv} lists each
+call site.
+

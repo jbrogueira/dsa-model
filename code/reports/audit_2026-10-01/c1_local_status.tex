@@ -1,0 +1,27 @@
+\textbf{Reduced-scale substitute for C1, completed 2026-10-02 (started 23:14 on 2026-10-01).} Production configuration and the stored $\theta$, JAX on CPU, $n_{sim} = 200$ per cohort on both sides; the cohort-by-cohort cross-section took 2\,866 s and the baseline transition (180 periods, 239 cohort solves per education group) 10\,969 s. Results, one draw each, with different seeds on the two sides:
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}lS[table-format=1.4]S[table-format=1.4]S[table-format=+1.2]@{}}
+\toprule
+& {Base-year equilibrium} & {Transition $t = 0$} & {\% gap} \\
+\midrule
+Output $Y$ & 1.0075 & 1.0198 & +1.22 \\
+$A/Y$ & 4.2534 & 4.2654 & +0.28 \\
+$C/Y$ & 0.5037 & 0.5039 & +0.04 \\
+Revenue$/Y$ & 0.3295 & 0.3297 & +0.06 \\
+Payroll revenue$/Y$ & 0.1300 & 0.1302 & +0.15 \\
+Pensions$/Y$ & 0.1588 & 0.1574 & -0.88 \\
+UI$/Y$ & 0.0112 & 0.0106 & -5.4 \\
+Public health$/Y$ & 0.0533 & 0.0529 & -0.75 \\
+$K/Y$ & 3.6667 & 3.6667 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The base-year moments at the stored $\theta$ on the live configuration are hours 0.4167 (target 0.41, $+1.6\%$), $A/Y$ 4.253 ($+6.3\%$), payroll revenue$/Y$ 0.1300, pensions$/Y$ 0.1588 ($-0.8\%$), public health$/Y$ 0.0534 ($-1.2\%$), UI$/Y$ 0.0112 (target 0.006). At 200 households per cohort $A/Y$ alone can move by several percent between seeds, so these bound the drift of C3 loosely; the direction of hours and $A/Y$ is up. The $t = 0$ output gap of $+1.2\%$ compares with $-9.5\%$ in the 13:41 record on the single-lifecycle construction; at this $n_{sim}$ it is within sampling error of zero and was not tested against a second seed.
+
+Baseline path (per capita, detrended): $Y$ falls from 1.020 at $t = 0$ to 0.823 at $t = 26$ ($-19\%$), recovers to 0.97 by $t = 75$, oscillates between 0.93 and 0.99 and settles at 0.96; pensions$/Y$ rise from 0.157 to 0.286 at $t = 25$ and settle at 0.198; public health$/Y$ from 0.053 to 0.077 and back to 0.060; $A/Y$ from 4.27 to 6.05 at $t = 26$, settling at 5.35--5.44; revenue$/Y$ from 0.330 to 0.390 and back to 0.359; $K^g$ exactly constant. The budget of this run carries no $G$, $D$ or $O$ (the report's baseline passes no ratios); adding the configuration shares ($0.13 + 0.03 - 0.1136 = 0.0464$ of output) gives a full primary balance of $+2.45\%$ of output at $t = 0$ (target $+1.95\%$), a deficit of $7.3\%$ at $t = 25$, and a deficit of about $0.06\%$ on the terminal path, where a constant $B/Y$ needs a surplus of $0.197\%$ per unit of $B/Y$ (M4).
+
+Goods-market residual as the report computes it: closed form $-0.173$ of output at $t = 0$, open form $-0.197$, closed form $-0.093$ at $t = 179$; both far beyond the 0.08 threshold. The identity on the flows as booked accounts for it: in this budget $\mathrm{PD}/Y = -0.0705$, $M/Y = 0.0806$, $\mathrm{UI}/Y = 0.0106$, so the known terms sum to $-0.162$, leaving $-0.035$ of output for the unmeasured accidental bequests, the order of the 3.8\% recorded in July (M3).
+
+Flatness over $t = 156, \dots, 179$, in percent per year: $Y$ $+0.010$, $C$ $-0.004$, $K$ $+0.010$, $L$ $+0.010$, $K^g$ $0.000$, household wealth $A$ $-0.067$. The sampling-noise floor at this $n_{sim}$ was not measured. Log and paths: session scratchpad \code{c1/c1_local.log}, \code{c1/c1_local_paths.npz}.

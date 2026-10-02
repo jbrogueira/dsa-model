@@ -1,0 +1,33 @@
+\begin{tabular}{@{}llS[table-format=2.2]l@{}}
+\toprule
+Symbol & Description & {Value} & Source / identified by \\
+\midrule
+\multicolumn{4}{l}{\itshape Externally set}\\
+$g$ & labour productivity growth, per capita & 0.02 & 2024 Ageing Report \\
+$n$ & population growth & 0.00 & EUROPOP2023 \\
+$\gamma$ & curvature of consumption utility & 1.00 & log utility \\
+$\varphi$ & inverse Frisch elasticity & 1.50 &  \\
+$\alpha$ & private capital share & 0.33 &  \\
+$\delta$ & private depreciation & 0.05 & standard value \\
+$\eta_g$ & public capital elasticity & 0.05 &  \\
+$K_g/Y$ & public capital ratio & 0.70 & IMF ICSD \\
+$\delta_g$ & public capital depreciation & 0.04 & $I_g/K_g-(\Gamma-1)$ \\
+$r$ & world return on capital & 0.04 &  \\
+$r_B$ & sovereign rate & 0.02 & implicit rate 2012--24 \\
+$\tau_c,\tau_l,\tau_k$ & consumption, labour, capital tax rates & 0.18 & effective rates \\
+$b_{min}$ & minimum pension floor & 0.17 & national pension, L.4387/2016 \\
+$\kappa$ & public share of medical spending & 0.66 & Eurostat \texttt{hlth\_sha11\_hf} \\
+$T$, $J_R$ & lifespan, retirement age & 60.00 &  \\
+\midrule
+\multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
+$\nu$ & labour disutility weight & 13.28 & average hours \\
+$\beta$ & discount factor & 1.02 & $A/Y$ \\
+$\tau_p$ & payroll tax rate & 0.20 & payroll revenue$/Y$ \\
+$\rho^{pens}$ & pension replacement rate & 0.24 & pensions$/Y$ \\
+$m^{good}$ & medical cost scale & 0.09 & public health$/Y$ \\
+\midrule
+\multicolumn{4}{l}{\itshape Pinned outside the SMM}\\
+$A$ & total factor productivity & 1.43 & normalisation, $\hat y=1$ \\
+$O/Y$ & other net spending & -0.11 & data primary balance \\
+\bottomrule
+\end{tabular}

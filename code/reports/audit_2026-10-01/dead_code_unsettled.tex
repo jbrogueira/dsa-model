@@ -1,0 +1,54 @@
+
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Skill-level callers outside \texttt{code/}.}
+  \texttt{eval\_fiscal\_results.py} and
+  \texttt{regen\_fiscal\_figures\_from\_json.py} are invoked by no
+  \texttt{.sh} driver in \texttt{code/}; whether the
+  user\textquotesingle s \texttt{/eval-fiscal} and \texttt{/fiscal-note}
+  skills call them could not be checked because
+  \texttt{\textasciitilde{}/.claude} was out of scope for this audit.
+  They are classified as manual CLIs, not (f).
+\item
+  \textbf{\texttt{run\_cost\_and\_figure.sh} →
+  \texttt{TestCohortBatchedSurvival}.} The driver runs a test class; its
+  reach into the JAX batched solve was taken from the test file
+  (test\_olg\_transition.py:2666-2748) without executing it.
+\item
+  \textbf{Tests that construct \texttt{transfer\_floor\textgreater{}0}}
+  (test\_olg\_transition.py:1160, 1410, 1436, 2368) would now hit the
+  \texttt{NotImplementedError} at lifecycle\_perfect\_foresight.py:301.
+  Whether they currently fail or are marked expected-fail was not
+  checked (no test run was made).
+\item
+  \textbf{\texttt{jnp.where} eager evaluation.} Under JAX the
+  \texttt{tax\_progressive} and \texttt{transfer\_floor} alternatives
+  are traced even when false (lifecycle\_jax.py:156-160, 173-177,
+  205-207); they are classified by their effect on the result, not by
+  whether XLA executes them.
+\item
+  \textbf{Reachability through \texttt{getattr} strings.}
+  \texttt{\_as\_alpha\_indexed} (olg\_transition.py:575) and the
+  \texttt{getattr(self.lifecycle\_config,\ \textquotesingle{}tau\_beq\textquotesingle{}/\textquotesingle{}transfer\_floor\textquotesingle{},\ …)}
+  reads were traced by hand; no other dynamic attribute access on
+  user-defined names was found, but the \texttt{ast} pass cannot prove
+  absence inside f-strings.
+\item
+  \textbf{\texttt{\_ratio\_at} branches} (olg\_transition.py:1793-1799)
+  are listed under (c) only to record that both branches were checked;
+  they are live.
+\item
+  \textbf{Whether \texttt{cohort\_sizes} (olg\_transition.py:236) is
+  used by any test through \texttt{OLGTransition} without demography}
+  was confirmed for test\_olg\_transition.py:2438 only; other fixtures
+  without a demography also take the 971 fallback at run time, which is
+  why the item is (d) for production rather than (a).
+\end{enumerate}
+
+Files: report \texttt{B6\_dead\_code.md}; raw+classified inventory
+\texttt{B6\_inventory.csv}; tools \texttt{b6\_tools/inventory.py},
+\texttt{b6\_tools/classify.py}, reference dump
+\texttt{b6\_tools/refs.json} --- all under \texttt{scratchpad/phaseB/}.
