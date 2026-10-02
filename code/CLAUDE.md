@@ -134,7 +134,7 @@ In `olg_transition.py`:
 - UI benefits for unemployed
 - Multiple tax instruments (consumption, labor, payroll, capital)
 - Progressive HSV taxation (`tax_progressive`, `tax_kappa`, `tax_eta`)
-- Means-tested transfers / consumption floor (`transfer_floor`) — the household side is correct, but the transfer is **not** a line in `total_spending`, so it is paid by nobody. `compute_government_budget` raises on a positive floor (2026-10-01). Booking it needs the simulation to carry the per-agent transfer. `financing='transfer_floor'` is therefore unusable
+- Means-tested transfers / consumption floor (`transfer_floor`) — booked since 2026-10-02: the simulations record the top-up per agent (`transfer_sim`), `compute_government_budget` adds `transfers` to `total_spending`, and the production config sets 0.0807. `financing='transfer_floor'` is usable again
 - Survival risk / stochastic mortality (`survival_probs`)
 - Age-dependent medical expenditure (`m_age_profile`)
 - Age-dependent productivity transitions (`P_y_by_age_health`)
@@ -188,7 +188,7 @@ In `olg_transition.py`:
 - `w_at_retirement` is cached in `__init__` (not recomputed per period)
 - `n_sim` controls Monte Carlo simulation size
 - Output plots saved to `output/` directory
-- `simulate_transition` `results['L']` is in efficiency units (wage-valued `effective_y_sim` aggregate divided by `w_path`), matching calibrate.py's `L = labor_income / w`; `_aggregate_capital_labor_njit` returns `(K, C, L)` — keep unpack order aligned. **`effective_y_sim = wage_income + ui_sim`, so `L` carries `UI/w`** — 1.680 % of `w·L` at the 2026-10-01 calibration (1.887 % was the July r_B=0 run; the figure tracks the UI replacement and unemployment rates, so it is calibration-dependent), verified as `w·L − tax_p/τ^p = UI` at every t. Consequence: `L` exceeds `∫κ_j z e^α ℓ dμ`, `𝓑^lab ≠ w·L` (labour share 0.670 vs payroll base 0.657 of Y), and Y and K_domestic are above their model definitions by the same share; `results['K']` (household wealth A) is NOT — it is aggregated from `a_sim` and never touches L, so stripping UI leaves it unchanged and raises A/Y
+- `simulate_transition` `results['L']` is in efficiency units (wage-valued `effective_y_sim` aggregate divided by `w_path`), matching calibrate.py's `L = (labor_income − ui) / w`; `_aggregate_capital_labor_njit` returns `(K, C, L)` — keep unpack order aligned. **Since 2026-10-02 UI is netted out before dividing by `w`, so `w·L` is the wage bill. Before that `effective_y_sim = wage_income + ui_sim` meant `L` carried `UI/w`** — 1.680 % of `w·L` at the 2026-10-01 calibration (1.887 % was the July r_B=0 run; the figure tracks the UI replacement and unemployment rates, so it is calibration-dependent), verified as `w·L − tax_p/τ^p = UI` at every t. Consequence: `L` exceeds `∫κ_j z e^α ℓ dμ`, `𝓑^lab ≠ w·L` (labour share 0.670 vs payroll base 0.657 of Y), and Y and K_domestic are above their model definitions by the same share; `results['K']` (household wealth A) is NOT — it is aggregated from `a_sim` and never touches L, so stripping UI leaves it unchanged and raises A/Y
 - `_solve_period_wrapper` must stay module-level (required for `multiprocessing` pickling)
 - All new features default to OFF (0.0, False, None) — setting defaults recovers pre-feature behavior exactly
 - Fiscal G/I_g shocks pass `govt_spending_path=` and `I_g_path=` as explicit args to `simulate_transition()`; `transfer_floor=` (absolute value) is also an explicit arg — no external mutation needed

@@ -10,8 +10,8 @@ One file solves the household problem. Everything else decides what each househo
 |---|---|
 | `code/lifecycle_perfect_foresight.py` | **the solver.** One household's whole life: consumption, saving, hours, retirement. NumPy/numba |
 | `code/lifecycle_jax.py` | the same solver, rewritten in JAX. Cross-checked against the first to 1e-14 |
-| `code/calibrate.py` | calls the solver **3 times** — one household per education group. Simulates, averages, compares to data, adjusts five parameters, repeats |
-| `code/olg_transition.py` | calls the solver **720 times** — one household per education group per birth year. Simulates each, adds them up year by year |
+| `code/calibrate.py` | calls the solver **180 times** — one household per education group per 2023 cohort, each on its own survival schedule (the cohort-by-cohort construction; 3 on the single-lifecycle one). Simulates, averages, compares to data, adjusts six parameters, repeats |
+| `code/olg_transition.py` | calls the solver **717 times** — one household per education group per birth year (239 cohorts over a 180-year horizon). Simulates each, adds them up year by year |
 | `code/fiscal_experiments.py` | calls the transition twice, baseline and counterfactual, and hunts for the tax rate that hits a debt target |
 | `code/reports/fill_report.py` | calls nothing new; reads the above into the two-page calibration report |
 
@@ -24,7 +24,64 @@ So there are two independent routes to "the 2023 cross-section", and a mistake i
 
 ---
 
-## Current status (handoff 2026-10-02)
+## Current status (handoff 2026-10-02, evening)
+
+The audit of the code at `3784ae5` is complete, its findings are fixed and committed (`009ed81`), and the report is tracked (`55b490c`, `code/reports/model_audit_2026-10-01.{tex,pdf,md}`). Nothing has been calibrated on the fixed code; an instance is being set up for that.
+
+### The audit
+
+Six context-free agents (household problem; initial condition and cohorts; aggregation, transition and terminal state; calibration procedure; status of the six July items; dead code) read the source with `code/CLAUDE.md` moved aside, plus local checks on the CPU. Report: Part I the model as implemented, Part II the solution method and the provenance of every recorded number, Part III the findings, the July items, the dead-code inventory (611 definitions, classes a–f, CSV in `code/reports/audit_2026-10-01/`), what was not verified, the comments on the first draft, and the changes made afterwards (§3.8). Three Critical, nine Major findings; all fixed below. GPU checks C1, C1b and C2 of the plan were not run; a reduced CPU stand-in at n_sim = 200 put the base-year-versus-t = 0 output gap at **+1.2%** on the cohort-by-cohort construction, against −9.5% on the single-lifecycle one.
+
+### Fixed this session (`ff76dd4`, `009ed81`)
+
+| item | change | check |
+|---|---|---|
+| C1 | retired continuation value read at the household's own last income state, both solvers (was index 0 for every retiree) | value varies with it, nondecreasing; solvers agree to 1e-14 |
+| C2 | entering cohorts beyond the table grow at the terminal rate (the 20 post-horizon periods raised) | period 199 returns |
+| C3 | config θ, A, closure stale by construction | to be refitted |
+| M1 | consumption floor booked: `transfer_floor = 0.0807` (guaranteed minimum income, EUR 200/month single adult), recorded per agent, outlay in the budget | budget identity to 1e-14 with the transfer, both solvers |
+| M2 | L = (wage income + UI − UI)/w everywhere | w·L = wage bill to 1e-10 |
+| M3 | resource-constraint checks rewritten on the budget's own lines with medical spending and both interest terms | not yet run at production scale |
+| M4 | debt tracked in the terminal check; no rest-point rule imposed | — |
+| M5 | bequests taxed away, `tau_beq = 1.0`; bequest measured as (1+g)a′ | per-agent identity; backends agree |
+| M6, m3 | standalone normalisation and closure scripts read θ via `theta_from_config`; level-based closure written | — |
+| M7 | scale loop converges only if the moments at the written (θ, A) pair are within `MOM_TOL` | — |
+| M8 | report tables: n_0 and n_∞, all SMM parameters, labelled identities, Γ_0 and Γ_T | — |
+| M9, m1 | B_0 and the I_g shock sized off a full-N_SIM baseline; τ_l target dated as the residual | — |
+| c2 | `job_finding_rate = 0.44`: 1 − long-term share of unemployment, Eurostat `une_ltu_a`, 2023 (was 0.5, unsourced) | `data/job_finding_GR.json` |
+| c3 | hours no longer capped at 1; both solvers bracket upward | hours > 1 appear at small ν; FOC residual 0 |
+| new | weighted Gini used a right-endpoint sum, understating every weighted Gini (pre-existing; untargeted rows of all past calibration reports) | exact test vs expanded sample |
+
+Decisions taken by the user: booked floor (not whole-spell UI); debt tracked and reported, not pinned; upper bound on hours removed; f from unemployment duration, base year. Full suite green (197 tests, less the macOS hang and the Metal-only classes); the NumPy transition tests take ~2.7 min each on the Mac, so split the suite or run it on the instance.
+
+### Open question
+
+Every change above moves what the SMM fits to, so `_derived.theta`, `A_tfp` and `other_net_spending_over_Y` are stale and nothing downstream should be read until the refit. The guaranteed-minimum-income amount (EUR 200/month) is to be checked against the base-year vintage. The debt ratio has no rest point at r_B = 0.019 > Γ_T − 1 = 0.017; on the old θ at n_sim = 200 the terminal full primary balance was a 0.06% deficit, so the baseline debt ratio drifts and the tax-financed Δτ_l depends on the horizon (stated, not fixed).
+
+### Next step
+
+1. **Recalibration and baseline on the instance** (≥ 32 GB RAM; A100 or H200): `bash run_step0_baseline.sh` chains the scale loop (SMM ↔ A ↔ closure), `diag_ss_vs_transition.py`, the predetermination check and the baseline report. Sizing from this session's C0: one SMM evaluation on the cohort-by-cohort construction is about 3 min on an A100 (three groups × 60 solves), so a round of the 12:31 fit's length is 8–10 h, and the new `MOM_TOL` test may demand a second round; the two transitions and two cross-sections after it took about an hour before. Read first: the t = 0 output gap at the full sample, the resource-constraint residual that `fill_report.py` prints (warns above 1%), and the debt drift the terminal check reports.
+2. **First fiscal run on the fixed code**: `run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`, then `eval_fiscal_results.py`; its resource-constraint FAIL tier (2%) and the full-N_SIM warm-up are untested at production scale.
+3. **Not done, by design**: dead-code deletion (inventory in the report's Appendix B); `retirement_window`, the HSV schedule and `n_h > 1` untouched; whether to re-pin the closure separately is moot, the loop does it last.
+
+### Code state
+
+Branch `trend-growth` at `55b490c`, pushed. Panel is a 23-tuple (`transfer_sim` at index 22, `alpha_idx` at 21); per-age means are 12 (`N_AGE_MEANS`); `_compute_budget` returns a fifth value, the transfer. Sites: `lifecycle_perfect_foresight.py` `_solve_state_choice` (retired branch), `_solve_labor_newton`, the simulation's transfer block; `lifecycle_jax.py` `solve_period_jax` (retired expectation), `solve_labor_robust_jax`, `_agent_step_jax`; `olg_transition.py` `_entrant_weights`, `_panel_to_age_means`, `compute_government_budget` (`transfers`), `simulate_transition` (UI netted from L); `fiscal_experiments._check_terminal_convergence(B_path=)`; `reports/fill_report.py` `goods_market_residual(budget=)`; `eval_fiscal_results.chk_goods_market(B_gdp_path=)`; `run_scale_loop.sh` `MOM_TOL`; `run_fiscal_figures.py` warm-up at `N_SIM`. New: `build_transfer_floor_GR.py`, `build_job_finding_GR.py`, `TestAuditFixes20261002`.
+
+### Documentation
+
+| what | where |
+|---|---|
+| audit report (model as implemented, calibration provenance, findings, dead code, checks, post-audit changes) | `code/reports/model_audit_2026-10-01.{tex,pdf,md}`, snapshots in `code/reports/audit_2026-10-01/` |
+| audit plan (now executed) | `code/docs/AUDIT_PLAN_2026-10-01.md` |
+| growth-extension plan, Step 0 | `code/docs/TREND_GROWTH_PLAN.md` |
+| July open issues, items 1, 2, 4 closed | `code/docs/OPEN_ISSUES_2026-07-30.md` |
+| project notes for the assistant | `code/CLAUDE.md` |
+| draft | `docs/` (Overleaf submodule, `master`) |
+
+---
+
+## Prior status (handoff 2026-10-02, morning: Step 0 and the aggregation audit)
 
 Step 0 of the growth extension is implemented and tested; the calibration it needs is not yet run. An aggregation audit of the whole pipeline found five defects, four of them pre-dating this session.
 

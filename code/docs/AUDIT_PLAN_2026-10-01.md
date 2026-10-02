@@ -1,7 +1,12 @@
 # Audit plan — model description, calibration, consistency audit
 
-Written 2026-10-01, re-pinned to `3784ae5` the same evening. Status: **not
-started**; the five decisions at the end are open.
+Written 2026-10-01, re-pinned to `3784ae5` the same evening. Status: **run
+2026-10-01/02** — report at `code/reports/model_audit_2026-10-01.{tex,pdf,md}`
+(`55b490c`); findings fixed in `ff76dd4` and `009ed81`. Decisions taken: (1)
+audited at HEAD with the stale θ; (2) agents code-only; (3) no GPU run (none
+available; a CPU stand-in at n_sim = 200 replaced C1); (4) LaTeX + PDF +
+markdown; (5) scope as recommended. C0: 15.9 s per cohort on the Mac's CPU,
+so C2 is tens of GPU hours.
 
 ## Object
 
