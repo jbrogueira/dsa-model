@@ -65,6 +65,23 @@ and the calibration is re-anchored. Steps 1–7 are otherwise unchanged.
 
 ## Step 0 — demographic assumptions
 
+**IMPLEMENTED 2026-10-01/02**, commits `d0ed187`..`89bee73`. Demography is built
+from the historical life tables, EUROPOP2023 through 2100 and an assumed tail
+(`build_demography_GR.py`); the calibration weights are the measured 2023 living
+cross-section; the transition's weights are entering-cohort sizes divided by the
+living share; Γ_t is a path, exactly 1.700% from t = 156; `T_transition` = 180.
+Verified: the base-year cross-section and the 25-84 total reproduced to machine
+precision, A[0] predetermination 0.000e+00 on both backends and both shocks, and
+the detrended series flat to 0.015 points per period over the settled window.
+
+Four things supersede the stored calibration, and clear in one re-run: the
+measured cross-section, the K_g vintage (0.745 → 0.7030 at the 2023 roll-forward),
+the JAX pension base (it valued the career-average component at the retiree's
+current-age wage multiplier, not the one at retirement), and this session's
+`b_min` = 0.1671 and new `ui_over_Y` target with `ui_replacement_rate` as its
+instrument. **Not yet done: the recalibration itself, and Steps 6 and 7.**
+
+
 Decided 2026-09-29, before any further calibration, so that the assumptions
 are fixed once rather than revisited after results exist.
 

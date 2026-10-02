@@ -134,14 +134,14 @@ In `olg_transition.py`:
 - UI benefits for unemployed
 - Multiple tax instruments (consumption, labor, payroll, capital)
 - Progressive HSV taxation (`tax_progressive`, `tax_kappa`, `tax_eta`)
-- Means-tested transfers / consumption floor (`transfer_floor`)
+- Means-tested transfers / consumption floor (`transfer_floor`) — the household side is correct, but the transfer is **not** a line in `total_spending`, so it is paid by nobody. `compute_government_budget` raises on a positive floor (2026-10-01). Booking it needs the simulation to carry the per-agent transfer. `financing='transfer_floor'` is therefore unusable
 - Survival risk / stochastic mortality (`survival_probs`)
 - Age-dependent medical expenditure (`m_age_profile`)
 - Age-dependent productivity transitions (`P_y_by_age_health`)
 - Endogenous labor supply via FOC (`labor_supply`, `nu`, `phi`)
 - Wage age profile (`wage_age_profile` in LifecycleConfig) — age-dependent wage multiplier κ(j), effective wage = w · κ(j) · y
 - Career-average pension (`pension_avg_weight`, `mean_kappa_working`, `mean_y_employed` in LifecycleConfig) — pension base blends last income state with career average; `pension_avg_weight=1.0` recovers last-state-only pension. **Both GR configs leave `pension_avg_weight` unset**, so `calibrate.py:1093` derives λ = (1−ρ_z^{J_R})/(J_R(1−ρ_z)) = **0.443**; β, ν and ρ^pens were all fitted against that blended base
-- Endogenous retirement window (`retirement_window`)
+- Endogenous retirement window (`retirement_window`) — **raises** (2026-10-01). Honoured by the NumPy solve only: the JAX solve ignores it and *neither* simulation consults it, both retiring mechanically at `retirement_age` (`docs/bug_report.md:487`), so policies and realised incomes disagreed even on NumPy while `docs/model_vs_implementation.md` advertised it as cross-validated. Wanted later; implement it in the JAX solve and both simulations first
 - Schooling phase with child costs (`schooling_years`, `child_cost_profile`)
 - Government spending on goods (`govt_spending_path` in OLGTransition)
 - Public capital in production (`eta_g`, `K_g_initial`, `delta_g` in OLGTransition). **Active in the GR config since 2026-07-10:** `eta_g=0.05`, `K_g=0.745` (= K_g/Y at the Y_ss=1 normalization; IMF ICSD 2019), `delta_g=0.04738255` (= (I_g/Y)/(K_g/Y) = 0.0353/0.745, keeps baseline K_g stationary at the level-I_g path)
@@ -154,7 +154,7 @@ In `olg_transition.py`:
 - Bequest redistribution fixed-point loop (`recompute_bequests` in `simulate_transition()`) — closed bequest circuit iterates until bequests converge; production CLI defaults to `True`, test CLI defaults to `False` (opt-in via `--recompute-bequests`). **`FiscalScenario.recompute_bequests` defaults to `False` and `run_fiscal_figures.py` never sets it**, so every reported fiscal run has an open circuit: newborns receive nothing and 3.77 % of Y per period in accidental bequests leaves the economy. `calibrate.py` is open too, so both sides are consistent
 - Bequest taxation with revenue accounting (`tau_beq` in OLGTransition budget)
 - Simulation mortality draws with bequest tracking (`alive_sim`, `bequest_sim` — 21-tuple output)
-- Population aging: fertility path + longevity improvement (`fertility_path`, `survival_improvement_rate` in OLGTransition)
+- Population aging comes from the demographic sidecar (`transition.demography_file`, built by `build_demography_GR.py`): the EUROPOP2023 entering-cohort series IS the fertility path and the projected life tables ARE the longevity improvement. `fertility_path` and `_build_population_weights` were **deleted** 2026-10-01 — the latter multiplied the weights by cumulative survival, double-counting mortality the per-cohort means already carry, and discarded the measured entrant path. `fertility_path` now raises; `survival_improvement_rate` survives only for the legacy no-table path
 - Data-driven cohort survival (`survival_table=(years, px)` in OLGTransition; opt-in via `transition.survival_data_file` → `data/survival_GR.npz`, built by `build_survival_GR.py`) — each cohort solved/simulated along its calendar diagonal of period life tables, clamped to the data range (cohort-historical past, held at last year for the future). Population weights stay births-only: survival is already baked into per-cohort means (dead agents hold 0, means divide by `n_sim`), so it must NOT also enter the weights. JAX batched solve/simulate carry survival per-cohort (`in_axes=0`).
 - Per-cohort survival schedules (`_cohort_survival_schedule`, `_build_population_weights`)
 - Heterogeneous initial wealth distribution (`initial_asset_distribution` in LifecycleConfig)
@@ -163,6 +163,7 @@ In `olg_transition.py`:
 
 ## Conventions
 
+- **Aggregates are per living person.** Per-cohort means divide by `n_sim` with the dead at zero, so survival is already inside every mean and the weights must be cohort sizes **at entry** — putting survival in the weights too would double-count it. `_aggregation_weights(t)` divides those entry weights by the living share `_alive_fraction(t) = Σ_j w_j S_j`, which makes a weighted sum a per-capita average rather than a total per person *ever entered*. The invariant is `Σ_j W_j S_j = 1`. Until 2026-10-01 the division was missing, so every transition aggregate was 10.1% below the calibration's at t=0 — invisible in every ratio, since the factor cancels, and invisible to the balanced-growth flatness check, since the living share is constant on the balanced path. `calibrate.py` reaches the same convention from the other side: means among the alive, weighted by the measured living cross-section
 - Policies indexed by `lifecycle_age` (not simulation time)
 - Policy array shape: `(T, n_a, n_y, n_h, n_y_last)` — last dimension is previous income state (for pension calculation), not earnings history
 - `m_grid` is `(T, 1)` — age-dependent medical costs; with `n_h=1`, effectively a `(T,)` age profile scaled by `m_good`

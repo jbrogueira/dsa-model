@@ -24,7 +24,62 @@ So there are two independent routes to "the 2023 cross-section", and a mistake i
 
 ---
 
-## Current status (handoff 2026-09-21)
+## Current status (handoff 2026-10-02)
+
+Step 0 of the growth extension is implemented and tested; the calibration it needs is not yet run. An aggregation audit of the whole pipeline found five defects, four of them pre-dating this session.
+
+### Step 0 — demography from data
+
+Built by `code/build_demography_GR.py` from the 1961–2023 life tables, EUROPOP2023 through 2100 and an assumed tail. `t = 0` is the measured 2023 cross-section; net migration is routed through the entry age, so the entering cohort is the residual making the model's 25–84 population equal the projection's. Both are reproduced to machine precision. Mortality is held at the 2100 schedule and entering-cohort growth ramped to n_∞ = 0 by 2120, after which the age distribution is **exactly** constant from 2179 — t = 156, hence `T_transition` = 180.
+
+| | t = 0 | peak ageing (≈2050) | terminal |
+|---|---|---|---|
+| Γ_t − 1 | 1.212% | 0.686% | 1.700% |
+| dependency ratio, 65–84 / 25–64 | 0.359 | 0.685 | 0.468 |
+| living share of entrants | 0.899 | 0.906 | 0.970 |
+
+Verified on 2× H200: A[0] predetermination `0.000e+00` on both backends and both shocks; detrended series flat to 0.015 points per period over the settled window, K_g exactly 0.
+
+### The aggregation audit
+
+Five defects, found by four independent read-only audits. The headline one had survived a full calibration, a reported fiscal run, and a passing flatness check.
+
+| | defect | size |
+|---|---|---|
+| 1 | The transition divided by everyone **ever entered**, the calibration by the **living**. Every ratio cancelled the factor, so nothing caught it | 10.1% on every level at t = 0, time-varying to 3.0% by the balanced path |
+| 2 | The JAX solve valued the career-average pension at the retiree's **current-age** wage multiplier, not the one at retirement; NumPy and the JAX *simulate* both used the latter | pension base up to −3.40%; wealth +0.51%, consumption −0.69%, noise-free |
+| 3 | `_agent_weights` spread each age's weight across `n_sim` rather than the agents alive, applying survival twice | hours +0.05%, consumption +3.12%, assets +1.07% |
+| 4 | Bequest fixed point never iterated — neither simulation cache was keyed by policy version, so iteration 2 read iteration 1's panels and reported a bit-exact zero change | the loop was one Gauss–Seidel step with a spurious `converged=True` |
+| 5 | `terminal_debt_gdp` dated debt and output one period apart, while `terminal_nfa_gdp` did not. The τ_l root-find solves to this target | 0.2–2% during the transition |
+
+Deleted as superseded: `_build_population_weights` and `fertility_path`, which double-counted survival *and* discarded the measured entrant path. Made to refuse rather than silently misbehave: `retirement_window`, a positive `transfer_floor` at the budget, `n_h > 1` in `_alive_fraction`, and a health-flag baseline pointed at a run on the old convention.
+
+### Data calibrated this session
+
+| parameter | from | to | source |
+|---|---|---|---|
+| `K_g` | 0.745 (IMF 2019) | 0.7030 | ICSD stock rolled to 2023 by perpetual inventory (`build_public_capital_GR.py`) |
+| `δ_g` | 0.036485 | 0.042810 | `I_g/K_g − (Γ_0−1)`, within 0.001 of the ICSD-implied 0.04186 |
+| `b_min` | 0.15 | 0.1671 | national pension €413.76/mo over €29,722 output per living 25–84 person (`build_pension_floor_GR.py`) |
+| `ui_over_Y` | untargeted | 0.006 target | was 111% above data; `ui_replacement_rate` added as its instrument |
+
+### Open question
+
+**The calibration is superseded four times over** — measured cross-section, K_g vintage, JAX pension base, and `b_min` plus the UI target. All clear in one re-run. Nothing downstream should be read until it has happened.
+
+Two things are measured but not yet re-measured on fixed code. The base-year-versus-t=0 output gap closed from −9.5% to +0.65%, but those figures came from `diag_ss_vs_transition.py` before it was corrected — it was spending 11% less public investment than the baseline, so with η_g = 0.05 it was comparing a different economy. And the full test suite last ran at 103 passed / 6 failed; all six causes are fixed and the affected tests verified individually, but no clean full-suite run exists on the current commit.
+
+### Next step
+
+One instance session, in this order: the full suite (37 minutes on 12 workers there, 84 locally), then `run_scale_loop.sh` for the SMM ↔ `A_tfp` fixed point and the closure re-pin, then `diag_ss_vs_transition.py` and the baseline transition. `run_step0_baseline.sh` chains the last three and aborts rather than carrying a stale configuration forward.
+
+### What now guards this class of error
+
+`chk_goods_market` at FAIL tier — the only identity that does not cancel a normalisation error, since the budget and NFA checks are tautologies given how they are constructed. `TestCrossRoutineLevels` compares the two routines' output *levels* with survival held equal, and a companion test checks the fixture can actually tell the conventions apart (it could not, at first: the living share must be well below 1). `validate_backends.py` now compares solved policies, which it had claimed to do in its docstring without ever measuring.
+
+---
+
+## Prior status (handoff 2026-09-21)
 
 Repository clean-up only; no source, config or data file changed. Commits `26a2776`, `29a9b98`, `346021b`; Overleaf `docs/` at `da44637` (pushed; parent pointer not staged).
 
