@@ -15,6 +15,9 @@ cd "$(dirname "$0")"
 CFG=${1:-calibration_input_GR.json}
 MAXROUND=${MAXROUND:-8}
 TOL=${TOL:-5e-3}
+# Largest relative deviation of any targeted moment at the written (theta, A_tfp)
+# pair that still counts as converged.
+MOM_TOL=${MOM_TOL:-5e-3}
 export MPLBACKEND=Agg
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 mkdir -p output/calibration
@@ -54,12 +57,26 @@ PY
 
   resid1=$(grep "iter  1:" /tmp/norm_round.log \
            | sed -E 's/.*resid=([+-][0-9.eE+-]+).*/\1/')
-  if python3 -c "import sys; sys.exit(0 if abs(float('$resid1')) < $TOL else 1)"; then
-    echo "=== OUTER LOOP CONVERGED at round $r (|Y_ss-1| at fitted theta: $resid1) ==="
+  # Two tests, both on what the config now holds. resid1 is |Y - 1| at the
+  # fitted theta BEFORE this round's A_tfp update, so passing it alone left the
+  # written pair (theta_r, A_r) unevaluated: on 2026-10-01 it passed by
+  # 0.4e-3 while A/Y at the written pair was 1.1% off. normalize prints the
+  # targeted moments at the solved A_tfp; the round converges only if every
+  # one of them is within MOM_TOL (relative) as well.
+  momdev=$(python3 - /tmp/norm_round.log <<'PY'
+import re, sys
+txt = open(sys.argv[1]).read()
+blk = txt.split('SMM target moments at solved A_tfp', 1)[-1]
+devs = [abs(float(m)) for m in re.findall(r'^\s*\S+\s+[-+0-9.eE]+\s+[-+0-9.eE]+\s+([-+][0-9.]+)\s*$', blk, re.M)]
+print(max(devs) / 100.0 if devs else 1.0)
+PY
+)
+  if python3 -c "import sys; sys.exit(0 if abs(float('$resid1')) < $TOL and float('$momdev') < $MOM_TOL else 1)"; then
+    echo "=== OUTER LOOP CONVERGED at round $r (|Y_ss-1| at fitted theta: $resid1; max moment deviation at the written pair: $momdev) ==="
     CONV=1
     break
   fi
-  echo "=== round $r done; scale still moving (iter-1 resid $resid1) ==="
+  echo "=== round $r done; scale still moving (iter-1 resid $resid1, max moment deviation at written pair $momdev) ==="
 done
 [ "$CONV" = "1" ] || echo "WARNING: hit MAXROUND=$MAXROUND without scale convergence"
 

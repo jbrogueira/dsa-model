@@ -1,0 +1,32 @@
+{
+  "quantity": "transfer_floor (means-tested consumption floor)",
+  "units": "detrended output per living person aged 25-84, base year normalised to 1",
+  "base_year": 2023,
+  "chosen": "gmi_single_adult",
+  "value": 0.08074796582967712,
+  "denominator": {
+    "nominal_gdp_eur": 224686200000.0,
+    "nominal_gdp_vintage": "2026-09-30T23:00:00+0200",
+    "population_25_84": 7559564.0,
+    "output_per_living_25_84_eur": 29722.1109577219
+  },
+  "amounts": {
+    "gmi_single_adult": {
+      "monthly_eur": 200.0,
+      "annual_eur": 2400.0,
+      "transfer_floor": 0.08074796582967712,
+      "note": "Guaranteed Minimum Income, single-adult household, per month"
+    },
+    "gmi_two_adults": {
+      "monthly_eur": 300.0,
+      "annual_eur": 3600.0,
+      "transfer_floor": 0.12112194874451569,
+      "note": "two adults, no children"
+    }
+  },
+  "amount_source": "Greek Guaranteed Minimum Income (L.4389/2016 art. 235 and implementing decisions), Ministry of Labour / OPEKA programme pages; amount to be checked against the base-year vintage.",
+  "caveats": [
+    "The floor applies to resources after taxes and out-of-pocket medical spending, before the hours adjustment, as compute_budget evaluates it.",
+    "A constant floor in detrended units is indexed at g in levels."
+  ]
+}

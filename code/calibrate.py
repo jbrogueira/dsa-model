@@ -62,19 +62,22 @@ class SimPanel(NamedTuple):
     alive_sim: np.ndarray       # (T, n_sim) bool
     bequest_sim: np.ndarray     # (T, n_sim)
     alpha_idx_sim: np.ndarray   # (T, n_sim) int — Phase 8 permanent FE grid index (constant across t)
+    transfer_sim: np.ndarray    # (T, n_sim) means-tested transfer received (consumption floor top-up)
 
 
 def wrap_sim_output(tup):
-    """Convert the raw 22-tuple from model.simulate() to a SimPanel.
+    """Convert the raw 23-tuple from model.simulate() to a SimPanel.
 
-    The trailing alpha_idx_sim entry was added in Phase 8. For backward
-    compatibility with older callers that still emit a 21-tuple (e.g., the
-    JAX backend before Phase 8.5 lands), pad with zeros so the NamedTuple
-    constructor still succeeds — that's equivalent to n_alpha=1 (no FE).
+    Older emitters: a 21-tuple lacks alpha_idx_sim (Phase 8) and transfer_sim
+    (2026-10-02); a 22-tuple lacks transfer_sim. Both are padded with zeros,
+    which is n_alpha=1 and no transfer floor.
     """
+    tup = tuple(tup)
+    T_sim, n_sim = tup[0].shape
     if len(tup) == 21:
-        T_sim, n_sim = tup[0].shape
-        tup = tuple(tup) + (np.zeros((T_sim, n_sim), dtype=np.int32),)
+        tup = tup + (np.zeros((T_sim, n_sim), dtype=np.int32),)
+    if len(tup) == 22:
+        tup = tup + (np.zeros((T_sim, n_sim)),)
     return SimPanel(*tup)
 
 
@@ -109,8 +112,15 @@ def compute_gini(x, weights=None):
         total_xw = cum_xw[-1]
         if total_xw == 0:
             return 0.0
-        # Weighted Gini (Lerman & Yitzhaki 1989)
-        return 1.0 - 2.0 * np.sum(ws * cum_xw) / (total_w * total_xw)
+        # Weighted Gini: one minus twice the area under the Lorenz curve, the
+        # area taken by the trapezoid rule over the sorted sample, so each
+        # observation's step contributes w_i times the mean of the cumulative
+        # income share before and after it. Until 2026-10-02 only the share
+        # after it entered (a right-endpoint sum), which understated every
+        # weighted Gini: 0.067 instead of 0.267 for the values 1..5 with equal
+        # weights, and a negative value on skewed weights.
+        cum_xw_prev = np.concatenate([[0.0], cum_xw[:-1]])
+        return 1.0 - np.sum(ws * (cum_xw + cum_xw_prev)) / (total_w * total_xw)
 
 
 def compute_earnings_variance_by_age(effective_y_sim, employed_sim, alive_sim,
@@ -597,7 +607,7 @@ def _compute_ss_aggregates(panels, spec):
 
     keys = ['labor_income', 'consumption', 'assets', 'pension', 'ui',
             'oop_health', 'gov_health', 'tax_c', 'tax_l', 'tax_p', 'tax_k',
-            'bequest']
+            'bequest', 'transfer']
     agg = {k: 0.0 for k in keys}
     for edu, panel in panels.items():
         share = spec.education_shares[edu]
@@ -622,6 +632,7 @@ def _compute_ss_aggregates(panels, spec):
             # at t (bequest_sim is nonzero only for the dying, who are alive
             # at the start of the period).
             agg['bequest']      += wt * float(np.mean(panel.bequest_sim[t, a_t]))
+            agg['transfer']     += wt * float(np.mean(panel.transfer_sim[t, a_t]))
 
     prod = spec.production or {}
     alpha = prod.get('alpha', 0.33)
@@ -630,7 +641,11 @@ def _compute_ss_aggregates(panels, spec):
     eta_g = prod.get('eta_g', 0.0)
     K_g_factor = K_g ** eta_g if (K_g > 0 and eta_g > 0) else 1.0
 
-    L = agg['labor_income'] / spec.w if spec.w > 0 else 0.0
+    # Labour input in efficiency units: wage income / w. labor_income is the
+    # panel's effective_y_sim, which carries UI as well, so UI is netted out --
+    # a transfer is not an efficiency unit of labour. Until 2026-10-02 it was
+    # left in, overstating L, K and Y by UI/(wL).
+    L = (agg['labor_income'] - agg['ui']) / spec.w if spec.w > 0 else 0.0
     K_over_L = prod.get('K_over_L') or 0.0
     K_domestic = K_over_L * L
     Y = A_tfp * K_g_factor * K_domestic ** alpha * L ** (1.0 - alpha) if L > 0 else 0.0
@@ -1494,7 +1509,8 @@ def compute_fiscal_ratios(panels, spec, config_data):
     # For each variable, compute age-weighted cross-sectional mean
     agg = {k: 0.0 for k in ['labor_income', 'consumption', 'assets',
                               'pension', 'ui', 'oop_health', 'gov_health',
-                              'tax_c', 'tax_l', 'tax_p', 'tax_k', 'bequest']}
+                              'tax_c', 'tax_l', 'tax_p', 'tax_k', 'bequest',
+                              'transfer']}
     for edu, panel in panels.items():
         share = spec.education_shares[edu]
         alive = panel.alive_sim.astype(bool)
@@ -1517,6 +1533,7 @@ def compute_fiscal_ratios(panels, spec, config_data):
             agg['tax_p'] += wt * np.mean(panel.tax_p_sim[t, a_t])
             agg['tax_k'] += wt * np.mean(panel.tax_k_sim[t, a_t])
             agg['bequest'] += wt * np.mean(panel.bequest_sim[t, a_t])
+            agg['transfer'] += wt * np.mean(panel.transfer_sim[t, a_t])
 
     # --- Production side ---
     prod = config_data.get('production', {})
@@ -1526,8 +1543,10 @@ def compute_fiscal_ratios(panels, spec, config_data):
     eta_g = prod.get('eta_g', 0.0)
     K_g_factor = K_g ** eta_g if (K_g > 0 and eta_g > 0) else 1.0
 
-    # L = aggregate effective labor = labor_income / w (since w * L = total labor income)
-    L = agg['labor_income'] / w if w > 0 else 0.0
+    # L = labour in efficiency units = wage income / w. labor_income is
+    # effective_y_sim = wage income + UI, so UI is netted out (same convention
+    # as _compute_ss_aggregates and simulate_transition since 2026-10-02).
+    L = (agg['labor_income'] - agg['ui']) / w if w > 0 else 0.0
     K_over_L = config_data.get('_derived', {}).get('K_over_L', 0.0)
     K_domestic = K_over_L * L
     Y = A_tfp * K_g_factor * K_domestic ** alpha * L ** (1.0 - alpha) if L > 0 else 0.0
@@ -1548,7 +1567,9 @@ def compute_fiscal_ratios(panels, spec, config_data):
     # balance that pins the closure sees the same revenue the transition does.
     tau_beq = float(getattr(spec.base_config, 'tau_beq', 0.0))
     bequest_tax = tau_beq * agg['bequest']
-    expenditure = (agg['pension'] + agg['ui'] + agg['gov_health'] +
+    # Means-tested transfers (consumption floor) are an outlay, booked here as
+    # in the transition's budget (olg_transition.compute_government_budget).
+    expenditure = (agg['pension'] + agg['ui'] + agg['gov_health'] + agg['transfer'] +
                    r_B * B_over_Y * Y)  # interest on debt at sovereign rate
 
     ratios = {
@@ -1570,13 +1591,15 @@ def compute_fiscal_ratios(panels, spec, config_data):
         'interest_over_Y': r_B * B_over_Y,
         'bequests_over_Y': agg['bequest'] / Y,
         'bequest_tax_over_Y': bequest_tax / Y,
+        'transfers_over_Y': agg['transfer'] / Y,
         'primary_balance_over_Y': (tax_revenue + bequest_tax - expenditure + r_B * B_over_Y * Y) / Y,
         'total_balance_over_Y': (tax_revenue + bequest_tax - expenditure) / Y,
     }
 
     # --- Full primary balance & baseline closure, pinned at the initial SS ---
     # primary_balance_over_Y above is the household-side balance
-    # (tax_revenue + bequest_tax - pension - ui - gov_health)/Y, interest cancelled out.
+    # (tax_revenue + bequest_tax - pension - ui - gov_health - transfers)/Y,
+    # interest cancelled out.
     # The transition's primary balance also nets out the discretionary spending
     # lines (G, I_g, defense) and the other-net closure residual, and excludes
     # interest — so add those here for a like-for-like full SS primary balance.

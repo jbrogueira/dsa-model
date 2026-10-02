@@ -53,7 +53,7 @@ def solve_labor_hours_jax(c, net_wage, nu, phi, gamma):
     return jnp.clip(l, 0.0, 1.0)  # time endowment is 1
 
 
-def solve_labor_robust_jax(c_guess, mw, nu, phi, gamma, tau_c_t, n_iters=8):
+def solve_labor_robust_jax(c_guess, mw, nu, phi, gamma, tau_c_t, n_iters=12):
     """Robust labor-hours solve, consistent with the budget (1+τ_c)·c = resources.
 
     Intratemporal FOC (working, employed):
@@ -63,17 +63,24 @@ def solve_labor_robust_jax(c_guess, mw, nu, phi, gamma, tau_c_t, n_iters=8):
         G(l) = ν·l^φ·(1+τ_c) − c(l)^{-γ}·MW
     is monotonically increasing on the feasible region c(l)>0, so the root is
     unique. Solved by safeguarded Newton–bisection (rtsafe), bracketed to
-    [l_lo, 1] with l_lo = max(0, 1 − c_guess·(1+τ_c)/MW) (the l where c(l)=0).
+    [l_lo, l_hi] with l_lo = max(0, 1 − c_guess·(1+τ_c)/MW) (the l where c(l)=0)
+    and l_hi found by doubling from 1 until G(l_hi) > 0: hours are not capped at
+    the time endowment (the cap at 1 was removed 2026-10-02), so the condition
+    holds with equality at every interior solution.
     Newton steps are taken only when they stay inside the bracket, else a
     bisection step — robust against the consumption-floor region that traps a
     plain Newton iteration started from an infeasible guess. Branchless
-    (where-selects) for vmap/XLA. Returns l∈[0,1]; 0 when MW≤0 (no productive
+    (where-selects) for vmap/XLA. Returns l >= 0; 0 when MW≤0 (no productive
     labor, e.g. unemployment).
     """
     onetc = 1.0 + tau_c_t
     mws = jnp.maximum(mw, 1e-12)
     lo = jnp.maximum(0.0, 1.0 - c_guess * onetc / mws)
     hi = jnp.ones_like(lo)
+    for _ in range(6):
+        c_hi = jnp.maximum(c_guess + mw * (hi - 1.0) / onetc, 1e-12)
+        G_hi = nu * hi ** phi * onetc - c_hi ** (-gamma) * mw
+        hi = jnp.where(G_hi < 0.0, 2.0 * hi, hi)
     l = 0.5 * (lo + hi)
     for _ in range(n_iters):
         c_l = jnp.maximum(c_guess + mw * (l - 1.0) / onetc, 1e-12)
@@ -90,7 +97,7 @@ def solve_labor_robust_jax(c_guess, mw, nu, phi, gamma, tau_c_t, n_iters=8):
         # when the Newton step is non-finite (Gp→0).
         l = jnp.where(jnp.isfinite(l_newton),
                       jnp.clip(l_newton, lo, hi), 0.5 * (lo + hi))
-    return jnp.where(mw > 1e-12, jnp.clip(l, 0.0, 1.0), 0.0)
+    return jnp.where(mw > 1e-12, jnp.maximum(l, 0.0), 0.0)
 
 
 def labor_disutility_jax(l, nu, phi):
@@ -329,9 +336,12 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
     EV_working = jnp.transpose(EV_working_3d, (1, 0, 2))
     EV_working = jnp.broadcast_to(EV_working[..., None], (n_a, n_y, n_h, n_y))
 
-    V_next_ret = V_next[:, 0, :, 0]
-    EV_retired_2d = jnp.einsum('jk,ak->aj', P_h_t, V_next_ret)
-    EV_retired = jnp.broadcast_to(EV_retired_2d[:, None, :, None], (n_a, n_y, n_h, n_y))
+    # Retired continuation: the pension depends on y_last, frozen at
+    # retirement, so V_next is read at each state's own y_last (last axis).
+    # Until 2026-10-02 it was read at y_last index 0 for every retiree.
+    V_next_ret = V_next[:, 0, :, :]                                   # (n_a, n_h_next, n_y_last)
+    EV_retired_3d = jnp.einsum('jk,akl->ajl', P_h_t, V_next_ret)       # (n_a, n_h, n_y_last)
+    EV_retired = jnp.broadcast_to(EV_retired_3d[:, None, :, :], (n_a, n_y, n_h, n_y))
 
     EV = jnp.where(is_retired, EV_retired, EV_working)
 
@@ -678,7 +688,9 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     mean_y_employed=1.0,
                     alpha_idx=0,
                     alpha_mult=1.0,
-                    trend_growth=0.0):
+                    trend_growth=0.0,
+                    transfer_floor=0.0,
+                    bequest_lumpsum=0.0):
     """
     Single time-step for one agent.
 
@@ -763,6 +775,25 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     gross_capital = r_t * a_val
     tax_k = tau_k_path[lifecycle_age] * gross_capital
 
+    # Means-tested transfer, as compute_budget_jax grants it in the solve:
+    # resources at one hour of work (before the hours adjustment), plus the
+    # bequest receipt at entry, against the floor. Child costs are not
+    # replicated here (schooling is off whenever a floor is on; the wrapper
+    # refuses the combination).
+    wage_l1 = w_path[lifecycle_age] * kappa_wage_t * y_val * h_val * alpha_mult
+    gross_l1 = jnp.where(is_retired, 0.0, wage_l1 + ui)
+    payroll_l1 = jnp.where(is_retired, 0.0, tau_p_path[lifecycle_age] * wage_l1)
+    taxable_l1 = gross_l1 - payroll_l1
+    inc_tax_l1 = jnp.where(tax_progressive,
+                           _hsv_tax(taxable_l1, tax_kappa_hsv, tax_eta),
+                           tau_l_path[lifecycle_age] * taxable_l1)
+    after_tax_labor_l1 = jnp.where(is_retired, pension - tax_l,
+                                   gross_l1 - payroll_l1 - inc_tax_l1)
+    budget_pre = (a_val + gross_capital - tax_k + after_tax_labor_l1 - oop_m
+                  + jnp.where(lifecycle_age == current_age, bequest_lumpsum, 0.0))
+    transfer = jnp.where(transfer_floor > 0.0,
+                         jnp.maximum(0.0, transfer_floor - budget_pre), 0.0)
+
     # Update average earnings (working years only)
     new_n_years = jnp.where(is_retired, n_earnings_years, n_earnings_years + 1)
     new_avg_earnings = jnp.where(
@@ -829,9 +860,10 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
         jnp.where(alive, new_avg_earnings, 0.0),
         jnp.where(alive, pension, 0.0),
         jnp.where(alive, is_retired, False),
-        jnp.where(alive & ~is_retired, l_pol_val, 0.0),  # retired supply l=0
+        jnp.where(alive & employed, l_pol_val, 0.0),  # retired and unemployed supply l=0
         alive,
         bequest_this_period,
+        jnp.where(alive, transfer, 0.0),
     )
 
     return new_carry, step_out
@@ -863,6 +895,8 @@ def simulate_lifecycle_jax(
     alpha_idx_sim=None,
     alpha_mult_sim=None,
     trend_growth=0.0,
+    transfer_floor=0.0,
+    bequest_lumpsum=0.0,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
@@ -874,8 +908,8 @@ def simulate_lifecycle_jax(
     policies is a singleton, alpha_idx_sim is all zeros, and alpha_mult_sim
     is all ones — recovering pre-Phase-8 behavior exactly.
 
-    Returns tuple of 22 arrays, each shape (T_sim, n_sim). The trailing
-    array is alpha_idx_sim broadcast to the panel shape.
+    Returns tuple of 23 arrays, each shape (T_sim, n_sim): the 21 panel
+    arrays, alpha_idx_sim broadcast to the panel shape, and transfer_sim.
     """
     T_sim = T - current_age
 
@@ -942,6 +976,8 @@ def simulate_lifecycle_jax(
             alpha_idx=alpha_idx_self,
             alpha_mult=alpha_mult_self,
             trend_growth=trend_growth,
+            transfer_floor=transfer_floor,
+            bequest_lumpsum=bequest_lumpsum,
         )
         xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
@@ -959,13 +995,14 @@ def simulate_lifecycle_jax(
         in_axes=(0, 0, 0, 1, 1, 1),
     )(init_states, alpha_idx_sim, alpha_mult_sim, u_y_all, u_h_all, u_alive_all)
 
-    # all_outputs is a tuple of 21 arrays, each (n_sim, T_sim) from vmap
-    # Transpose each to (T_sim, n_sim) to match NumPy convention
-    result_21 = tuple(out.T for out in all_outputs)
+    # all_outputs is a tuple of 22 arrays, each (n_sim, T_sim) from vmap:
+    # the 21 panel arrays and transfer_sim. Transpose to (T_sim, n_sim).
+    outs = tuple(out.T for out in all_outputs)
 
-    # Phase 8: append alpha_idx_panel broadcast to (T_sim, n_sim)
+    # Phase 8: alpha_idx_panel broadcast to (T_sim, n_sim) sits at index 21,
+    # transfer_sim at 22, matching the NumPy backend's 23-tuple.
     alpha_idx_panel = jnp.broadcast_to(alpha_idx_sim[None, :], (T_sim, n_sim)).astype(jnp.int32)
-    return result_21 + (alpha_idx_panel,)
+    return outs[:21] + (alpha_idx_panel,) + (outs[21],)
 
 
 _simulate_lifecycle_jax_jit = jax.jit(
@@ -996,6 +1033,8 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
         0, 0,                    # alpha_idx_sim, alpha_mult_sim (per-cohort: each cohort has its own draw)
         None,                    # trend_growth (shared scalar; must be passed positionally)
+        None,                    # transfer_floor (shared scalar)
+        0,                       # bequest_lumpsum (per-cohort scalar)
     )),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
@@ -1189,6 +1228,12 @@ class LifecycleModelJAX:
         """
         if self.V is None:
             raise RuntimeError("Must call solve() before simulate().")
+        if (float(self.transfer_floor) > 0.0
+                and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
+            raise NotImplementedError(
+                "the simulated transfer_sim replicates the solve's budget without "
+                "child costs; a positive transfer_floor with schooling_years > 0 "
+                "would record the wrong transfer")
 
         if T_sim is None:
             T_sim = self.T - self.current_age
@@ -1286,9 +1331,11 @@ class LifecycleModelJAX:
             alpha_idx_sim=alpha_idx_sim,
             alpha_mult_sim=alpha_mult_sim,
             trend_growth=self.trend_growth,
+            transfer_floor=float(self.transfer_floor),
+            bequest_lumpsum=float(self.bequest_lumpsum),
         )
 
-        # Convert all outputs to numpy arrays (now 22-tuple including alpha_idx_panel)
+        # Convert all outputs to numpy arrays (23-tuple: panel, alpha_idx_panel, transfer_sim)
         return tuple(np.asarray(x) for x in result)
 
 

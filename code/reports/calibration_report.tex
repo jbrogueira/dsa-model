@@ -14,7 +14,8 @@
 % Fallbacks so the template compiles before any run exists; header.tex
 % overrides them with the values of the run \rundir points at.
 \newcommand{\runlabel}{\np}\newcommand{\gval}{\np}\newcommand{\nval}{\np}
-\newcommand{\rBval}{\np}\newcommand{\Gammaval}{\np}
+\newcommand{\nTval}{\np}\newcommand{\rBval}{\np}\newcommand{\Gammaval}{\np}
+\newcommand{\GammaTval}{\np}
 \IfFileExists{\rundir/header.tex}{\input{\rundir/header.tex}}{}
 \newcommand{\np}{\ensuremath{\text{--}}}   % empty cell; safe in S columns and math
 \newcommand{\tabinput}[1]{\IfFileExists{\rundir/#1}{\input{\rundir/#1}}%
@@ -24,8 +25,8 @@
 
 \title{\vspace{-1.6cm}Balanced-growth calibration: Greece}
 \author{}
-\date{\small run \texttt{\runlabel}\quad$\cdot$\quad $g=\gval$,\; $n=\nval$,\;
-      $r_B=\rBval$,\; $\Gamma-1=\Gammaval$}
+\date{\small run \texttt{\runlabel}\quad$\cdot$\quad $g=\gval$,\; $n_0=\nval$,\; $n_\infty=\nTval$,\;
+      $r_B=\rBval$,\; $\Gamma_0-1=\Gammaval$,\; $\Gamma_T-1=\GammaTval$}
 
 \begin{document}
 \maketitle

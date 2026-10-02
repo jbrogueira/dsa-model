@@ -768,12 +768,15 @@ class LifecycleModelPerfectForesight:
             # Child costs reduce available resources (added to consumption cost)
             budget -= child_cost
 
-        # Feature #15: means-tested transfers (consumption floor)
+        # Feature #15: means-tested transfers (consumption floor). Evaluated on
+        # the resources at labor_hours (1.0 in the solve, before the hours
+        # adjustment), and returned so the simulation records the same amount.
+        transfer = 0.0
         if self.transfer_floor > 0.0:
             transfer = max(0.0, self.transfer_floor - budget)
             budget += transfer
 
-        return after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget
+        return after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget, transfer
 
     def _get_P_y(self, t, i_h, i_y, i_y_next):
         """Get income transition probability, handling both 2D and 4D P_y."""
@@ -844,9 +847,12 @@ class LifecycleModelPerfectForesight:
         match _compute_budget). The residual
             G(l) = ν·l^φ·(1+τ_c) − c(l)^{-γ}·MW
         is monotone increasing on the feasible region c(l)>0 (unique root),
-        solved by safeguarded Newton–bisection bracketed to [l_lo, 1] with
-        l_lo = max(0, 1 − c_guess·(1+τ_c)/MW). Robust against the
-        consumption-floor region that traps plain Newton. Returns (c*, l*).
+        solved by safeguarded Newton–bisection bracketed to [l_lo, l_hi] with
+        l_lo = max(0, 1 − c_guess·(1+τ_c)/MW) and l_hi found by doubling from 1
+        until G(l_hi) > 0 -- hours are not capped at the time endowment, so the
+        condition holds with equality at every interior solution (the cap at 1
+        was removed 2026-10-02). Robust against the consumption-floor region
+        that traps plain Newton. Returns (c*, l*).
         """
         if y <= 0:
             return c_guess, 1.0   # unemployed: no wage income; labor is moot
@@ -859,6 +865,11 @@ class LifecycleModelPerfectForesight:
         g, phi, nu = self.gamma, self.phi, self.nu
         lo = max(0.0, 1.0 - c_guess * onetc / mw)
         hi = 1.0
+        for _ in range(12):
+            c_hi = max(c_guess + mw * (hi - 1.0) / onetc, 1e-12)
+            if nu * hi ** phi * onetc - c_hi ** (-g) * mw > 0.0:
+                break
+            hi *= 2.0
         l = 0.5 * (lo + hi)
         for _ in range(n_iters):
             c_l = max(c_guess + mw * (l - 1.0) / onetc, 1e-12)
@@ -877,7 +888,7 @@ class LifecycleModelPerfectForesight:
                 l = l_next
                 break
             l = l_next
-        l = min(max(l, 0.0), 1.0)
+        l = max(l, 0.0)
         c = max(c_guess + mw * (l - 1.0) / onetc, 1e-10)
         return c, l
 
@@ -936,7 +947,7 @@ class LifecycleModelPerfectForesight:
         """
         survival = self._survival_prob(t, i_h)
 
-        _, _, _, budget = self._compute_budget(
+        _, _, _, budget, _ = self._compute_budget(
             is_retired, t, r_t, w_t, tau_l_t, tau_p_t, tau_k_t,
             a, y, h, i_y, i_y_last, i_h)
 
@@ -979,9 +990,13 @@ class LifecycleModelPerfectForesight:
             EV = 0.0
 
             if is_retired:
+                # The pension depends on i_y_last, frozen at retirement, so the
+                # continuation is read at the retiree's own i_y_last. Until
+                # 2026-10-02 it was read at index 0 for everyone, i.e. at the
+                # pension of a household unemployed in its last working year.
                 for i_h_next in range(self.n_h):
                     prob = self.P_h[t, i_h, i_h_next]
-                    next_val = self.V[t + 1, i_a_next, 0, i_h_next, 0]
+                    next_val = self.V[t + 1, i_a_next, 0, i_h_next, i_y_last]
                     if np.isfinite(prob) and np.isfinite(next_val):
                         EV += prob * next_val
             else:
@@ -1106,6 +1121,7 @@ class LifecycleModelPerfectForesight:
         alive = np.ones(n_sim, dtype=bool)
         alive_sim = np.zeros((T_sim, n_sim), dtype=bool)
         bequest_sim = np.zeros((T_sim, n_sim))
+        transfer_sim = np.zeros((T_sim, n_sim))   # means-tested top-up received
 
         # Phase 8: draw permanent productivity fixed effect alpha for each agent.
         # When n_alpha == 1 (FE off), alpha_idx is all zeros and alpha_mult is 1.0,
@@ -1172,9 +1188,10 @@ class LifecycleModelPerfectForesight:
                 # is all zeros and *_policy_alpha[0] aliases the scalar policies.
                 a_idx = alpha_idx_sim[i]
                 c_sim[t_sim, i] = self.c_policy_alpha[a_idx, lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                # Retired agents supply zero labor; l_policy stores 1.0 as a convention
-                # (harmless economically since y=0 for retired), but output 0 for plots.
-                if is_retired:
+                # The retired and the unemployed supply zero labor; l_policy
+                # stores 1.0 for them as a placeholder (no wage, no disutility),
+                # which the panel does not propagate.
+                if is_retired or i_y[i] == 0:
                     l_sim[t_sim, i] = 0.0
                 else:
                     l_sim[t_sim, i] = self.l_policy_alpha[a_idx, lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
@@ -1243,7 +1260,22 @@ class LifecycleModelPerfectForesight:
 
                 gross_capital_income = self.r_path[lifecycle_age] * a_sim[t_sim, i]
                 tax_k_sim[t_sim, i] = self.tau_k_path[lifecycle_age] * gross_capital_income
-                
+
+                # Means-tested transfer, exactly as the solve granted it: the
+                # same budget function at this state (resources at one hour of
+                # work, before the hours adjustment), with the agent's own
+                # permanent-effect multiplier.
+                if self.transfer_floor > 0.0:
+                    self._alpha_mult = a_mult
+                    transfer_sim[t_sim, i] = self._compute_budget(
+                        is_retired, lifecycle_age,
+                        self.r_path[lifecycle_age], self.w_path[lifecycle_age],
+                        self.tau_l_path[lifecycle_age], self.tau_p_path[lifecycle_age],
+                        self.tau_k_path[lifecycle_age],
+                        a_sim[t_sim, i], self.y_grid[i_y[i]], self.h_grid[i_h[i]],
+                        i_y[i], i_y_last[i], i_h[i])[4]
+                    self._alpha_mult = 1.0
+
                 # --- Survival draw (current-period state) ---
                 # Must occur before state transitions so that death probability
                 # uses (age t, h_t). The bequest is the wealth the household
@@ -1276,7 +1308,8 @@ class LifecycleModelPerfectForesight:
         return (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
                 ui_sim, m_sim, oop_m_sim, gov_m_sim,
                 tax_c_sim, tax_l_sim, tax_p_sim, tax_k_sim, avg_earnings_sim,
-                pension_sim, retired_sim, l_sim, alive_sim, bequest_sim, alpha_idx_panel)
+                pension_sim, retired_sim, l_sim, alive_sim, bequest_sim, alpha_idx_panel,
+                transfer_sim)
     
     def simulate(self, T_sim=None, n_sim=10000, seed=42, parallel=False, n_jobs=None):
         """

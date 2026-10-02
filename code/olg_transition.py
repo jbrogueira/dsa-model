@@ -22,27 +22,33 @@ def _get_lifecycle_model_class(backend: str):
 # Suppress RuntimeWarning from numpy
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# Indices into the raw simulation output; both backends return 22-tuples since
-# Phase 8, and _panel_to_age_means accepts 21 or 22 for the variables needed downstream.
-# Order matches the return of _slice_mean_single_age_njit + bequest as 11th element:
-#   a, c, eff_y, tax_c, tax_l, tax_p, tax_k, ui, pension, gov_h, bequest
-_PANEL_MEANS_IDX = (0, 1, 5, 11, 12, 13, 14, 7, 16, 10, 20)
+# Indices into the raw simulation output; both backends return 23-tuples since
+# 2026-10-02 (22 since Phase 8), and _panel_to_age_means accepts 21, 22 or 23.
+# Order matches the return of _slice_mean_single_age_njit + bequest as 11th
+# element + the means-tested transfer as 12th:
+#   a, c, eff_y, tax_c, tax_l, tax_p, tax_k, ui, pension, gov_h, bequest, transfer
+_PANEL_MEANS_IDX = (0, 1, 5, 11, 12, 13, 14, 7, 16, 10, 20, 22)
+N_AGE_MEANS = len(_PANEL_MEANS_IDX)
 
 
 def _panel_to_age_means(panel_data):
-    """Reduce a raw 21- or 22-tuple (or legacy 19-tuple) of (T, n) simulation arrays
-    to an 11-tuple of (T,) per-age means.  Memory-efficient: intermediate (T, n)
+    """Reduce a raw 23-tuple (or 21/22, or legacy 19) of (T, n) simulation arrays
+    to a 12-tuple of (T,) per-age means.  Memory-efficient: intermediate (T, n)
     slices are never retained after the mean is taken.
 
-    The 22-tuple variant (Phase 8) appends ``alpha_idx_sim`` after ``bequest_sim``;
-    the per-age means we use here index into the panel by position and never reach
-    that trailing element, so the length-22 case reduces identically to length-21."""
-    if len(panel_data) in (21, 22):
+    Index 21 is ``alpha_idx_sim`` (Phase 8), never averaged; index 22 is
+    ``transfer_sim`` (2026-10-02). A 21- or 22-tuple has no transfer column and
+    gets zeros; a legacy 19-tuple also lacks bequests."""
+    T_len = panel_data[0].shape[0]
+    if len(panel_data) >= 23:
         return tuple(np.mean(panel_data[i], axis=1) for i in _PANEL_MEANS_IDX)
+    elif len(panel_data) in (21, 22):
+        out = tuple(np.mean(panel_data[i], axis=1) for i in _PANEL_MEANS_IDX[:11])
+        return out + (np.zeros(T_len),)
     elif len(panel_data) >= 19:
-        # legacy: no alive_sim / bequest_sim
+        # legacy: no alive_sim / bequest_sim / transfer_sim
         out = tuple(np.mean(panel_data[i], axis=1) for i in _PANEL_MEANS_IDX[:10])
-        return out + (np.zeros(panel_data[0].shape[0]),)
+        return out + (np.zeros(T_len), np.zeros(T_len))
     else:
         raise ValueError(f"Unexpected panel_data length {len(panel_data)}")
 
@@ -386,7 +392,7 @@ class OLGTransition:
         T_sim = self.T
         batch = self.sim_agent_batch_size
 
-        sums = [np.zeros(T_sim) for _ in range(11)]
+        sums = [np.zeros(T_sim) for _ in range(N_AGE_MEANS)]
         agents_done = 0
         batch_idx = 0
         while agents_done < n_sim:
@@ -394,7 +400,7 @@ class OLGTransition:
             b_seed = self._seed_u32(seed + batch_idx * 7919)
             panel = model.simulate(T_sim=T_sim, n_sim=n_b, seed=int(b_seed))
             b_means = _panel_to_age_means(panel)
-            for k in range(11):
+            for k in range(N_AGE_MEANS):
                 sums[k] += b_means[k] * n_b
             agents_done += n_b
             batch_idx += 1
@@ -589,6 +595,7 @@ class OLGTransition:
             tau_p_paths = jnp.stack([m.tau_p_path for m in model_list])
             tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
             pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
+            beq_lumps = jnp.array([float(getattr(m, 'bequest_lumpsum', 0.0)) for m in model_list])
 
             # Pre-compute per-cohort initial conditions and PRNG keys
             # (replicates LifecycleModelJAX.simulate() setup per cohort)
@@ -708,6 +715,7 @@ class OLGTransition:
                 batch_avg_earn, batch_n_years,
                 batch_alpha_idx, batch_alpha_mult,  # Phase 8 per-cohort FE arrays
                 surv_paths_sim,
+                beq_lumps,
             )
 
             for chunk_start in range(0, n_cohorts, chunk_size):
@@ -728,7 +736,7 @@ class OLGTransition:
                  cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                  ckeys,
                  ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
-                 calpha_idx, calpha_mult, csurv) = (s(a) for a in per_cohort_arrs)
+                 calpha_idx, calpha_mult, csurv, cbeq) = (s(a) for a in per_cohort_arrs)
 
                 chunk_results = _simulate_lifecycle_jax_batched(
                     ca_pol, cc_pol, cl_pol,
@@ -750,6 +758,8 @@ class OLGTransition:
                     ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
                     calpha_idx, calpha_mult,
                     ref.trend_growth,
+                    ref.transfer_floor,
+                    cbeq,
                 )
 
                 # Store only actual (non-padded) cohorts
@@ -948,12 +958,20 @@ class OLGTransition:
         T = int(self.T)
         yrs, B = self._demog['entrant_years'], self._demog['entrants']
         year = int(self.current_year) + int(t)
-        if year - (T - 1) < yrs[0] or year > yrs[-1]:
+        if year - (T - 1) < yrs[0]:
             raise ValueError(
                 f"entering cohorts cover {yrs[0]}..{yrs[-1]} but period "
                 f"t={t} needs {year - (T - 1)}..{year}")
-        i = np.searchsorted(yrs, year - np.arange(T))
-        w = np.asarray(B[i], dtype=float)
+        need = year - np.arange(T)
+        # Past the end of the table the entering cohort grows at the terminal
+        # rate n_inf (the table ends after the ramp has brought it there), so
+        # extrapolating at that rate reproduces the series the builder would
+        # have written. Needed when a fiscal run extends the horizon past the
+        # table (n_post), which raised here until 2026-10-02 while
+        # growth_factors clipped the same overrun.
+        n_inf = float(self._demog['n_path'][-1])
+        i = np.searchsorted(yrs, np.minimum(need, yrs[-1]))
+        w = np.asarray(B[i], dtype=float) * (1.0 + n_inf) ** np.maximum(need - yrs[-1], 0)
         return w / w.sum()
 
     def _build_cohort_sizes_from_entrants(self):
@@ -1415,7 +1433,7 @@ class OLGTransition:
             else:
                 edu_types_ab = list(self.education_shares.keys())
                 birth_periods_ab = list(range(min_birth_period, max_birth_period + 1))
-                sums = {edu: {b: [np.zeros(self.T) for _ in range(11)]
+                sums = {edu: {b: [np.zeros(self.T) for _ in range(N_AGE_MEANS)]
                               for b in birth_periods_ab}
                         for edu in edu_types_ab}
                 agents_done = 0
@@ -1427,14 +1445,14 @@ class OLGTransition:
                     for edu in edu_types_ab:
                         for b, panel in raw_b[edu].items():
                             bm = _panel_to_age_means(panel)
-                            for k in range(11):
+                            for k in range(N_AGE_MEANS):
                                 sums[edu][b][k] += bm[k] * n_ab
                     # Free per-batch raw panels and cached init conditions to bound memory
                     self._birth_sim_cache = {}
                     if hasattr(self, '_sim_init_cache'):
                         self._sim_init_cache = {}
                     agents_done += n_ab
-                panels = {edu: {b: tuple(sums[edu][b][k] / n_sim for k in range(11))
+                panels = {edu: {b: tuple(sums[edu][b][k] / n_sim for k in range(N_AGE_MEANS))
                                 for b in birth_periods_ab}
                           for edu in edu_types_ab}
         else:
@@ -1517,6 +1535,7 @@ class OLGTransition:
         pension_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         gov_health_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
         bequest_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
+        transfer_by_age_edu = np.zeros((n_edu, self.T), dtype=float)
 
         pv = getattr(self, '_policy_version', 0)
         panels = self._cohort_panel_cache[(n_sim, int(seed_base), int(pv))]
@@ -1527,12 +1546,12 @@ class OLGTransition:
                 birth_period = t - age
 
                 panel_data = edu_panels[int(birth_period)]
-                if len(panel_data) == 11:
-                    # Means format: 11-tuple of (T,) per-age mean arrays
+                if len(panel_data) == N_AGE_MEANS:
+                    # Means format: 12-tuple of (T,) per-age mean arrays
                     (a_mean, c_mean, labor_mean,
                      tax_c_mean, tax_l_mean, tax_p_mean, tax_k_mean,
                      ui_mean, pension_mean, gov_health_mean,
-                     bequest_mean) = (float(panel_data[k][age]) for k in range(11))
+                     bequest_mean, transfer_mean) = (float(panel_data[k][age]) for k in range(N_AGE_MEANS))
                 else:
                     if len(panel_data) >= 21:
                         # 21-tuple (pre Phase-8) and 22-tuple (Phase 8+, with
@@ -1557,6 +1576,8 @@ class OLGTransition:
                         int(age)
                     )
                     bequest_mean = float(np.mean(bequest_sim[age, :]))
+                    transfer_mean = (float(np.mean(panel_data[22][age, :]))
+                                     if len(panel_data) >= 23 else 0.0)
 
                 assets_by_age_edu[edu_idx, age]      = a_mean
                 consumption_by_age_edu[edu_idx, age] = c_mean
@@ -1571,6 +1592,7 @@ class OLGTransition:
                 pension_by_age_edu[edu_idx, age] = pension_mean
                 gov_health_by_age_edu[edu_idx, age] = gov_health_mean
                 bequest_by_age_edu[edu_idx, age] = bequest_mean
+                transfer_by_age_edu[edu_idx, age] = transfer_mean
 
         out = {
             "education_types": education_types,
@@ -1587,6 +1609,7 @@ class OLGTransition:
             "pension_by_age_edu": pension_by_age_edu,
             "gov_health_by_age_edu": gov_health_by_age_edu,
             "bequest_by_age_edu": bequest_by_age_edu,
+            "transfer_by_age_edu": transfer_by_age_edu,
         }
         self._period_cache[key] = out
         return out
@@ -1627,6 +1650,7 @@ class OLGTransition:
         pension = np.zeros((T_tr, n_edu, T), dtype=float)
         gov_h   = np.zeros((T_tr, n_edu, T), dtype=float)
         bequest = np.zeros((T_tr, n_edu, T), dtype=float)
+        transf  = np.zeros((T_tr, n_edu, T), dtype=float)
 
         min_birth = -(T - 1)
         max_birth = T_tr - 1
@@ -1641,11 +1665,11 @@ class OLGTransition:
                     if b not in edu_panels:
                         continue
                     panel_data = edu_panels[int(b)]
-                    if len(panel_data) == 11:
-                        # Means format: 11-tuple of (T,) per-age mean arrays
+                    if len(panel_data) == N_AGE_MEANS:
+                        # Means format: 12-tuple of (T,) per-age mean arrays
                         (a_m, c_m, l_m, tc_m, tl_m, tp_m, tk_m,
-                         ui_m, pen_m, gh_m, beq_m) = (
-                            float(panel_data[k][age]) for k in range(11))
+                         ui_m, pen_m, gh_m, beq_m, tr_m) = (
+                            float(panel_data[k][age]) for k in range(N_AGE_MEANS))
                     else:
                         if len(panel_data) >= 21:
                             (a_sim, c_sim, y_sim, h_sim, h_idx_sim, effective_y_sim, employed_sim,
@@ -1667,6 +1691,8 @@ class OLGTransition:
                             int(age),
                         )
                         beq_m = float(np.mean(bequest_sim[age, :]))
+                        tr_m = (float(np.mean(panel_data[22][age, :]))
+                                if len(panel_data) >= 23 else 0.0)
 
                     assets[t, edu_idx, age]  = a_m
                     consum[t, edu_idx, age]  = c_m
@@ -1679,6 +1705,7 @@ class OLGTransition:
                     pension[t, edu_idx, age] = pen_m
                     gov_h[t, edu_idx, age]   = gh_m
                     bequest[t, edu_idx, age] = beq_m
+                    transf[t, edu_idx, age]  = tr_m
 
         # Populate _period_cache so compute_government_budget_path() can reuse
         # these results instead of recomputing via _period_cross_section().
@@ -1702,9 +1729,11 @@ class OLGTransition:
                 "pension_by_age_edu": pension[t],
                 "gov_health_by_age_edu": gov_h[t],
                 "bequest_by_age_edu": bequest[t],
+                "transfer_by_age_edu": transf[t],
             }
 
-        return assets, consum, labor, tax_c, tax_l, tax_p, tax_k, ui_arr, pension, gov_h, bequest
+        return (assets, consum, labor, tax_c, tax_l, tax_p, tax_k, ui_arr, pension,
+                gov_h, bequest, transf)
 
     def compute_aggregates(self, t, n_sim: Optional[int] = None):
         """Compute aggregate household wealth (A), labor (L), consumption (C).
@@ -1727,10 +1756,13 @@ class OLGTransition:
             px["education_shares_array"],
         )
         # Same units as simulate_transition's L_path: the labor mean is
-        # wage-valued (effective_y_sim), so convert to efficiency units.
+        # wage-valued (effective_y_sim = wages + UI), so net out UI and
+        # convert to efficiency units.
         if self.w_path is None:
             raise ValueError("w_path is not set — run simulate_transition() first.")
-        L = L / float(np.asarray(self.w_path)[int(t)])
+        UI = float(np.sum(px["cohort_sizes_t"][None, :] * px["education_shares_array"][:, None]
+                          * px["ui_by_age_edu"]))
+        L = (L - UI) / float(np.asarray(self.w_path)[int(t)])
         return K, L, C
 
     def compute_government_budget(self, t, n_sim: Optional[int] = None):
@@ -1755,6 +1787,7 @@ class OLGTransition:
         total_ui = 0.0
         total_pension = 0.0
         total_gov_health = 0.0
+        total_transfers = 0.0   # means-tested consumption-floor top-ups
 
         n_edu = px["assets_by_age_edu"].shape[0]
         for edu_idx in range(n_edu):
@@ -1769,6 +1802,8 @@ class OLGTransition:
                 total_ui += weight * float(px["ui_by_age_edu"][edu_idx, age])
                 total_pension += weight * float(px["pension_by_age_edu"][edu_idx, age])
                 total_gov_health += weight * float(px["gov_health_by_age_edu"][edu_idx, age])
+                if 'transfer_by_age_edu' in px:
+                    total_transfers += weight * float(px["transfer_by_age_edu"][edu_idx, age])
 
         # Feature #16: Bequest taxation
         total_bequests = 0.0
@@ -1822,17 +1857,10 @@ class OLGTransition:
             # Gamma_t times its per-capita value next period.
             new_borrowing = self._growth_at(t_idx) * B_next - B_t
 
-        if float(getattr(self.lifecycle_config, 'transfer_floor', 0.0) or 0.0) > 0.0:
-            raise NotImplementedError(
-                "transfer_floor tops up household budgets but is not a line in "
-                "total_spending, so the means-tested transfer is paid by nobody -- "
-                "an open circuit alongside accidental bequests, and one that makes "
-                "financing='transfer_floor' balance a budget omitting the transfer "
-                "it finances. Booking it needs the simulation to carry the "
-                "per-agent transfer so it can be aggregated. The household problem "
-                "itself is fine, which is why this refuses here and not there.")
-
-        total_spending = (total_ui + total_pension + total_gov_health
+        # The means-tested transfer is an outlay: the simulation records the
+        # top-up each household received (transfer_sim) and it is aggregated
+        # above, so a positive floor is a closed circuit (since 2026-10-02).
+        total_spending = (total_ui + total_pension + total_gov_health + total_transfers
                           + G_t + I_g_t + defense_t + other_t)
         total_revenue_with_borrowing = total_revenue + new_borrowing
         primary_deficit = total_spending - total_revenue
@@ -1847,6 +1875,7 @@ class OLGTransition:
             "ui": total_ui,
             "pension": total_pension,
             "gov_health": total_gov_health,
+            "transfers": total_transfers,
             "govt_spending": G_t,
             "public_investment": I_g_t,
             "defense_spending": defense_t,
@@ -2166,8 +2195,10 @@ class OLGTransition:
         _edu_shares_arr = np.array([self.education_shares[e] for e in _edu_types_ordered], dtype=float)
         (assets_all, consum_all, labor_all,
          _tax_c_all, _tax_l_all, _tax_p_all, _tax_k_all,
-         _ui_all, _pension_all, _gov_h_all, _bequest_all) = self._compute_all_cross_sections(int(n_sim))
+         ui_all, _pension_all, _gov_h_all, _bequest_all,
+         _transfer_all) = self._compute_all_cross_sections(int(n_sim))
 
+        UI_path = np.zeros(self.T_transition)
         for t in range(self.T_transition):
             if verbose and (t % 10 == 0 or t == self.T_transition - 1):
                 print(f"  Period {t + 1}/{self.T_transition}")
@@ -2176,12 +2207,15 @@ class OLGTransition:
             K_path[t], C_path[t], L_path[t] = self._aggregate_capital_labor_njit(
                 assets_all[t], consum_all[t], labor_all[t], cohort_sizes_t, _edu_shares_arr
             )
+            UI_path[t] = float(np.sum(cohort_sizes_t[None, :] * _edu_shares_arr[:, None] * ui_all[t]))
 
-        # L is aggregated from effective_y_sim, which is wage-valued
-        # (w·κ(j)·y·l·exp(α) + UI).  Convert to efficiency units before using it
-        # as the production-function labor input — same convention as
-        # calibrate.py (L = labor_income / w).
-        L_path = L_path / w_path
+        # L is aggregated from effective_y_sim, which is wage-valued and carries
+        # UI as well (w·κ(j)·y·l·exp(α) + UI). UI is a transfer, not labour, so
+        # it is netted out before dividing by the wage; the production-function
+        # input is then hours in efficiency units -- same convention as
+        # calibrate.py since 2026-10-02 (L = (labor_income - ui) / w). Until
+        # then the UI stayed in, overstating L, K and Y by UI/(wL).
+        L_path = (L_path - UI_path) / w_path
 
         # Feature #9: Compute K_domestic before Y — Y must use domestic capital, not household wealth.
         # K_path = A = total household wealth (aggregated from simulation).
@@ -2292,7 +2326,7 @@ class OLGTransition:
         # Initialize storage — keys match compute_government_budget() output
         budget_keys = [
             'tax_c', 'tax_l', 'tax_p', 'tax_k', 'total_revenue',
-            'ui', 'pension', 'gov_health', 'govt_spending',
+            'ui', 'pension', 'gov_health', 'transfers', 'govt_spending',
             'public_investment', 'defense_spending', 'other_net_spending',
             'debt_service', 'new_borrowing',
             'total_spending', 'primary_deficit', 'fiscal_deficit',

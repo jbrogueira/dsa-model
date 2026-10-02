@@ -53,7 +53,8 @@ if platform.system() == 'Darwin':
     os.environ.setdefault('JAX_PLATFORMS', 'cpu')
 import numpy as np
 
-from calibrate import load_config, run_model_moments, _compute_ss_aggregates
+from calibrate import (load_config, run_model_moments, _compute_ss_aggregates,
+                       theta_from_config)
 
 DEFAULT_CONFIG = 'calibration_input_GR.json'
 
@@ -90,7 +91,10 @@ def eval_ss(A_tfp):
         json.dump(raw, f)
     loaded = load_config(_tmp.name)
     spec = dataclasses.replace(loaded['spec'], backend=args.backend)
-    theta = np.array([theta_dict[pp.name] for pp in spec.params])
+    # theta_from_config fills any parameter the last SMM did not fit from its
+    # initial value and says so; indexing theta_dict directly raised KeyError
+    # whenever calibration.params gained an entry before the SMM had run.
+    theta = theta_from_config(raw, spec, verbose=False)
     m_model, panels = run_model_moments(theta, spec, return_panels=True)
     agg = _compute_ss_aggregates(panels, spec)
     return agg['Y'], m_model, spec

@@ -39,7 +39,8 @@ if platform.system() == 'Darwin':
 import numpy as np
 
 from calibrate import (load_config, run_model_moments, compute_fiscal_ratios,
-                       _demography_path)
+                       _demography_path,
+                       theta_from_config)
 
 DEFAULT_CONFIG = 'calibration_input_GR.json'
 
@@ -57,7 +58,10 @@ config_data = loaded['config_data']
 theta_dict = config_data.get('_derived', {}).get('theta')
 if theta_dict is None:
     sys.exit("No _derived.theta in config — run calibration first.")
-theta = np.array([theta_dict[pp.name] for pp in spec.params])
+# theta_from_config fills any parameter the last SMM did not fit from its
+# initial value; indexing theta_dict directly raised KeyError whenever
+# calibration.params gained an entry before the SMM had run.
+theta = theta_from_config(config_data, spec, verbose=True)
 spec = dataclasses.replace(spec, backend=args.backend)
 
 print("theta:", {pp.name: float(t) for pp, t in zip(spec.params, theta)})
@@ -101,7 +105,10 @@ discretionary  = G_over_Y + I_g_over_Y + defense_over_Y
 
 pb_house     = ratios['primary_balance_over_Y']          # household-side base-year balance
 s_SS         = pb_house - discretionary                  # full base-year primary surplus, other=0
-other_over_Y = ratios['closure_other_over_Y']            # = s_SS - target
+# Written value uses the level-based I_g/Y computed above, not the config
+# ratio inside ratios['closure_other_over_Y']; the two coincide only while
+# K_g, delta_g, n_2023 and Y_ss stay where they are.
+other_over_Y = s_SS - target
 
 print(f"\nbase-year household primary balance / Y : {pb_house:+.4f}")
 print(f"  (G + I_g + defense)/Y               : {discretionary:.4f}  "

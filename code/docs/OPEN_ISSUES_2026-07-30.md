@@ -12,7 +12,13 @@ describe current behaviour in the meantime.
 
 ---
 
-## 1. Aggregate labour input includes UI benefits — Open
+## 1. Aggregate labour input includes UI benefits — Closed 2026-10-02
+
+**Resolution (2026-10-02).** `L` is now `(labor income − UI)/w` in
+`simulate_transition`, `compute_aggregates` and both aggregators in
+`calibrate.py`, so `w·L` equals the wage bill and the payroll base. Not yet
+refitted: the targeted identity becomes payroll revenue$/Y = τ^p(1−α)$.
+The text below describes the state before the change.
 
 **Behaviour.** `L` is aggregated from `effective_y_sim = wage_income + ui_sim`
 (`lifecycle_perfect_foresight.py:1205`) and divided by `w`
@@ -102,7 +108,12 @@ data; freezing `z_last` raises it further.
 
 ---
 
-## 4. `B_initial` is sized off the warmup simulation — Open
+## 4. `B_initial` is sized off the warmup simulation — Closed 2026-10-02
+
+**Resolution (2026-10-02).** The preliminary run in `run_fiscal_figures.py`
+now uses the full `N_SIM`; with the same seeds the scenarios' baseline
+reproduces it, so `B/Y(0) = B_over_Y` exactly, and the `I_g` shock level
+is sized off the same output. One more full transition per run.
 
 `run_fiscal_figures.py:119` computes `B_initial = B_over_Y · Y0` from a 50-draw
 warmup (`Y(0) = 0.8816`, `run_rB0.log`), while the reported run has
@@ -131,7 +142,7 @@ hold only where the calibration is reported, not where the figures are drawn.
 
 ---
 
-## 6. Silent config fallbacks — Open (zero behavioural change)
+## 6. Silent config fallbacks — Open (zero behavioural change); `tau_beq` written 2026-10-02
 
 `pension_avg_weight` is absent from both GR configs, so `calibrate.py:1093`
 derives **λ = 0.4434** from `(1−ρ_z^{J_R})/(J_R(1−ρ_z))`. This is the intended

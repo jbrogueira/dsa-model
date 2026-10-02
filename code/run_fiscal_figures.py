@@ -99,8 +99,13 @@ if args.config:
                   * prod.get('K_g', 0.0))
 
     print("Calibrating baseline fiscal paths …")
+    # At the full N_SIM, not a 50-agent draw: B_initial = B_over_Y * Y0 and the
+    # I_g shock level 0.02 * Y0 are read off this run, and with the same seeds
+    # the scenarios' baseline reproduces it exactly, so B/Y(0) equals B_over_Y
+    # to the digit. With n_sim=50 the two differed by the warm-up's sampling
+    # error (1.633 against 1.64 in the July run).
     _calib = economy.simulate_transition(
-        r_path=r_path, I_g_path=I_g_warmup, n_sim=50, verbose=False, **tax_paths
+        r_path=r_path, I_g_path=I_g_warmup, n_sim=N_SIM, verbose=False, **tax_paths
     )
     Y_path = np.asarray(_calib['Y'])
     Y0 = float(Y_path[0])
@@ -122,7 +127,7 @@ if args.config:
     B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
     B_initial = B_over_Y * Y0          # initial debt level pins B/Y at t=0
     target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
-    print(f"  Y(0) = {Y0:.4f}  (warmup n_sim=50)")
+    print(f"  Y(0) = {Y0:.4f}  (baseline run, n_sim={N_SIM})")
     if eta_g_cfg != 0.0:
         print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
               f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
@@ -320,10 +325,11 @@ def run_experiment_set(shock_type):
 
     # Pin the τ_l closure to the baseline transition's terminal debt/GDP.
     # The baseline is debt-financed, so its debt drifts over the transition; its
-    # terminal B/Y is only known after this run. Matches _balance_residual's
-    # convention B[T_bal]/Y[T_bal-1] for balance_condition='terminal_debt_gdp'.
+    # terminal B/Y is only known after this run. Dated as _balance_residual
+    # dates it for balance_condition='terminal_debt_gdp': the stock B[T_bal-1]
+    # over the output of the same period, Y[T_bal-1].
     T_bal = res_base.T_balance or len(res_base.cf_macro['Y'])
-    target_base = float(res_base.B_path[T_bal] / res_base.cf_macro['Y'][T_bal - 1])
+    target_base = float(res_base.B_path[T_bal - 1] / res_base.cf_macro['Y'][T_bal - 1])
     scn_taul.balance_condition = 'terminal_debt_gdp'
     scn_taul.target_debt_gdp   = target_base
     print(f"      τ_l target_debt_gdp = baseline terminal B/Y = {target_base:.4f}")
@@ -535,6 +541,16 @@ params_out = {
     'delta_Ig_path': [float(x) for x in delta_Ig] if 'Ig' in shock_types else None,
     'r_B':           (float(economy.r_B) if getattr(economy, 'r_B', None) is not None
                       else None),
+    # The return on household wealth, so the evaluator can form net factor
+    # income r*NFA + (r - r_B)*B in the resource constraint; without it the
+    # checker silently tested the closed-economy form.
+    'r':             float(r_path[0]),
+    # Household-side parameters the checker needs: the public share of medical
+    # spending (to form total medical spending from the gov_health line), the
+    # bequest tax and the consumption floor in force.
+    'kappa':         float(getattr(economy.lifecycle_config, 'kappa', 1.0)),
+    'tau_beq':       float(getattr(economy.lifecycle_config, 'tau_beq', 0.0)),
+    'transfer_floor': float(getattr(economy.lifecycle_config, 'transfer_floor', 0.0) or 0.0),
     # Which population the aggregates are divided by. Consumers of this JSON
     # must refuse it if they work on a different convention: before 2026-10-01
     # the transition divided by everyone ever entered, which is 11% smaller than

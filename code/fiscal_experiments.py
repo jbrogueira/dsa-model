@@ -372,7 +372,8 @@ def _balance_residual(budget_path: dict,
 def _check_terminal_convergence(cf_macro: dict,
                                 cf_budget: dict,
                                 olg,
-                                tol: float = 0.005) -> tuple:
+                                tol: float = 0.005,
+                                B_path=None) -> tuple:
     """Check that key stocks have stopped moving in the last period.
 
     Computes relative period-on-period change |x[T-1] - x[T-2]| / |x[T-2]|
@@ -432,6 +433,17 @@ def _check_terminal_convergence(cf_macro: dict,
             if len(arr) >= 2:
                 drift[key] = float(abs(arr[-1] - arr[-2]) / (abs(arr[-2]) + 1e-10))
                 thresholds[key] = tol
+
+    # ── Sovereign debt: no rest point when r_B > Gamma_T - 1 ───────────────────
+    # Tracked at the slow tolerance and reported, not imposed: with the
+    # balancing item set at the base year the baseline debt ratio drifts, and
+    # a run can be 'converged' in every other stock while B/Y is still moving.
+    # Until 2026-10-02 B was not in this list at all.
+    if B_path is not None:
+        Bp = np.asarray(B_path, dtype=float)
+        if len(Bp) >= 2:
+            drift['B'] = float(abs(Bp[-1] - Bp[-2]) / (abs(Bp[-2]) + 1e-10))
+            thresholds['B'] = tol_slow
 
     # ── Pension fund: slow-converging ──────────────────────────────────────────
     S = cf_budget.get('S_pens')
@@ -760,7 +772,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
     base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
                                          r_B_path, T_total, G_growth)
 
-    t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
+    t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg, B_path=B_path)
     t_balance = T_base if n_post > 0 else None
 
     return FiscalScenarioResult(
@@ -969,7 +981,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     NFA, CA = _nfa_ca_paths(cf_macro, G_growth)
     adj_path = Delta_star * psi
 
-    t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg)
+    t_drift, t_conv = _check_terminal_convergence(cf_macro, cf_budget, olg, B_path=B_path)
 
     return FiscalScenarioResult(
         scenario=scenario,
@@ -1162,7 +1174,7 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
     base_macro = _correct_base_macro_nfa(base_macro, base_budget, scenario,
                                          r_B_path, T_total, G_growth)
 
-    t_drift, t_conv = _check_terminal_convergence(cf_macro_star, cf_budget_star, olg)
+    t_drift, t_conv = _check_terminal_convergence(cf_macro_star, cf_budget_star, olg, B_path=B_path)
     t_balance = T_base if n_post > 0 else None
 
     return FiscalScenarioResult(

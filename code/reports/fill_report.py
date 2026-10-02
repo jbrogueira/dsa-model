@@ -53,14 +53,32 @@ def fmt(x, places=4):
 
 
 # ----------------------------------------------------------------- tables ---
-def params_table(cfg):
+SMM_LABELS = {
+    'nu': ('$\\nu$', 'labour disutility weight', 'average hours'),
+    'beta': ('$\\beta$', 'discount factor', '$A/Y$'),
+    'tau_p': ('$\\tau_p$', 'payroll tax rate', 'payroll revenue$/Y$'),
+    'pension_replacement_default': ('$\\rho^{pens}$', 'pension replacement rate', 'pensions$/Y$'),
+    'm_good': ('$m^{good}$', 'medical cost scale', 'public health$/Y$'),
+    'ui_replacement_rate': ('$\\rho^{ui}$', 'UI replacement rate', 'UI$/Y$'),
+}
+
+
+def params_table(cfg, n0=None, n_inf=None):
+    """n0 is the realised population growth of the base year from the
+    demographic path and n_inf the terminal rate; the configuration's
+    pop_growth scalar is the terminal rate only, and printing it as 'n'
+    while the header printed the realised value put two numbers for one
+    symbol in one report."""
     ext, prod, pri, mod = (cfg['external_params'], cfg['production'],
                            cfg['prices'], cfg['model'])
     th = cfg.get('_derived', {}).get('theta', {})
-    g, n = ext.get('trend_growth', 0.0), ext.get('pop_growth', 0.0)
+    g = ext.get('trend_growth', 0.0)
+    if n_inf is None:
+        n_inf = ext.get('pop_growth', 0.0)
     rows_ext = [
         ('$g$', 'labour productivity growth, per capita', g, '2024 Ageing Report'),
-        ('$n$', 'population growth', n, 'EUROPOP2023'),
+        ('$n_0$', 'population growth, base year', n0, 'EUROPOP2023, demography file'),
+        ('$n_\\infty$', 'population growth, terminal', n_inf, 'assumption (tail after 2120)'),
         ('$\\gamma$', 'curvature of consumption utility', mod.get('gamma'), 'log utility'),
         ('$\\varphi$', 'inverse Frisch elasticity', mod.get('phi'), ''),
         ('$\\alpha$', 'private capital share', prod.get('alpha'), ''),
@@ -75,18 +93,21 @@ def params_table(cfg):
          ext.get('tau_c'), 'effective rates'),
         ('$b_{min}$', 'minimum pension floor', ext.get('pension_min_floor'),
          'national pension, L.4387/2016'),
+        ('$\\underline{c}$', 'means-tested consumption floor', ext.get('transfer_floor'),
+         'guaranteed minimum income'),
+        ('$\\tau^{beq}$', 'tax on accidental bequests', ext.get('tau_beq'), ''),
+        ('$f$', 'job-finding probability', ext.get('job_finding_rate'),
+         'Eurostat \\texttt{une\\_ltu\\_a}'),
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
          'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
         ('$T$, $J_R$', 'lifespan, retirement age', mod.get('T'), ''),
     ]
-    rows_cal = [
-        ('$\\nu$', 'labour disutility weight', th.get('nu'), 'average hours'),
-        ('$\\beta$', 'discount factor', th.get('beta'), '$A/Y$'),
-        ('$\\tau_p$', 'payroll tax rate', th.get('tau_p'), 'payroll revenue$/Y$'),
-        ('$\\rho^{pens}$', 'pension replacement rate',
-         th.get('pension_replacement_default'), 'pensions$/Y$'),
-        ('$m^{good}$', 'medical cost scale', th.get('m_good'), 'public health$/Y$'),
-    ]
+    # One row per parameter the configuration lists for the SMM; a parameter
+    # the last fit did not cover shows no value rather than its initial.
+    rows_cal = []
+    for p in cfg.get('calibration', {}).get('params', []):
+        sym, desc, ident = SMM_LABELS.get(p['name'], (p['name'], p.get('path', ''), ''))
+        rows_cal.append((sym, desc, th.get(p['name']), ident))
     rows_pin = [
         ('$A$', 'total factor productivity', prod.get('A_tfp'),
          'normalisation, $\\hat y=1$'),
@@ -95,13 +116,13 @@ def params_table(cfg):
     ]
     out = ['\\multicolumn{4}{l}{\\itshape Externally set}\\\\']
     for sym, desc, val, src in rows_ext:
-        out.append(f'{sym} & {desc} & {fmt(val, 2)} & {src} \\\\')
+        out.append(f'{sym} & {desc} & {fmt(val, 4)} & {src} \\\\')
     out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Calibrated jointly by SMM}\\\\')
     for sym, desc, val, src in rows_cal:
-        out.append(f'{sym} & {desc} & {fmt(val, 2)} & {src} \\\\')
+        out.append(f'{sym} & {desc} & {fmt(val, 4)} & {src} \\\\')
     out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Pinned outside the SMM}\\\\')
     for sym, desc, val, src in rows_pin:
-        out.append(f'{sym} & {desc} & {fmt(val, 2)} & {src} \\\\')
+        out.append(f'{sym} & {desc} & {fmt(val, 4)} & {src} \\\\')
     return '\n'.join(out)
 
 
@@ -150,7 +171,10 @@ def live_moments(panels, spec, cfg):
             continue
         model = float(MOMENT_DISPATCH[mom_key](panels, spec))
         untargeted.append((mom_key, data, model, 100.0 * (model / data - 1.0)))
+    targeted_keys = {mom.compute_key for mom in spec.moments} | {mom.name for mom in spec.moments}
     for key in UNTARGETED:
+        if key in targeted_keys:
+            continue                       # it is a target in this configuration
         model = None if 'error' in fr else fr.get(key)
         data = fisc.get(key)
         if data is None or model is None:
@@ -159,7 +183,7 @@ def live_moments(panels, spec, cfg):
     return {'targeted': targeted, 'untargeted': untargeted}
 
 
-def moments_table(md, live=None):
+def moments_table(md, live=None, targeted_keys=()):
     out = ['\\multicolumn{5}{l}{\\itshape Targeted}\\\\']
     if live:
         for name, data, model, dev, wt in live['targeted']:
@@ -177,8 +201,17 @@ def moments_table(md, live=None):
         ratios = {r[0]: r for r in parse_md_table(md, 'Fiscal Ratios (model vs data, share of Y)')}
         rows = []
         for key in UNTARGETED:
+            if key in targeted_keys:
+                continue
             r = ratios.get(key)
-            rows.append((key, num(r[2]), num(r[1]), num(r[3])) if r else (key, None, None, None))
+            if r is None:
+                rows.append((key, None, None, None))
+                continue
+            data, model = num(r[2]), num(r[1])
+            # The markdown row's last column is the absolute gap; recompute
+            # the relative deviation so the cell means what the header says.
+            dev = 100.0 * (model / data - 1.0) if (data and model is not None) else None
+            rows.append((key, data, model, dev))
     for key, data, model, dev in rows:
         if data is None:
             continue                       # no data counterpart, no comparison
@@ -282,10 +315,14 @@ def implied_stats(panels, spec, cfg):
 # code/data_inventory.md 1.11); the base is compensation of employees plus
 # mixed income, so the self-employed are inside it as they are in the model.
 # The replacement rate is the sheet `Parameters` of DATA_GR.xlsx.
+# The first three model entries follow from the production function and the
+# tax base, not from the simulation: with L in efficiency units the wage bill
+# is (1-alpha) Y, so the base is 1-alpha and the rate is tau_p itself; only the
+# replacement row is a simulated statistic.
 DATA_COUNTERPART = [
     ('ssc_rev',     'Social contributions / output',              0.130),
-    ('ssc_base',    'Contribution base / output',                 0.570),
-    ('ssc_rate',    'Contribution rate on that base',             0.228),
+    ('ssc_base',    'Contribution base / output (model: $1-\\alpha$)', 0.570),
+    ('ssc_rate',    'Contribution rate on that base (model: $\\tau^p$)', 0.228),
     ('replacement', 'Pension at retirement / last wage',          0.762750),
 ]
 
@@ -299,69 +336,60 @@ def implied_table(stats, cfg):
     return '\n'.join(out)
 
 
-def goods_market_residual(paths, cfg, economy, T_tr):
-    """Goods-market residuals for the open economy, as shares of output.
+def goods_market_residual(paths, cfg, economy, T_tr, budget=None):
+    """Resource-constraint residual of the no-debt baseline, as a share of output.
 
-    Returns a dict of progressively more complete forms, because the closed
-    form is badly wrong here and saying which term is missing is the point:
+    Per capita and detrended, with NFA_p = A - K_dom the household sector's
+    foreign assets (no sovereign debt is tracked in this run) and M total
+    medical spending, the flows the code books satisfy
 
-      closed   C - (Y - I_priv - G - I_g - defence - other - dNFA)
-      open     the same, plus net factor income from abroad r*NFA - r_B*B
+      Gamma_t NFA_p[t+1] - NFA_p[t]
+        = Y + r NFA_p - C - I_priv - G - I_g - D - O - M + PD,
 
-    In detrended per-capita units I_priv[t] = Gamma_t*K_dom[t+1]
-    - (1-delta)*K_dom[t] and dNFA[t] = Gamma_t*NFA[t+1] - NFA[t].
+    where I_priv = Gamma_t K_dom[t+1] - (1-delta) K_dom[t] and PD is the
+    primary deficit, which nobody finances in a baseline without a debt
+    path: the taxes, benefits, transfers and the bequest tax net out between
+    households and the government, leaving the government's purchases and the
+    unfinanced deficit. The residual returned is
 
-    The first version of this function computed only the closed form and warned
-    above 1e-3. That was wrong: with NFA/Y near -5 the model is a small open
-    economy whose GNI differs from its GDP, and the closed form came out near
-    0.19 of output for a reason unrelated to the normalisation it was added to
-    catch. The open form is the one to read.
+      C - (Y + r NFA_p - I_priv - G - I_g - D - O - M - dNFA_p + PD),
 
-    Still unaccounted for: accidental bequests. With recompute_bequests off --
-    which every reported run uses -- the wealth of the dead leaves the economy
-    and is in none of the terms above. An audit measured the open form at -0.036
-    to -0.020 of output and found that restoring the bequest flow brings it to
-    roughly zero, so treat a residual of that order as the bequest leak rather
-    than as a new defect, and do not tighten the threshold until it is modelled.
+    every government line read from the budget the run produced, so that a
+    spending share not passed to the simulation does not enter through the
+    back door. Until 2026-10-02 the function omitted M and PD, took the
+    spending from configuration ratios whether or not the budget carried them,
+    and attributed the 0.1-0.2 residual to accidental bequests.
 
-    None when a required path is absent rather than guessing.
+    None when the budget or a required path is absent rather than guessing.
     """
-    need = ('Y', 'C', 'K_domestic')
-    if any(paths.get(k) is None for k in need):
+    need = ('Y', 'C', 'K_domestic', 'NFA')
+    if budget is None or any(paths.get(k) is None for k in need):
         return None
     Y = np.asarray(paths['Y'], float)
     C = np.asarray(paths['C'], float)
     Kd = np.asarray(paths['K_domestic'], float)
+    NFA = np.asarray(paths['NFA'], float)
     G_arr = np.asarray(economy.growth_factors(T_tr), float)
     delta = float(cfg['production'].get('delta', 0.07))
-    fisc = cfg.get('fiscal', {})
-    n = min(len(Y), len(C), len(Kd)) - 1
+    kappa = float(cfg['external_params'].get('kappa', 1.0))
+    n = min(len(Y), len(C), len(Kd), len(NFA)) - 1
     if n < 2:
         return None
 
+    def line(key):
+        v = budget.get(key)
+        return np.zeros(n) if v is None else np.asarray(v, float)[:n]
+
     I_priv = G_arr[:n] * Kd[1:n + 1] - (1.0 - delta) * Kd[:n]
-    spend = ((fisc.get('G_over_Y', 0.0) + fisc.get('defense_over_Y', 0.0)
-              + fisc.get('other_net_spending_over_Y', 0.0)) * Y[:n])
-    I_g = (np.asarray(paths['I_g'], float)[:n] if paths.get('I_g') is not None
-           else np.zeros(n))
-
-    # In a no-shock baseline there is no sovereign debt path, so the NFA that
-    # simulate_transition returns (A - K_domestic) is already the full position
-    # and r_B*B is zero.
-    nfa = paths.get('NFA')
-    if nfa is None:
-        dNFA = np.zeros(n)
-        nfi = np.zeros(n)
-    else:
-        NFA = np.asarray(nfa, float)
-        dNFA = G_arr[:n] * NFA[1:n + 1] - NFA[:n]
-        r = np.asarray(paths.get('r', np.full(len(Y), economy.r_star
-                                              if getattr(economy, 'r_star', None)
-                                              else 0.04)), float)
-        nfi = r[:n] * NFA[:n]
-
-    closed = C[:n] - (Y[:n] - I_priv - spend - I_g - dNFA)
-    return {'closed': closed / Y[:n], 'open': (closed - nfi) / Y[:n]}
+    dNFA = G_arr[:n] * NFA[1:n + 1] - NFA[:n]
+    r = np.asarray(paths.get('r', np.full(len(Y), float(getattr(economy, 'r_star', 0.04) or 0.04))), float)
+    nfi = r[:n] * NFA[:n]
+    gov_purchases = (line('govt_spending') + line('public_investment')
+                     + line('defense_spending') + line('other_net_spending'))
+    M = line('gov_health') / kappa            # public + out-of-pocket medical spending
+    PD = line('primary_deficit')
+    resid = C[:n] - (Y[:n] + nfi - I_priv - gov_purchases - M - dNFA + PD)
+    return {'resource': resid / Y[:n]}
 
 
 # ---------------------------------------------------------------- figures ---
@@ -481,8 +509,9 @@ def main():
         print(f'calibration report: {os.path.basename(report)}')
 
     g = cfg['external_params'].get('trend_growth', 0.0)
-    n = cfg['external_params'].get('pop_growth', 0.0)
-    gamma_minus_1 = (1 + g) * (1 + n) - 1
+    n = cfg['external_params'].get('pop_growth', 0.0)          # terminal rate; realised n_0 below
+    n_inf_cfg = n
+    gamma_minus_1 = (1 + g) * (1 + n) - 1                       # overwritten by the realised path
 
     # First period on the balanced growth path, from the demographic sidecar.
     t_stable = None
@@ -533,6 +562,8 @@ def main():
     G_path = economy.growth_factors(T_TR)
     n = float(G_path[0] / (1.0 + g) - 1.0)          # realised, not the config scalar
     n_T = float(G_path[-1] / (1.0 + g) - 1.0)
+    gamma_minus_1 = float(G_path[0] - 1.0)           # Gamma_0 - 1, the base year
+    gammaT_minus_1 = float(G_path[-1] - 1.0)         # Gamma_T - 1, the balanced growth path
 
     paths = None
     if args.run_baseline:
@@ -542,35 +573,45 @@ def main():
         tax = {k: tp[k] for k in ('tau_c_path', 'tau_l_path', 'tau_p_path',
                                   'tau_k_path', 'pension_replacement_path')}
         print(f'baseline transition: T={T_TR}, n_sim={args.n_sim}, backend={args.backend}')
+        fisc = L['config_data'].get('fiscal', {})
+        # The spending shares go into the simulation so that the budget it
+        # produces carries G, defence and the balancing item; the resource
+        # constraint below is read off that budget, not off the configuration.
         res = economy.simulate_transition(r_path=tp['r_path'], I_g_path=I_g,
-                                          n_sim=args.n_sim, verbose=False, **tax)
+                                          n_sim=args.n_sim, verbose=False,
+                                          G_over_Y=fisc.get('G_over_Y', 0.0),
+                                          defense_over_Y=fisc.get('defense_over_Y', 0.0),
+                                          other_net_over_Y=fisc.get('other_net_spending_over_Y', 0.0),
+                                          **tax)
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
+        budget = economy.compute_government_budget_path(n_sim=args.n_sim, verbose=False)
+        budget = {k: np.asarray(v) for k, v in budget.items()
+                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
         # Keep the paths, not just the picture of them. Questions about the
         # baseline -- why a ratio moves, where output turns -- otherwise cost a
         # full transition to answer again.
         np.savez(os.path.join(outdir, 'baseline_paths.npz'),
                  **{k: v for k, v in paths.items()},
+                 **{('budget_' + k): v for k, v in budget.items()},
                  growth_factor=economy.growth_factors(T_TR),
                  delta=float(L['config_data']['production'].get('delta', 0.07)),
                  base_year=int(economy.current_year))
         print('  wrote baseline_paths.npz')
 
-        # The goods market is the one identity that does not cancel a
+        # The resource constraint is the one identity that does not cancel a
         # normalisation error: every other check in the repo compares two
         # quantities that carry the same denominator, so a mismatch divides out.
-        res = goods_market_residual(paths, L['config_data'], economy, T_TR)
+        res = goods_market_residual(paths, L['config_data'], economy, T_TR, budget=budget)
         if res is not None:
-            wc = float(np.max(np.abs(res['closed'])))
-            wo = float(np.max(np.abs(res['open'])))
-            print(f'  goods market, share of output: closed form {wc:.4f}, '
-                  f'open form (with net factor income) {wo:.4f}')
-            # The open form should sit at the scale of the unmodelled bequest
-            # leak, measured at 0.02-0.04 of output. Well above that means a
-            # term is missing or on a different scale.
-            if wo > 0.08:
-                print('  WARNING: the open-economy resource constraint is off by '
-                      'more than the known bequest leak explains')
+            wr = float(np.max(np.abs(res['resource'])))
+            print(f'  resource constraint, max |residual| / Y = {wr:.4f} '
+                  f'(t=0: {res["resource"][0]:+.4f})')
+            # Every booked flow is in the identity, so only the sampling noise
+            # of a finite n_sim and the discrete timing of deaths remain.
+            if wr > 0.01:
+                print('  WARNING: the resource constraint is off by more than '
+                      'sampling noise explains; a flow is missing or mis-dated')
 
     stats = None
     live = None
@@ -602,12 +643,15 @@ def main():
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=+3.1]',
             ' & {Data} & {Model} & {\\% dev}', implied_table(stats, cfg)),
         'params_body.tex': wrap(
-            'llS[table-format=2.2]l',
+            'llS[table-format=2.4]l',
             'Symbol & Description & {Value} & Source / identified by',
-            params_table(cfg)),
+            params_table(cfg, n0=n, n_inf=n_T)),
         'moments_body.tex': wrap(
             'lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.2]S[table-format=3.2]',
-            ' & {Data} & {Model} & {\\% dev} & {Weight}', moments_table(md, live)),
+            ' & {Data} & {Model} & {\\% dev} & {Weight}',
+            moments_table(md, live, targeted_keys={m.get('compute_key', m.get('name'))
+                                                   for m in cfg.get('calibration', {}).get('targets', [])}
+                          | {m.get('name') for m in cfg.get('calibration', {}).get('targets', [])})),
         'age_body.tex': wrap(
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]',
             ' & {Data, 2023} & {Model, $t=0$} & {Model, terminal}',
@@ -618,7 +662,7 @@ def main():
         'growth_body.tex': wrap(
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=+1.3]',
             ' & {Level (\\%)} & {Per capita (\\%)} & {Detrended trend (\\%)}',
-            growth_table(paths, gamma_minus_1, g, t_stable=t_stable)),
+            growth_table(paths, gammaT_minus_1, g, t_stable=t_stable)),
     }
     # Without a baseline transition there is nothing to put in the growth
     # table's trend column or in the transition panels. Writing them anyway
@@ -637,14 +681,17 @@ def main():
     make_figures(paths, w_data, w_model_t0, outdir)
 
     meta = {'run': os.path.basename(report) if report else None,
-            'g': g, 'n': n, 'Gamma_minus_1': gamma_minus_1,
+            'g': g, 'n': n, 'n_T': n_T, 'Gamma_minus_1': gamma_minus_1,
+            'GammaT_minus_1': gammaT_minus_1,
             'r_B': cfg['prices'].get('r_B'),
             'objective': num((parse_md_table(md, 'Summary') or [['', '']])[0][1])}
     with open(os.path.join(outdir, 'header.tex'), 'w') as fh:
         run = (meta['run'] or '').replace('_', '\\_') or NP
         for name, val in (('runlabel', run), ('gval', fmt(g, 4)),
-                          ('nval', fmt(n, 4)), ('rBval', fmt(meta['r_B'], 4)),
-                          ('Gammaval', fmt(gamma_minus_1, 5))):
+                          ('nval', fmt(n, 4)), ('nTval', fmt(n_T, 4)),
+                          ('rBval', fmt(meta['r_B'], 4)),
+                          ('Gammaval', fmt(gamma_minus_1, 5)),
+                          ('GammaTval', fmt(gammaT_minus_1, 5))):
             fh.write(f"\\providecommand{{\\{name}}}{{}}"
                      f"\\renewcommand{{\\{name}}}{{{val}}}\n")
     print('  wrote header.tex')

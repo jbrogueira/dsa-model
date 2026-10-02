@@ -54,11 +54,20 @@ class TestGini:
         assert compute_gini(x) == pytest.approx(1.0 / 3.0, abs=0.01)
 
     def test_weighted(self):
-        """Weighted Gini with equal weights matches unweighted."""
+        """Weighted Gini with equal weights matches unweighted, exactly."""
         x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         g1 = compute_gini(x)
         g2 = compute_gini(x, weights=np.ones(5))
-        assert g1 == pytest.approx(g2, abs=0.05)
+        assert g1 == pytest.approx(g2, abs=1e-12)
+        assert g1 == pytest.approx(4.0 / 15.0, abs=1e-12)
+
+    def test_weighted_equals_expanded_sample(self):
+        """Integer weights equal repeating the observation that many times."""
+        x = np.array([1.0, 2.0, 3.0, 4.0])
+        w = np.array([1.0, 1.0, 1.0, 7.0])
+        expanded = np.concatenate([[1.0, 2.0, 3.0], np.full(7, 4.0)])
+        assert compute_gini(x, weights=w) == pytest.approx(compute_gini(expanded), abs=1e-12)
+        assert compute_gini(x, weights=w) > 0.0
 
     def test_empty(self):
         assert compute_gini(np.array([])) == 0.0

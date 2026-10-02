@@ -1059,24 +1059,29 @@ class TestNewFeatures:
 
     # --- Feature #11: Minimum pension floor ---
 
-    def test_pension_min_floor_increases_retiree_consumption(self):
-        """With a positive pension floor, retiree consumption should not decrease."""
+    def test_pension_min_floor_raises_value(self):
+        """A positive pension floor weakly raises the value at every state and
+        binds somewhere. It need not raise retiree consumption: a household that
+        expects a higher pension smooths by consuming more before retirement,
+        which is what this fixture does once the retired continuation value is
+        read at the household's own last income state (2026-10-02)."""
         config_base = self._base_config()
         config_floor = self._base_config(pension_min_floor=0.5)
 
         model_base = LifecycleModelPerfectForesight(config_base, verbose=False)
         model_base.solve(verbose=False)
-        res_base = model_base.simulate(n_sim=2000, seed=42)
-
         model_floor = LifecycleModelPerfectForesight(config_floor, verbose=False)
         model_floor.solve(verbose=False)
-        res_floor = model_floor.simulate(n_sim=2000, seed=42)
 
-        # Mean consumption in retirement (ages 8, 9) should be at least as high
-        c_base_ret = np.mean(res_base[1][8:, :])
-        c_floor_ret = np.mean(res_floor[1][8:, :])
-        assert c_floor_ret >= c_base_ret - 1e-6, \
-            f"Pension floor should increase retiree consumption: {c_floor_ret:.4f} < {c_base_ret:.4f}"
+        V_base = np.asarray(model_base.V); V_floor = np.asarray(model_floor.V)
+        finite = np.isfinite(V_base) & np.isfinite(V_floor)
+        assert np.all(V_floor[finite] >= V_base[finite] - 1e-9), \
+            "a higher pension floor lowered the value at some state"
+        assert np.any(V_floor[finite] > V_base[finite] + 1e-9), \
+            "the floor of 0.5 binds nowhere in this fixture"
+        res_floor = model_floor.simulate(n_sim=2000, seed=42)
+        pens = res_floor[16][res_floor[17].astype(bool)]
+        assert np.all(pens >= 0.5 - 1e-12), "a retiree received less than the floor"
 
     def test_pension_min_floor_zero_is_noop(self):
         """pension_min_floor=0.0 should match the default behavior exactly."""
@@ -1727,20 +1732,23 @@ class TestLaborSupply:
         assert np.allclose(model.l_policy, 1.0), "l_policy should be all 1.0 when labor_supply=False"
 
     def test_l_sim_in_output(self):
-        """Simulation returns 21-tuple, l_sim at index 18, alive_sim at 19, bequest_sim at 20."""
+        """Simulation returns a 23-tuple: l_sim at index 18, alive_sim at 19, bequest_sim at 20, alpha_idx at 21, transfer_sim at 22."""
         config = self._base_config()
         model = LifecycleModelPerfectForesight(config, verbose=False)
         model.solve(verbose=False)
         result = model.simulate(n_sim=100, seed=42)
-        assert len(result) in (21, 22), f"Expected 21- or 22-tuple, got {len(result)}-tuple"
+        assert len(result) in (21, 22, 23), f"Expected 21-, 22- or 23-tuple, got {len(result)}-tuple"
         l_sim = result[18]
         assert l_sim.shape == result[0].shape, "l_sim shape should match a_sim shape"
-        # With labor_supply=False, l_sim = 1.0 for working ages, 0.0 for retired
-        retired_sim = result[17]
-        assert np.allclose(l_sim[~retired_sim.astype(bool)], 1.0), \
-            "l_sim should be 1.0 for non-retired when labor_supply=False"
-        assert np.allclose(l_sim[retired_sim.astype(bool)], 0.0), \
-            "l_sim should be 0.0 for retired agents"
+        # With labor_supply=False the employed supply 1.0; the unemployed and the
+        # retired supply 0.0 (since 2026-10-02 the unemployed no longer carry the
+        # policy array's placeholder of 1.0 into the panel).
+        retired_sim = result[17].astype(bool)
+        employed_sim = result[6].astype(bool)
+        assert np.allclose(l_sim[employed_sim & ~retired_sim], 1.0), \
+            "l_sim should be 1.0 for the employed when labor_supply=False"
+        assert np.allclose(l_sim[~employed_sim | retired_sim], 0.0), \
+            "l_sim should be 0.0 for the unemployed and the retired"
         # alive_sim: all True when no survival_probs
         alive_sim = result[19]
         assert alive_sim.shape == result[0].shape
@@ -1861,22 +1869,22 @@ class TestLaborSupplyJAX:
         # l_sim is at index 18
         # Phase 8.3 added alpha_idx_sim → NumPy now returns 22-tuple.
         # JAX backend still returns 21-tuple until Phase 8.5 lands.
-        assert len(np_results) in (21, 22), f"NumPy: expected 21- or 22-tuple, got {len(np_results)}"
-        assert len(jax_results) in (21, 22), f"JAX: expected 21- or 22-tuple, got {len(jax_results)}"
+        assert len(np_results) in (21, 22, 23), f"NumPy: expected 21-23-tuple, got {len(np_results)}"
+        assert len(jax_results) in (21, 22, 23), f"JAX: expected 21-23-tuple, got {len(jax_results)}"
 
         np_l = np_results[18]
         jax_l = jax_results[18]
 
-        # With labor_supply=False the WORKING ages supply 1.0; retirees supply 0
-        # by design (lifecycle_perfect_foresight sets l_sim = 0 once retired), so
-        # asserting 1.0 everywhere failed in the NumPy reference before JAX was
-        # even compared. Check the working ages, and that both agree everywhere.
-        R = config.retirement_age
-        assert np.allclose(np_l[:R], 1.0), "NumPy l_sim should be 1.0 while working"
-        assert np.allclose(jax_l[:R], 1.0), "JAX l_sim should be 1.0 while working"
-        np.testing.assert_allclose(
-            np_l, jax_l, rtol=0, atol=1e-12,
-            err_msg="the backends disagree on simulated hours")
+        # With labor_supply=False the EMPLOYED supply 1.0; the unemployed and the
+        # retired supply 0 (since 2026-10-02 the panel records 0 for the
+        # unemployed too). The two backends draw different shocks, so hours are
+        # checked against each backend's own employment indicator.
+        np_emp = np_results[6].astype(bool) & ~np_results[17].astype(bool)
+        jax_emp = jax_results[6].astype(bool) & ~jax_results[17].astype(bool)
+        assert np.allclose(np_l[np_emp], 1.0) and np.allclose(np_l[~np_emp], 0.0), \
+            "NumPy l_sim should be 1.0 for the employed and 0.0 otherwise"
+        assert np.allclose(jax_l[jax_emp], 1.0) and np.allclose(jax_l[~jax_emp], 0.0), \
+            "JAX l_sim should be 1.0 for the employed and 0.0 otherwise"
 
         # Also check distributional match for assets (regression)
         np_means = np.mean(np_results[0], axis=1)
@@ -1998,7 +2006,7 @@ class TestSimulationMortality:
         model.solve(verbose=False)
         n_sim = 200
         result = model.simulate(n_sim=n_sim, seed=42)
-        assert len(result) in (21, 22)
+        assert len(result) in (21, 22, 23)
         alive_sim = result[19]
         T_sim = 10 - 0  # T - current_age
         assert alive_sim.shape == (T_sim, n_sim), \
@@ -2273,7 +2281,7 @@ class TestFixedEffect:
         m = LifecycleModelPerfectForesight(cfg, verbose=False)
         m.solve(verbose=False)
         result = m.simulate(T_sim=50, n_sim=500, seed=7)
-        alpha_idx_panel = result[-1]
+        alpha_idx_panel = result[21]    # alpha_idx_sim; index 22 is transfer_sim since 2026-10-02
         # Every column should be constant across time
         assert np.all(alpha_idx_panel[0] == alpha_idx_panel[-1])
         for t in range(alpha_idx_panel.shape[0]):
@@ -2289,7 +2297,7 @@ class TestFixedEffect:
         y_state = result[2]
         eff_y = result[5]
         employed = result[6].astype(bool) & (y_state > 0)
-        alpha_idx = result[-1]
+        alpha_idx = result[21]          # alpha_idx_sim; index 22 is transfer_sim since 2026-10-02
         t = 10  # working age
         kappa_t = float(m.wage_age_profile[t])
         w_t = float(m.w_path[t])
@@ -2309,7 +2317,7 @@ class TestFixedEffect:
         m.solve(verbose=False)
         n_sim = 5000
         result = m.simulate(T_sim=50, n_sim=n_sim, seed=7)
-        alpha_idx = result[-1][0]
+        alpha_idx = result[21][0]       # alpha_idx_sim; index 22 is transfer_sim since 2026-10-02
         empirical = np.bincount(alpha_idx, minlength=m.n_alpha) / n_sim
         # 3 standard errors for a multinomial proportion: sqrt(p*(1-p)/n)
         for k in range(m.n_alpha):
@@ -3057,6 +3065,120 @@ class TestCrossRoutineLevels:
         assert abs(1.0 - frac) > 0.03, (
             f'living share {frac:.4f} is too close to 1 for this fixture to '
             f'distinguish the two conventions')
+
+
+class TestAuditFixes20261002:
+    """Regression guards for the fixes of 2026-10-02 (audit report §3.8)."""
+
+    T, N_SIM = 12, 300
+
+    @classmethod
+    def _cfg(cls, **kw):
+        T = cls.T
+        base = dict(T=T, n_a=40, n_y=3, n_h=1, n_alpha=2, retirement_age=8, labor_supply=True,
+                    nu=1.0, phi=2.0, gamma=1.0, trend_growth=0.017, beta=0.97,
+                    survival_probs=np.linspace(0.97, 0.80, T).reshape(T, 1),
+                    tau_beq=1.0, pension_min_floor=0.05, education_type='medium')
+        base.update(kw)
+        cfg = LifecycleConfig(**base)
+        ep = dict(cfg.edu_params); ep['medium'] = dict(ep['medium'], sigma_alpha=0.3)
+        return cfg._replace(edu_params=ep)
+
+    def test_retired_continuation_uses_own_last_income_state(self):
+        """C1: at a retired age V depends on z_last, is nondecreasing in it, and the
+        two backends agree. Until 2026-10-02 the continuation was read at z_last=0."""
+        from lifecycle_jax import LifecycleModelJAX
+        cfg = self._cfg()
+        m = LifecycleModelPerfectForesight(cfg, verbose=False); m.solve(verbose=False)
+        mj = LifecycleModelJAX(cfg, verbose=False); mj.solve(verbose=False)
+        tR = cfg.retirement_age + 1
+        Vr = np.asarray(m.V)[tR, :, 0, 0, :]
+        assert np.ptp(Vr[10]) > 1e-6, "retired value does not depend on z_last"
+        assert np.all(np.diff(Vr, axis=1) >= -1e-12), "retired value decreasing in z_last"
+        assert np.abs(np.asarray(m.V) - np.asarray(mj.V)).max() < 1e-10
+        assert np.array_equal(np.asarray(m.a_policy), np.asarray(mj.a_policy))
+
+    def test_hours_are_not_capped_at_one(self):
+        """c3: with a small disutility weight the chosen hours exceed one on both
+        backends and the first-order condition holds with equality there."""
+        from lifecycle_jax import LifecycleModelJAX, solve_labor_robust_jax
+        import jax.numpy as jnp
+        cfg = self._cfg(nu=0.02)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False); m.solve(verbose=False)
+        mj = LifecycleModelJAX(cfg, verbose=False); mj.solve(verbose=False)
+        assert float(np.asarray(m.l_policy_alpha).max()) > 1.0
+        assert float(np.asarray(mj.l_policy_alpha).max()) > 1.0
+        l = float(solve_labor_robust_jax(jnp.array(1.0), jnp.array(2.0), 0.02, 2.0, 1.0, 0.1))
+        c_l = 1.0 + 2.0 * (l - 1.0) / 1.1
+        assert l > 1.0 and abs(0.02 * l ** 2 * 1.1 - 2.0 / c_l) < 1e-8
+        c, l_np = m._solve_labor_newton(1.0, 2.0 / ((1 - 0.2) * (1 - 0.2)), 1.0, 1.0, 1.0, 0.2, 0.2, 0.1)
+        assert l_np > 1.0 and abs(0.02 * l_np ** 2 * 1.1 - 2.0 / c) < 1e-8
+
+    def test_transfer_floor_is_recorded_and_booked(self):
+        """M1: the simulated top-up closes each household's budget identity on both
+        backends and the transition books its aggregate as an outlay."""
+        from lifecycle_jax import LifecycleModelJAX
+        cfg = self._cfg(transfer_floor=0.08)
+        g, r, tc = cfg.trend_growth, cfg.r_default, cfg.tau_c_default
+        for Model in (LifecycleModelPerfectForesight, LifecycleModelJAX):
+            mdl = Model(cfg, verbose=False); mdl.solve(verbose=False)
+            out = [np.asarray(x) for x in mdl.simulate(n_sim=self.N_SIM, seed=11)]
+            assert len(out) == 23
+            a, c, eff, oop, tl, tp, tk, pens, ret, alive, tr = (
+                out[0], out[1], out[5], out[9], out[12], out[13], out[14], out[16],
+                out[17].astype(bool), out[19].astype(bool), out[22])
+            assert (tr > 0).any(), "floor never binds in this fixture"
+            a_next = np.zeros_like(a); a_next[:-1] = a[1:]
+            alive_next = np.zeros_like(alive); alive_next[:-1] = alive[1:]
+            after_tax = np.where(ret, pens - tl, eff - tp - tl)
+            resid = (1 + tc) * c + (1 + g) * a_next - (a + r * a - tk + after_tax - oop + tr)
+            assert np.abs(resid[alive & alive_next]).max() < 1e-10
+        olg = OLGTransition(lifecycle_config=cfg, education_shares={'medium': 1.0}, backend='numpy',
+                            pop_growth=0.0, economy_type='soe', r_star=0.04, alpha=0.33, delta=0.05, A=1.0)
+        olg.simulate_transition(np.full(3, 0.04), n_sim=self.N_SIM, verbose=False)
+        bud = olg.compute_government_budget_path(n_sim=self.N_SIM, verbose=False)
+        lines = sum(np.asarray(bud[k]) for k in ('ui', 'pension', 'gov_health', 'transfers', 'govt_spending',
+                                                  'public_investment', 'defense_spending', 'other_net_spending'))
+        assert np.asarray(bud['transfers']).max() > 0.0
+        np.testing.assert_allclose(lines, np.asarray(bud['total_spending']), rtol=0, atol=1e-12)
+
+    def test_labor_input_is_the_wage_bill(self):
+        """M2: w*L equals the wage bill (payroll tax over its rate); UI is not labour."""
+        cfg = self._cfg()
+        olg = OLGTransition(lifecycle_config=cfg, education_shares={'medium': 1.0}, backend='numpy',
+                            pop_growth=0.0, economy_type='soe', r_star=0.04, alpha=0.33, delta=0.05, A=1.0)
+        T_tr = 3
+        res = olg.simulate_transition(np.full(T_tr, 0.04), n_sim=self.N_SIM, verbose=False,
+                                      tau_p_path=np.full(T_tr, 0.2))
+        bud = olg.compute_government_budget_path(n_sim=self.N_SIM, verbose=False)
+        wL = np.asarray(res['w']) * np.asarray(res['L'])
+        np.testing.assert_allclose(wL, np.asarray(bud['tax_p']) / 0.2, rtol=1e-10, atol=0)
+        assert np.asarray(bud['ui']).max() > 0.0
+
+    def test_entering_cohorts_extend_past_the_table(self):
+        """C2: periods beyond the entrant table take the terminal growth rate instead of raising."""
+        import json
+        from calibrate import build_olg_transition
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calibration_input_GR.json')
+        if not os.path.exists(path):
+            pytest.skip('country config not present')
+        economy, _, _ = build_olg_transition(json.load(open(path)), backend='numpy')
+        if economy._demog is None:
+            pytest.skip('no demographic path configured')
+        last = int(economy._demog['entrant_years'][-1]) - int(economy.current_year)
+        w_last = economy._entrant_weights(last)
+        w_beyond = economy._entrant_weights(last + 12)
+        n_inf = float(economy._demog['n_path'][-1])
+        if abs(n_inf) < 1e-12:
+            np.testing.assert_allclose(w_beyond, w_last, rtol=0, atol=1e-14)
+        assert abs(w_beyond.sum() - 1.0) < 1e-12
+
+    def test_terminal_check_tracks_debt(self):
+        """M4: the terminal-convergence check reports the drift of B when given a debt path."""
+        from fiscal_experiments import _check_terminal_convergence
+        drift, _ = _check_terminal_convergence({'Y': np.array([1.0, 1.0, 1.0])}, {}, None,
+                                               B_path=np.array([1.0, 1.0, 1.02, 1.03]))
+        assert 'B' in drift and abs(drift['B'] - 0.01 / 1.02) < 1e-9
 
 
 if __name__ == "__main__":
