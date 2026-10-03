@@ -25,7 +25,7 @@
 
 \title{\vspace{-1.6cm}Balanced-growth calibration: Greece}
 \author{}
-\date{\small run \texttt{\runlabel}\quad$\cdot$\quad $g=\gval$,\; $n_0=\nval$,\; $n_\infty=\nTval$,\;
+\date{\small $g=\gval$,\; $n_0=\nval$,\; $n_\infty=\nTval$,\;
       $r_B=\rBval$,\; $\Gamma_0-1=\Gammaval$,\; $\Gamma_T-1=\GammaTval$}
 
 \begin{document}
@@ -33,32 +33,30 @@
 \vspace{-0.6cm}
 
 \noindent\small
-The model is solved in per-capita detrended units: aggregates are divided by
-$Z_tN_t$ with $Z_t=(1+g)^t$, so every stock recursion carries
-$\Gamma=(1+g)(1+n)$ and the household budget carries $(1+g)$ on next-period
-assets. Preferences are $\log c-\nu\ell^{1+\varphi}/(1+\varphi)$. Government
-debt is external and official-sector: households hold domestic capital and
-foreign assets at $r$; the government pays $r_B$ abroad. A hat denotes a
-detrended per-capita quantity $\hat x_t=X_t/(Z_tN_t)$, constant along the
-balanced growth path while levels grow at $\Gamma-1$ and per-capita terms at
-$g$; $A$ is set so $\hat y=1$, which makes ratios to output readable as
-levels. Parameters are annual.
+The model is a small open economy with overlapping generations, solved in
+detrended per-capita units. A hat denotes $\hat x_t=X_t/(Z_tN_t)$, where
+$Z_t=(1+g)^t$ is labour productivity and $N_t$ population, so stocks
+accumulate at the gross rate $\Gamma_t=(1+g)(1+n_t)$. On the balanced growth
+path $\hat x$ is constant, levels grow at $\Gamma-1$ and per-capita
+quantities at $g$. Preferences are $\log c-\nu\ell^{1+\varphi}/(1+\varphi)$.
+Households hold domestic capital and foreign assets, both earning $r$.
+Government debt is held abroad by official creditors at the rate $r_B$. TFP
+$A$ is set so that $\hat y=1$ in 2023, so ratios to output can be read as
+levels. The period is a year.
 
 \vspace{2pt}
 \noindent\footnotesize
-Data sources for the externally set block, where the mapping is not a direct
-read: $K_g/Y$ is the IMF ICSD stock of 2019 rolled to 2023 by perpetual
-inventory on national-accounts public investment and real GDP
-(\texttt{build\_public\_capital\_GR.py}); $\delta_g$ is estimated from the
-ICSD stock itself over 2000--2019 and cross-checked against
-$I_g/K_g-(\Gamma_0-1)$, the two agreeing to 0.001; $r_B$ is the implicit rate
-on the debt stock averaged over 2012--24; $b_{min}$ is the Greek national
-pension of \EUR{413.76} a month as indexed from January 2023, over output per
-living person aged 25--84 --- \EUR{224.7}bn of nominal GDP (Eurostat
-\texttt{nama\_10\_gdp}) over 7{,}559{,}564 people, so \EUR{29{,}722} each
-(\texttt{build\_pension\_floor\_GR.py}). Eurostat publishes aggregate pension
-expenditure, not statutory amounts, so that figure is from the legislation and
-the 2024 Ageing Report country fiche.
+Sources for the externally set parameters that are not read directly from a
+table: $K_g/Y$ is the IMF ICSD public capital stock for 2019, carried forward
+to 2023 by perpetual inventory with national-accounts public investment and
+real GDP. $\delta_g$ is estimated from the ICSD stock over 2000--2019; it is
+within 0.001 of $I_g/K_g-(\Gamma_0-1)$. $r_B$ is the implicit interest rate on
+the debt stock, averaged over 2012--24. $b_{min}$ is the Greek national pension,
+\EUR{413.76} a month from January 2023, divided by output per person aged
+25--84: \EUR{224.7}bn of GDP (Eurostat) over 7{,}559{,}564 people, or
+\EUR{29{,}722} each. The pension amount comes from the legislation and the
+2024 Ageing Report country fiche, since Eurostat reports only aggregate pension
+spending.
 
 \vspace{0.1cm}
 \begin{table}[!htbp]\centering\footnotesize
@@ -69,18 +67,15 @@ the 2024 Ageing Report country fiche.
 \begin{table}[!htbp]\centering\footnotesize
 \caption{Moments}\vspace{-2pt}
 \tabinput{moments_body.tex}
-\caption*{\footnotesize The untargeted rows are those the data pin down.
-Interest$/Y$, $I_g/Y$ and the primary balance are excluded: the first two are
-config inputs the model reproduces by construction, and the household-side
-primary balance excludes $G$, $I_g$, defence and $O/Y$, so nothing in the data
-corresponds to it. The distributional rows put the model on the data's
-definition as far as a model without households allows. Eurostat measures
-equivalised \emph{household} disposable income; the model's figure is
-individual disposable income, gross less income tax and contributions.
-Netting taxes moves the Gini from 0.400 to 0.382 and the decile ratio from
-5.70 to 4.86. Household pooling and equivalisation would both lower them
-further and cannot be reproduced here, so each model figure is an upper bound
-on the comparable statistic rather than a like-for-like match.}
+\caption*{\footnotesize The SMM objective is $\sum_i (m_i-d_i)^2/d_i^2$, so
+each target's relative deviation counts equally. Interest$/Y$ and $I_g/Y$ are
+not listed because they are set in the calibration. The untargeted rows
+compare income inequality. Eurostat measures equivalised \emph{household}
+disposable income; the model has individuals, not households, and its figure
+is individual income net of income tax and contributions. Taxes lower the
+model Gini from 0.397 to 0.377 and the p90/p10 ratio from 5.78 to 5.04.
+Pooling income within households and equivalisation would lower both further,
+so the model figures are upper bounds on the comparable statistics.}
 \end{table}
 
 \begin{table}[!htbp]\centering\footnotesize
@@ -89,39 +84,31 @@ on the comparable statistic rather than a like-for-like match.}
 \end{table}
 
 \noindent\footnotesize
-$\tau^p$ and $\rho^{pens}$ each have a ratio in the data that names the same
-object. The model applies $\tau^p$ to the whole wage bill with no contribution
-ceiling, and $\rho^{pens}$ to a career-average base rather than the final wage,
-so its own ratios differ from the recorded ones; the table measures that
-distance. $m^{good}$ has no entry: the ratio that would test it, public health
-spending over output, is a targeted moment and appears in Table~2.
+$\tau^p$ and $\rho^{pens}$ also have direct counterparts in the data. They
+differ because the model applies $\tau^p$ to the whole wage bill, with no
+contribution ceiling, and $\rho^{pens}$ to career-average earnings rather than
+the final wage.
 
 \section*{Demographics}
 \vspace{-0.1cm}
 
 \noindent\footnotesize
-The base year is 2023 and its age distribution enters as
-\emph{measured}, not as a stationary population, so the calibration matches
-2023. Model ages $0$--$59$ are real ages $25$--$84$. Each age is weighted by
-its cohort's size at birth, mortality being already reflected in the simulated
-averages in which the dead hold zero; the cross-section counts the living, so
-each age is divided by its cumulative survival probability to recover those
-weights. Survival and entering cohorts then follow the EUROPOP2023 baseline
-projection through 2100, identically across the baseline and every
-counterfactual. Past it mortality is held at the 2100 schedule and the growth
-rate of entering cohorts is taken to zero by 2120, so one lifespan later, from
-2179, the age distribution is exactly constant.\footnote{A stationary population matched on the dependency ratio
-would reproduce that ratio but not the age shape, lacking the cohort about to
-retire that drives the projected rise.} Because the base-year population is not stationary the economy is in
-transition from $t=0$ with no policy change: detrended aggregates move while
-the older cohorts retire, settling once the demographic transition completes.
-The balanced-growth check in Table~5 is computed over the periods after that,
-the last 24 of the horizon. With tax rates fixed the age structure enters no household's
-problem --- the return is exogenous and the wage is pinned by the firm's
-first-order condition --- so ageing moves aggregates and the government budget
-alone. It reaches households once financing responds: in the tax-financed
-experiments ageing raises pension and health spending, the labour income tax
-rises to meet the debt target, and decisions move with it.
+The calibration uses the measured 2023 age distribution, not a stationary
+population.\footnote{A stationary population with the same dependency ratio
+would miss the age profile, in particular the large cohorts about to retire
+that drive the projected rise in the ratio.} Each cohort faces the survival
+rates of its own birth year. After 2023, survival and the size of entering
+cohorts follow the EUROPOP2023 baseline projection to 2100, in the baseline and
+in every policy experiment. After 2100, mortality stays at its 2100 level and
+the growth of entering cohorts falls to zero by 2120. The age distribution is
+constant from 2179 on.
+
+Since the 2023 population is not stationary, the economy is in transition
+even without any policy change. With tax rates fixed, ageing does not change
+any household's decisions: the return is set abroad and the wage follows from
+it. It changes only the aggregates and the government budget. Households
+respond once a tax adjusts to finance the budget, as in the tax-financed
+experiments.
 
 \begin{table}[htbp]\centering\footnotesize
 \caption{Age structure}\vspace{-3pt}
@@ -129,39 +116,48 @@ rises to meet the debt target, and decisions move with it.
 \end{table}
 
 \vspace{-0.2cm}
-\section*{Simulated aggregates}\vspace{-0.2cm}
+\section*{Baseline transition}\vspace{-0.2cm}
 
 \begin{figure}[htbp]\centering
-\IfFileExists{\rundir/baseline_panels.pdf}
-  {\includegraphics[width=0.92\linewidth]{\rundir/baseline_panels.pdf}}
-  {\figbox{Figure 1 --- baseline transition.}{4.5cm}}
-\caption{Baseline transition, no policy change. \emph{Left}: the detrended
-per-capita aggregates $\hat y$, $\hat c$, $\hat k^{dom}$, $\hat\ell$ and
-$\hat a$, each divided by its own 2023 value, so the panel shows proportional
-change and not levels. Flat would mean a population already settled; the
-movement is the demographic transition working through, since no instrument
-moves in the baseline. \emph{Right}: ratios to output, which are levels and
-comparable across scenarios. The horizontal axis is periods from 2023, so
-$t=156$ is 2179, the first year on the balanced growth path.}
+\IfFileExists{\rundir/baseline_aggregates.pdf}
+  {\includegraphics[width=\linewidth]{\rundir/baseline_aggregates.pdf}}
+  {\figbox{Figure 1 --- run \texttt{reports/baseline\_figures.py}.}{4.5cm}}
+\caption{Baseline transition with no policy change: aggregates. \emph{Left}:
+detrended per-capita output, consumption and household wealth, relative to
+2023. Domestic capital and hours move in proportion to output, because the
+world return fixes $K^{dom}/L$ and public capital per capita is constant.
+\emph{Centre and right}: ratios to output. Private investment is
+$I_t=\Gamma_t K^{dom}_{t+1}-(1-\delta)K^{dom}_t$, shown as a 5-year centred
+moving average because, as the change in a stock about 15 times larger, it
+carries about 20 times the stock's simulation noise. Household wealth is
+$A=K^{dom}+NFA$. All movement comes from the change in the age structure.}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{\rundir/baseline_fiscal.pdf}
+  {\includegraphics[width=\linewidth]{\rundir/baseline_fiscal.pdf}}
+  {\figbox{Figure 2 --- run \texttt{reports/baseline\_figures.py}.}{6cm}}
+\caption{Baseline transition with no policy change: government accounts,
+as shares of output. Tax rates, $G/Y$, defence$/Y$ and $O/Y$ are fixed;
+pensions, health spending and the tax bases move with the age structure. The
+primary deficit excludes interest. Debt follows
+$B_{t+1}=[(1+r_B)B_t+PD_t]/\Gamma_t$ from its 2023 ratio. Since it is held
+abroad and no tax responds, it does not affect households. With
+$r_B>\Gamma_T-1$ and a primary deficit in the long run, the debt ratio does
+not stabilise.}
 \end{figure}
 
 \begin{table}[htbp]\centering\footnotesize
-\caption{Implied growth rates. Levels and per-capita terms grow at $\Gamma-1$
-and $g$ by construction; the detrended series should be flat, so the last
-column is the test.}\vspace{-2pt}
+\caption{Growth of the detrended series on the balanced growth path}\vspace{-2pt}
 \tabinput{growth_body.tex}
 \end{table}
 
 \noindent\footnotesize
-The detrended trend is the mean log growth per period,
-$\frac{1}{T-t_0}\sum_{t\ge t_0}\log(\hat x_{t+1}/\hat x_t)$, over the periods
-from $t_0$, the first on the balanced growth path. It is zero under correct
-detrending and would read $g$ or $\Gamma_T-1$ for a variable that was left in
-levels. The earlier periods are excluded because the age distribution is still
-changing: entering cohorts follow the projection and each cohort faces the
-mortality of its own birth year, so neither the population nor its composition
-is constant. The noise floor is the same statistic on a run with $g=0$ and a
-constant population, where the true value is also zero; only departures
-materially above it are informative.
+Table~5 reports the mean log growth per year,
+$\frac{1}{T-t_0}\sum_{t\ge t_0}\log(\hat x_{t+1}/\hat x_t)$, from
+$t_0=2179$, when the age distribution becomes constant, to the end of the
+horizon. With correct detrending each series is flat, so the entries should be
+zero. A series left in levels would show $\Gamma_T-1$ (1.7\%), and one left
+in per-capita terms $g$ (also 1.7\%). The largest in absolute value is 0.010\%.
 
 \end{document}

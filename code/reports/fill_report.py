@@ -77,30 +77,32 @@ def params_table(cfg, n0=None, n_inf=None):
         n_inf = ext.get('pop_growth', 0.0)
     rows_ext = [
         ('$g$', 'labour productivity growth, per capita', g, '2024 Ageing Report'),
-        ('$n_0$', 'population growth, base year', n0, 'EUROPOP2023, demography file'),
-        ('$n_\\infty$', 'population growth, terminal', n_inf, 'assumption (tail after 2120)'),
-        ('$\\gamma$', 'curvature of consumption utility', mod.get('gamma'), 'log utility'),
+        ('$n_0$', 'population growth, 2023', n0, 'EUROPOP2023'),
+        ('$n_\\infty$', 'population growth, long run', n_inf, 'assumption, reached in 2120'),
+        ('$\\gamma$', 'relative risk aversion', mod.get('gamma'), 'log utility'),
         ('$\\varphi$', 'inverse Frisch elasticity', mod.get('phi'), ''),
         ('$\\alpha$', 'private capital share', prod.get('alpha'), ''),
-        ('$\\delta$', 'private depreciation', prod.get('delta'), 'standard value'),
+        ('$\\delta$', 'private capital depreciation', prod.get('delta'), ''),
         ('$\\eta_g$', 'public capital elasticity', prod.get('eta_g'), ''),
         ('$K_g/Y$', 'public capital ratio', prod.get('K_g'), 'IMF ICSD'),
         ('$\\delta_g$', 'public capital depreciation', prod.get('delta_g'),
          '$I_g/K_g-(\\Gamma-1)$'),
         ('$r$', 'world return on capital', pri.get('r'), ''),
         ('$r_B$', 'sovereign rate', pri.get('r_B'), 'implicit rate 2012--24'),
-        ('$\\tau_c,\\tau_l,\\tau_k$', 'consumption, labour, capital tax rates',
-         ext.get('tau_c'), 'effective rates'),
-        ('$b_{min}$', 'minimum pension floor', ext.get('pension_min_floor'),
+        ('$\\tau_c$', 'consumption tax rate', ext.get('tau_c'), 'effective rate'),
+        ('$\\tau_l$', 'labour income tax rate', ext.get('tau_l'), 'effective rate'),
+        ('$\\tau_k$', 'capital income tax rate', ext.get('tau_k'), 'effective rate'),
+        ('$b_{min}$', 'minimum pension', ext.get('pension_min_floor'),
          'national pension, L.4387/2016'),
-        ('$\\underline{c}$', 'means-tested consumption floor', ext.get('transfer_floor'),
+        ('$\\underline{c}$', 'consumption floor (means-tested)', ext.get('transfer_floor'),
          'guaranteed minimum income'),
         ('$\\tau^{beq}$', 'tax on accidental bequests', ext.get('tau_beq'), ''),
         ('$f$', 'job-finding probability', ext.get('job_finding_rate'),
          'Eurostat \\texttt{une\\_ltu\\_a}'),
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
          'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
-        ('$T$, $J_R$', 'lifespan, retirement age', mod.get('T'), ''),
+        ('$T$', 'model ages (real ages 25--84)', mod.get('T'), ''),
+        ('$J_R$', 'retirement age (real age 64)', mod.get('retirement_age'), ''),
     ]
     # One row per parameter the configuration lists for the SMM; a parameter
     # the last fit did not cover shows no value rather than its initial.
@@ -112,15 +114,16 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$A$', 'total factor productivity', prod.get('A_tfp'),
          'normalisation, $\\hat y=1$'),
         ('$O/Y$', 'other net spending', cfg['fiscal'].get('other_net_spending_over_Y'),
-         'data primary balance'),
+         'primary balance in the data'),
     ]
     out = ['\\multicolumn{4}{l}{\\itshape Externally set}\\\\']
     for sym, desc, val, src in rows_ext:
-        out.append(f'{sym} & {desc} & {fmt(val, 4)} & {src} \\\\')
+        v = f'{{{int(val)}}}' if isinstance(val, int) else fmt(val, 4)
+        out.append(f'{sym} & {desc} & {v} & {src} \\\\')
     out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Calibrated jointly by SMM}\\\\')
     for sym, desc, val, src in rows_cal:
         out.append(f'{sym} & {desc} & {fmt(val, 4)} & {src} \\\\')
-    out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Pinned outside the SMM}\\\\')
+    out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Set outside the SMM}\\\\')
     for sym, desc, val, src in rows_pin:
         out.append(f'{sym} & {desc} & {fmt(val, 4)} & {src} \\\\')
     return '\n'.join(out)
@@ -184,17 +187,17 @@ def live_moments(panels, spec, cfg):
 
 
 def moments_table(md, live=None, targeted_keys=()):
-    out = ['\\multicolumn{5}{l}{\\itshape Targeted}\\\\']
+    out = ['\\multicolumn{4}{l}{\\itshape Targeted}\\\\']
     if live:
-        for name, data, model, dev, wt in live['targeted']:
+        for name, data, model, dev, _ in live['targeted']:
             out.append(f'{LABEL.get(name, name)} & {fmt(data)} & {fmt(model)} '
-                       f'& {fmt(dev, 2)} & {fmt(wt, 2)} \\\\')
+                       f'& {fmt(dev, 2)} \\\\')
     else:
         for r in parse_md_table(md, 'Targeted Moments'):
-            name, data, model, dev, wt = (r + [''] * 5)[:5]
+            name, data, model, dev = (r + [''] * 4)[:4]
             out.append(f'{LABEL.get(name, name)} & {fmt(num(data))} & {fmt(num(model))} '
-                       f'& {fmt(num(dev), 2)} & {fmt(num(wt), 2)} \\\\')
-    out.append('\\midrule\n\\multicolumn{5}{l}{\\itshape Not targeted}\\\\')
+                       f'& {fmt(num(dev), 2)} \\\\')
+    out.append('\\midrule\n\\multicolumn{4}{l}{\\itshape Not targeted}\\\\')
     if live:
         rows = list(live['untargeted'])
     else:
@@ -215,7 +218,7 @@ def moments_table(md, live=None, targeted_keys=()):
     for key, data, model, dev in rows:
         if data is None:
             continue                       # no data counterpart, no comparison
-        out.append(f'{LABEL.get(key, key)} & {fmt(data)} & {fmt(model)} & {fmt(dev, 2)} & \\\\')
+        out.append(f'{LABEL.get(key, key)} & {fmt(data)} & {fmt(model)} & {fmt(dev, 2)} \\\\')
     return '\n'.join(out)
 
 
@@ -239,16 +242,15 @@ def shares_from_weights(w):
     return {'young': young, 'mid': mid, 'old': old, 'oadr': old / (young + mid)}
 
 
-def growth_table(paths, gamma_minus_1, g, noise=None, t_stable=None):
-    """paths: {label: detrended series}.
+def growth_table(paths, t_stable=None):
+    """Mean log growth per period of each detrended per-capita series.
 
-    The trend is the mean log growth per period over the periods in which the
-    population has settled, since only there is the detrended series meant to
-    be flat. t_stable is the first such period; without it the second half of
-    the horizon is used.
+    Measured over the periods in which the population has settled, the only
+    ones over which the detrended series should be flat. t_stable is the first
+    such period; without it the second half of the horizon is used.
     """
-    order = [('$Y$', 'Y'), ('$C$', 'C'), ('$K^{dom}$', 'K_domestic'),
-             ('$A$ (wealth)', 'A'), ('$L$', 'L'), ('$K_g$', 'K_g'), ('$B$', 'B')]
+    order = [('$\\hat y$', 'Y'), ('$\\hat c$', 'C'), ('$\\hat k^{dom}$', 'K_domestic'),
+             ('$\\hat a$', 'A'), ('$\\hat\\ell$', 'L'), ('$\\hat k_g$', 'K_g')]
     out = []
     for label, key in order:
         x = paths.get(key) if paths else None
@@ -258,11 +260,7 @@ def growth_table(paths, gamma_minus_1, g, noise=None, t_stable=None):
             x = np.asarray(x, float)
             h = len(x) // 2 if t_stable is None else min(int(t_stable), len(x) - 3)
             trend = 100 * (np.log(x[-1]) - np.log(x[h])) / (len(x) - 1 - h)
-        out.append(f'{label} & {fmt(100*gamma_minus_1, 3)} & {fmt(100*g, 3)} '
-                   f'& {fmt(trend, 3)} \\\\')
-    out.append('\\midrule')
-    out.append(f'Theory & {fmt(100*gamma_minus_1, 3)} & {fmt(100*g, 3)} & {{0}} \\\\')
-    out.append(f'Noise floor ($g=n=0$) & {{}} & {{}} & {fmt(noise, 3)} \\\\')
+        out.append(f'{label} & {fmt(trend, 3)} \\\\')
     return '\n'.join(out)
 
 
@@ -647,8 +645,8 @@ def main():
             'Symbol & Description & {Value} & Source / identified by',
             params_table(cfg, n0=n, n_inf=n_T)),
         'moments_body.tex': wrap(
-            'lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.2]S[table-format=3.2]',
-            ' & {Data} & {Model} & {\\% dev} & {Weight}',
+            'lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.2]',
+            ' & {Data} & {Model} & {\\% dev}',
             moments_table(md, live, targeted_keys={m.get('compute_key', m.get('name'))
                                                    for m in cfg.get('calibration', {}).get('targets', [])}
                           | {m.get('name') for m in cfg.get('calibration', {}).get('targets', [])})),
@@ -660,9 +658,9 @@ def main():
                       shares_from_weights(w_model_T) if w_model_T is not None else None,
                       n, n_T)),
         'growth_body.tex': wrap(
-            'lS[table-format=1.3]S[table-format=1.3]S[table-format=+1.3]',
-            ' & {Level (\\%)} & {Per capita (\\%)} & {Detrended trend (\\%)}',
-            growth_table(paths, gammaT_minus_1, g, t_stable=t_stable)),
+            'lS[table-format=+1.3]',
+            ' & {Growth, \\% per year}',
+            growth_table(paths, t_stable=t_stable)),
     }
     # Without a baseline transition there is nothing to put in the growth
     # table's trend column or in the transition panels. Writing them anyway
