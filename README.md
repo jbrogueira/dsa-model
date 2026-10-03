@@ -24,7 +24,32 @@ So there are two independent routes to "the 2023 cross-section", and a mistake i
 
 ---
 
-## Current status (handoff 2026-10-02, evening)
+## Current status (2026-10-03: recalibrated, baseline solved)
+
+`run_step0_baseline.sh` ran to completion on an A100 (2026-10-02 20:48 – 2026-10-03 02:53 UTC). The config now holds the calibration of the fixed code.
+
+| ν | β | τ_p | pension replacement | m_good | UI replacement | A_tfp | closure O/Y |
+|---|---|---|---|---|---|---|---|
+| 12.2699 | 1.006431 | 0.194030 | 0.229449 | 0.089993 | 0.053196 | 1.46532311 | −0.082646 |
+
+All six targeted moments within 0.05% at the SMM optimum; the scale loop converged in round 2 (|Y−1| = 1.6e-3 at the fitted θ, largest moment deviation 0.17% at the written (θ, A_tfp) pair). β > 1.
+
+| check | result |
+|---|---|
+| base year vs transition t = 0 (n_sim = 2000) | Y +0.4%; tax and spending ratios within 0.3%, UI/Y −1.5%. Total revenue +7.2% is the bequest tax (≈ 0.024 Y), which the transition's total includes and the base-year total does not |
+| A[0] predetermination | 0.000e+00, both backends, τ_l and I_g shocks |
+| resource constraint, baseline transition | max \|residual\| / Y = 7.3e-15 over 180 periods |
+| test suite (instance CPU) | 212 passed, 1 skipped |
+
+Baseline path: Y per capita 1.00 at t = 0, 0.81 at t ≈ 25, 0.946 terminal; pensions/Y 0.160 → 0.295 → 0.201; primary deficit/Y −0.0195 at t = 0, +0.086 at t = 25, +0.024 terminal. Report tables, figures and `baseline_paths.npz` in `code/output/calibration_growth/`; calibration report `code/output/calibration/calibration_GR_20261003_022509.md`.
+
+Code changes: the JAX base-year cross-section is batched over cohorts (bit-identical, ~3× faster), and `calibrate.py --method least_squares` replaces Nelder–Mead for this calibration, which stalled at objective 7.8e-4 (see `code/CLAUDE.md`).
+
+**Next:** the first fiscal run on the fixed code (`run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`, then `eval_fiscal_results.py`) on a GPU instance. It gives the debt drift, which this baseline does not: r_B = 0.019 > Γ_T − 1 = 0.017 and the terminal primary deficit is 2.4% of Y.
+
+---
+
+## Prior status (handoff 2026-10-02, evening)
 
 The audit of the code at `3784ae5` is complete, its findings are fixed and committed (`009ed81`), and the report is tracked (`55b490c`, `code/reports/model_audit_2026-10-01.{tex,pdf,md}`). Nothing has been calibrated on the fixed code; an instance is being set up for that.
 

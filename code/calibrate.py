@@ -766,7 +766,8 @@ def theta_from_config(raw, spec, verbose=True):
 
 
 def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
-                            survival=None, seed_per_cohort=True, verbose=False):
+                            survival=None, seed_per_cohort=True, verbose=False,
+                            batched=True, chunk_size=None):
     """Panels whose row j is the cohort aged 25+j in the base year, at age j.
 
     The transition's t=0 cross-section mixes sixty cohorts, each having solved
@@ -789,6 +790,13 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
     lifecycle serves every age and the ages are perfectly correlated. Pass
     False to reuse one seed, which is what makes the result reproduce the
     single-solve panel exactly and is the regression test for this plumbing.
+
+    On the JAX backend, *batched* solves and simulates an education group's
+    cohorts in one call vectorised over their survival schedules
+    (LifecycleModelJAX.cross_section_batched), with *chunk_size* cohorts per
+    simulation call; False runs them one at a time. The JAX simulation runs
+    every cohort to the last age either way. The NumPy backend always runs
+    them one at a time.
     """
     config = apply_params(spec.base_config, spec.params, theta)
     T = config.T
@@ -812,6 +820,22 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
 
     panels = {}
     for edu_type in spec.education_shares:
+        if batched and cls is LifecycleModelJAX:
+            surv_stack = np.stack([S if shared else S[j].reshape(T, config.n_h)
+                                   for j in range(T)])
+            cfg_e = config._replace(
+                education_type=edu_type,
+                survival_probs=surv_stack[0],
+                r_path=np.full(T, spec.r),
+                w_path=np.full(T, spec.w),
+            )
+            model = cls(cfg_e, verbose=False)
+            seeds = [seed + j if seed_per_cohort else seed for j in range(T)]
+            panels[edu_type] = wrap_sim_output(model.cross_section_batched(
+                surv_stack, seeds, n_sim, chunk_size=chunk_size))
+            if verbose:
+                print(f'    {edu_type}: {T} cohorts (batched)', flush=True)
+            continue
         rows = None
         for j in range(T):
             surv_j = S if shared else S[j].reshape(T, config.n_h)
@@ -907,12 +931,23 @@ def smm_objective_bounded(theta, spec):
     return float(diff @ np.diag(w) @ diff)
 
 
+# Forward-difference step for the 'least_squares' Jacobian, in the logit-
+# transformed parameters: about 1% of nu and 0.5% of the replacement rate at
+# the 2026-10 calibration, where the moments respond smoothly.
+LSQ_JAC_STEP = 0.02
+
+
 def calibrate(spec, maxiter=500, tol=1e-6, verbose=True, method='Nelder-Mead'):
     """Run SMM calibration.
 
-    method: 'Nelder-Mead' (default), 'differential_evolution'.
+    method: 'Nelder-Mead' (default), 'differential_evolution', 'least_squares'.
     With 'differential_evolution', a global search is run first, then polished
-    with Nelder-Mead starting from the DE optimum.
+    with Nelder-Mead starting from the DE optimum. 'least_squares' minimises the
+    same objective as a sum of squared residuals sqrt(w)(m_model - m_data) on
+    the logit-transformed parameters (scipy trust-region reflective), with a
+    forward-difference Jacobian at a fixed step LSQ_JAC_STEP: the simulated
+    moments are flat at very small steps (asset choices are on a grid), so an
+    adaptive step would read derivatives off that flatness.
 
     Returns dict with keys: theta, objective, model_moments, data_moments,
     convergence, history, elapsed_seconds.
@@ -982,6 +1017,44 @@ def calibrate(spec, maxiter=500, tol=1e-6, verbose=True, method='Nelder-Mead'):
         final_obj = nm_result.fun
         converged = de_result.success or nm_result.success
         message = f"DE: {de_result.message} | NM: {nm_result.message}"
+
+    elif method == 'least_squares':
+        from scipy.optimize import least_squares
+        theta0 = np.array([p.initial for p in spec.params])
+        x0 = theta_to_unbounded(theta0, spec.params)
+        m_data = np.array([m.value for m in spec.moments])
+        sqrt_w = np.sqrt(np.array([m.weight for m in spec.moments]))
+        _cache = {}
+
+        def residuals(x):
+            key = tuple(np.asarray(x, dtype=float))
+            if key not in _cache:
+                theta = unbounded_to_theta(np.asarray(x, dtype=float), spec.params)
+                _cache[key] = sqrt_w * (run_model_moments(theta, spec) - m_data)
+                obj = float(_cache[key] @ _cache[key])
+                history.append({'theta': theta.tolist(), 'objective': obj})
+                if verbose:
+                    param_str = ', '.join(
+                        f'{p.name}={v:.6f}' for p, v in zip(spec.params, theta))
+                    print(f"  eval {len(history):4d}  obj={obj:.10f}  {param_str}",
+                          flush=True)
+            return _cache[key]
+
+        def jacobian(x):
+            r0 = residuals(x)
+            J = np.empty((len(r0), len(x)))
+            for i in range(len(x)):
+                xh = np.array(x, dtype=float)
+                xh[i] += LSQ_JAC_STEP
+                J[:, i] = (residuals(xh) - r0) / LSQ_JAC_STEP
+            return J
+
+        result = least_squares(residuals, x0, jac=jacobian, method='trf',
+                               xtol=tol, ftol=tol, gtol=tol, max_nfev=maxiter)
+        theta_opt = unbounded_to_theta(result.x, spec.params)
+        final_obj = float(result.fun @ result.fun)
+        converged = bool(result.success)
+        message = result.message
 
     else:
         # Nelder-Mead on logit-transformed parameters
@@ -1855,7 +1928,7 @@ def main():
                         choices=['numpy', 'jax'],
                         help='Override backend (numpy or jax)')
     parser.add_argument('--method', type=str, default='Nelder-Mead',
-                        choices=['Nelder-Mead', 'differential_evolution'],
+                        choices=['Nelder-Mead', 'differential_evolution', 'least_squares'],
                         help='Optimization method')
     args = parser.parse_args()
 

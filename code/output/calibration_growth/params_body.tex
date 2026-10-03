@@ -1,0 +1,38 @@
+\begin{tabular}{@{}llS[table-format=2.4]l@{}}
+\toprule
+Symbol & Description & {Value} & Source / identified by \\
+\midrule
+\multicolumn{4}{l}{\itshape Externally set}\\
+$g$ & labour productivity growth, per capita & 0.0170 & 2024 Ageing Report \\
+$n_0$ & population growth, base year & -0.0048 & EUROPOP2023, demography file \\
+$n_\infty$ & population growth, terminal & 0.0000 & assumption (tail after 2120) \\
+$\gamma$ & curvature of consumption utility & 1.0000 & log utility \\
+$\varphi$ & inverse Frisch elasticity & 1.5000 &  \\
+$\alpha$ & private capital share & 0.3300 &  \\
+$\delta$ & private depreciation & 0.0500 & standard value \\
+$\eta_g$ & public capital elasticity & 0.0500 &  \\
+$K_g/Y$ & public capital ratio & 0.7030 & IMF ICSD \\
+$\delta_g$ & public capital depreciation & 0.0428 & $I_g/K_g-(\Gamma-1)$ \\
+$r$ & world return on capital & 0.0400 &  \\
+$r_B$ & sovereign rate & 0.0190 & implicit rate 2012--24 \\
+$\tau_c,\tau_l,\tau_k$ & consumption, labour, capital tax rates & 0.1818 & effective rates \\
+$b_{min}$ & minimum pension floor & 0.1671 & national pension, L.4387/2016 \\
+$\underline{c}$ & means-tested consumption floor & 0.0807 & guaranteed minimum income \\
+$\tau^{beq}$ & tax on accidental bequests & 1.0000 &  \\
+$f$ & job-finding probability & 0.4400 & Eurostat \texttt{une\_ltu\_a} \\
+$\kappa$ & public share of medical spending & 0.6620 & Eurostat \texttt{hlth\_sha11\_hf} \\
+$T$, $J_R$ & lifespan, retirement age & 60.0000 &  \\
+\midrule
+\multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
+$\nu$ & labour disutility weight & 12.2699 & average hours \\
+$\beta$ & discount factor & 1.0064 & $A/Y$ \\
+$\tau_p$ & payroll tax rate & 0.1940 & payroll revenue$/Y$ \\
+$\rho^{pens}$ & pension replacement rate & 0.2294 & pensions$/Y$ \\
+$m^{good}$ & medical cost scale & 0.0900 & public health$/Y$ \\
+$\rho^{ui}$ & UI replacement rate & 0.0532 & UI$/Y$ \\
+\midrule
+\multicolumn{4}{l}{\itshape Pinned outside the SMM}\\
+$A$ & total factor productivity & 1.4653 & normalisation, $\hat y=1$ \\
+$O/Y$ & other net spending & -0.0826 & data primary balance \\
+\bottomrule
+\end{tabular}

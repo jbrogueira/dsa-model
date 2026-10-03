@@ -412,3 +412,33 @@ class TestDispatch:
         theta = np.array([p.initial for p in spec.params])
         with pytest.raises(ValueError, match='nonexistent_key'):
             run_model_moments(theta, spec)
+
+
+class TestLeastSquaresMethod:
+    """The 'least_squares' route must solve a square moment system it can reach."""
+
+    def test_recovers_the_root_of_a_coupled_square_system(self, monkeypatch):
+        """Three parameters, three moments, coupled the way output couples the
+        ratios in the model (one parameter moves every moment). The objective
+        and the bounds are the SMM ones, so the root is the calibration."""
+        import calibrate as C
+        params = [C.CalibrationParam('a', 'x', 0.1, 50.0, 10.0),
+                  C.CalibrationParam('b', 'x', 0.05, 0.45, 0.30),
+                  C.CalibrationParam('c', 'x', 0.9, 1.1, 1.02)]
+        truth = np.array([12.0, 0.21, 0.99])
+
+        def fake_moments(theta, spec, return_panels=False):
+            a, b, c = theta
+            m = np.array([1.0 / a, b * a ** 0.3, c ** 5 * a ** 0.1 + b])
+            return (m, {}) if return_panels else m
+
+        targets = fake_moments(truth, None)
+        moments = [C.TargetMoment(f'm{i}', float(v), 1.0 / float(v) ** 2)
+                   for i, v in enumerate(targets)]
+        spec = C.CalibrationSpec(params=params, moments=moments)
+        monkeypatch.setattr(C, 'run_model_moments', fake_moments)
+        res = C.calibrate(spec, maxiter=200, tol=1e-10, verbose=False,
+                          method='least_squares')
+        assert res['convergence']
+        np.testing.assert_allclose(res['theta'], truth, rtol=1e-4)
+        assert res['objective'] < 1e-10

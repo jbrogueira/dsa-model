@@ -2891,6 +2891,67 @@ class TestBaseYearCrossSection:
             f'the schedules are not reaching the solve')
 
 
+    def test_batched_jax_cross_section_matches_one_at_a_time(self):
+        """The vectorised JAX route must give the cohort-by-cohort panels.
+
+        Per-cohort schedules and per-cohort seeds, so both the survival stack
+        and the seed list are exercised, with a chunk size that leaves a
+        padded last chunk. Integer fields must agree exactly; float fields to
+        1e-10, since vectorising can reorder floating-point reductions.
+        """
+        import dataclasses
+        from calibrate import base_year_cross_section
+        cfg, spec, theta = self._small()
+        # n_alpha > 1 so the per-node solve sweeps and their stacking are
+        # exercised; the production config uses five nodes.
+        spec = dataclasses.replace(spec, backend='jax',
+                                   base_config=spec.base_config._replace(n_alpha=3))
+        T, n_h = self.T, spec.base_config.n_h
+        shared = np.asarray(spec.base_config.survival_probs,
+                            dtype=float).reshape(T, n_h)
+        per_cohort = np.clip(
+            shared.ravel()[None, :] - np.linspace(0.0, 0.25, T)[:, None], 0.01, 0.999)
+        one = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                      survival=per_cohort, batched=False)
+        vec = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                      survival=per_cohort, batched=True,
+                                      chunk_size=5)
+        for f in one['medium']._fields:
+            a = np.asarray(getattr(one['medium'], f))
+            b = np.asarray(getattr(vec['medium'], f))
+            assert a.shape == b.shape and a.dtype == b.dtype, f
+            if np.issubdtype(a.dtype, np.floating):
+                np.testing.assert_allclose(b, a, rtol=1e-10, atol=1e-12, err_msg=f)
+            else:
+                assert np.array_equal(a, b), f'{f} differs between the routes'
+
+
+    @pytest.mark.parametrize('assets', ['config', 'fixed', 'dist'])
+    def test_batched_sim_inputs_match_per_seed_draws(self, assets):
+        """The one-call initial draws must equal the per-seed draws exactly.
+
+        Covers the three initial-asset branches; the country config uses only
+        one of them, so the others are set here.
+        """
+        from calibrate import apply_params
+        from lifecycle_jax import LifecycleModelJAX
+        cfg, spec, theta = self._small()
+        c = apply_params(spec.base_config, spec.params, theta)._replace(
+            n_alpha=3, education_type='medium')
+        if assets == 'fixed':
+            c = c._replace(initial_assets=0.3, initial_avg_earnings=0.7)
+        elif assets == 'dist':
+            c = c._replace(initial_asset_distribution=np.array([0.0, 0.2, 0.9, 1.5]))
+        m = LifecycleModelJAX(c, verbose=False)
+        seeds = [42 + j for j in range(5)] + [2**31 + 7]
+        one = [m._simulate_inputs(64, sd) for sd in seeds]
+        vec = m._simulate_inputs_batched(64, seeds)
+        for k, v in enumerate(vec):
+            ref = np.stack([np.asarray(o[k]) for o in one])
+            assert np.asarray(v).dtype == ref.dtype, k
+            assert np.array_equal(np.asarray(v), ref), f'output {k} differs ({assets})'
+
+
 class TestPensionBaseAcrossBackends:
     """The pension base must be the same in both solves, with a sloped wage profile.
 

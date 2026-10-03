@@ -635,8 +635,7 @@ _solve_lifecycle_jax_jit = jax.jit(
 # Batched solve: vmap over cohorts with shared grids/transitions.
 # Per-cohort inputs (in_axes=0): w_at_retirement, r/w/tax/pension paths.
 # Shared inputs (in_axes=None): grids, P_y, P_h, scalars + new feature params.
-_solve_lifecycle_jax_batched = jax.jit(
-    jax.vmap(solve_lifecycle_jax, in_axes=(
+_SOLVE_IN_AXES = (
         None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
         None, None,              # P_y, P_h
         0,                       # w_at_retirement
@@ -657,7 +656,9 @@ _solve_lifecycle_jax_batched = jax.jit(
         None,                    # wage_age_profile (shared)
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
         None,                    # alpha_mult (shared across cohorts within one solve sweep)
-    )),
+)
+_solve_lifecycle_jax_batched = jax.jit(
+    jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES),
     static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
                      'labor_supply'),
 )
@@ -1012,8 +1013,7 @@ _simulate_lifecycle_jax_jit = jax.jit(
 )
 
 # Batched simulation: vmap over cohorts with shared grids/transitions.
-_simulate_lifecycle_jax_batched = jax.jit(
-    jax.vmap(simulate_lifecycle_jax, in_axes=(
+_SIMULATE_IN_AXES = (
         0, 0, 0,                 # a_policy, c_policy, l_policy
         None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
         None, None,              # P_y, P_h
@@ -1035,9 +1035,161 @@ _simulate_lifecycle_jax_batched = jax.jit(
         None,                    # trend_growth (shared scalar; must be passed positionally)
         None,                    # transfer_floor (shared scalar)
         0,                       # bequest_lumpsum (per-cohort scalar)
-    )),
+)
+_simulate_lifecycle_jax_batched = jax.jit(
+    jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
+)
+
+
+def _draw_sim_inputs(keys, stationary, asset_dist, a_grid, alpha_probs, alpha_grid,
+                     i_a_fixed, avg_earnings0, n_years0,
+                     n_sim, n_y, n_alpha, y_mode, a_mode, earnings_mode):
+    """LifecycleModelJAX._simulate_inputs for a stack of PRNG keys, in one call.
+
+    Same draws in the same key order as the per-seed method, vmapped over
+    keys. y_mode: 'employed' (uniform over employed states) or 'stationary';
+    a_mode: 'dist', 'fixed' or 'zero'; earnings_mode: 'given' or 'zero'.
+    """
+    def draw(key):
+        key, subkey = jax.random.split(key)
+        if y_mode == 'employed':
+            i_y = jax.random.choice(subkey, jnp.arange(1, n_y), shape=(n_sim,)).astype(jnp.int32)
+        else:
+            i_y = jax.random.choice(subkey, n_y, shape=(n_sim,), p=stationary).astype(jnp.int32)
+        i_h = jnp.zeros(n_sim, dtype=jnp.int32)
+        if a_mode == 'dist':
+            key, subkey = jax.random.split(key)
+            idx = jax.random.randint(subkey, shape=(n_sim,), minval=0, maxval=asset_dist.shape[0])
+            sampled = asset_dist[idx]
+            i_a = jnp.argmin(jnp.abs(a_grid[None, :] - sampled[:, None]), axis=1).astype(jnp.int32)
+        elif a_mode == 'fixed':
+            i_a = jnp.full(n_sim, i_a_fixed, dtype=jnp.int32)
+        else:
+            i_a = jnp.zeros(n_sim, dtype=jnp.int32)
+        if earnings_mode == 'given':
+            avg = jnp.ones(n_sim) * avg_earnings0
+            n_years = jnp.full(n_sim, n_years0, dtype=jnp.float64)
+        else:
+            avg = jnp.zeros(n_sim)
+            n_years = jnp.zeros(n_sim, dtype=jnp.float64)
+        if n_alpha > 1:
+            key, subkey = jax.random.split(key)
+            alpha_idx = jax.random.choice(
+                subkey, n_alpha, shape=(n_sim,), p=alpha_probs).astype(jnp.int32)
+        else:
+            alpha_idx = jnp.zeros(n_sim, dtype=jnp.int32)
+        alpha_mult = jnp.exp(alpha_grid[alpha_idx])
+        key, subkey = jax.random.split(key)
+        return (i_a, i_y, i_h, i_y, avg, n_years, alpha_idx, alpha_mult, subkey)
+
+    return jax.vmap(draw)(keys)
+
+
+_draw_sim_inputs_jit = jax.jit(
+    _draw_sim_inputs,
+    static_argnames=('n_sim', 'n_y', 'n_alpha', 'y_mode', 'a_mode', 'earnings_mode'),
+)
+
+
+def _cross_section(surv, sim_inputs, alpha_mults,
+                   a_grid, y_grid, h_grid, m_grid, P_y_2d, P_h, P_y_4d,
+                   w_at_retirement, paths,
+                   ui_replacement_rate, kappa, beta, gamma,
+                   pension_min_floor, tax_kappa_hsv, tax_eta,
+                   transfer_floor, education_subsidy_rate,
+                   child_cost_profile, nu, phi, trend_growth,
+                   wage_age_profile, pension_avg_weight,
+                   mean_kappa_working, mean_y_employed, bequest_lumpsum,
+                   T, retirement_age, current_age, n_sim, tax_progressive,
+                   schooling_years, labor_supply, P_y_age_health, n_alpha, chunk):
+    """Body of LifecycleModelJAX.cross_section_batched, compiled as one call.
+
+    Solves every cohort once per fixed-effect node (vmapped over the survival
+    schedules), simulates them in chunks of *chunk* cohorts, and keeps row j of
+    cohort j. Every call below is the same function the per-cohort solve() and
+    simulate() call, vmapped over cohorts.
+    """
+    C = surv.shape[0]
+    bc = lambda x: jnp.broadcast_to(x, (C,) + jnp.shape(x))
+    r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c = (bc(x) for x in paths)
+    w_ret_c = bc(jnp.asarray(w_at_retirement, dtype=jnp.float64))
+
+    solve = jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES)
+
+    def solve_node(alpha_mult):
+        # The bequest lump sum is 0 in the solve, as in solve(); it enters
+        # only the simulated budget.
+        _, a_b, c_b, l_b = solve(
+            a_grid, y_grid, h_grid, m_grid, P_y_2d, P_h,
+            w_ret_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
+            ui_replacement_rate, kappa, beta, gamma,
+            T, retirement_age,
+            pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
+            transfer_floor, education_subsidy_rate,
+            child_cost_profile, schooling_years,
+            surv, P_y_4d,
+            labor_supply, nu, phi, trend_growth,
+            jnp.zeros(C),
+            wage_age_profile,
+            pension_avg_weight, mean_kappa_working, mean_y_employed,
+            alpha_mult,
+        )
+        return a_b, c_b, l_b
+
+    # One vmapped sweep per fixed-effect node, as in solve(). Vectorising over
+    # the nodes as well measured no faster on an H200 (the sweep is
+    # throughput-bound) and holds n_alpha times the policies at once.
+    nodes = [solve_node(alpha_mults[k]) for k in range(n_alpha)]
+    # (C, n_alpha, T, n_a, n_y, n_h, n_y), the per-alpha layout simulate() reads
+    a_pol, c_pol, l_pol = (jnp.stack([nd[f] for nd in nodes], axis=1) for f in range(3))
+    (i_a, i_y, i_h, i_y_last, avg_earn, n_years,
+     alpha_idx_sim, alpha_mult_sim, keys) = sim_inputs
+
+    simulate = jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES)
+    beq_c = jnp.full(chunk, bequest_lumpsum)
+    pieces = []
+    for start in range(0, C, chunk):
+        stop = min(start + chunk, C)
+        # Pad the last chunk to the chunk length by repeating its last cohort.
+        idx = np.concatenate([np.arange(start, stop),
+                              np.full(chunk - (stop - start), stop - 1)])
+        take = lambda x: x[idx]
+        out = simulate(
+            take(a_pol), take(c_pol), take(l_pol),
+            a_grid, y_grid, h_grid, m_grid,
+            P_y_2d, P_h,
+            take(w_c), take(w_ret_c),
+            take(tc_c), take(tl_c), take(tp_c), take(tk_c),
+            take(r_c), take(pen_c),
+            ui_replacement_rate, kappa,
+            retirement_age, T, current_age,
+            n_sim, take(keys),
+            take(i_a), take(i_y), take(i_h), take(i_y_last),
+            take(avg_earn), take(n_years),
+            pension_min_floor, tax_progressive,
+            tax_kappa_hsv, tax_eta,
+            P_y_age_health, P_y_4d,
+            take(surv),
+            wage_age_profile,
+            pension_avg_weight, mean_kappa_working, mean_y_employed,
+            take(alpha_idx_sim), take(alpha_mult_sim),
+            trend_growth,
+            transfer_floor,
+            beq_c,
+        )
+        # Each output is (chunk, T_sim, n_sim); keep row j of cohort j.
+        local = np.arange(stop - start)
+        pieces.append([x[local, local + start] for x in out])
+    return tuple(jnp.concatenate([p[f] for p in pieces]) for f in range(len(pieces[0])))
+
+
+_cross_section_jit = jax.jit(
+    _cross_section,
+    static_argnames=('T', 'retirement_age', 'current_age', 'n_sim', 'tax_progressive',
+                     'schooling_years', 'labor_supply', 'P_y_age_health',
+                     'n_alpha', 'chunk'),
 )
 
 
@@ -1215,29 +1367,12 @@ class LifecycleModelJAX:
         if verbose:
             print("Done!")
 
-    def simulate(self, T_sim=None, n_sim=10000, seed=42, **kwargs):
+    def _simulate_inputs(self, n_sim, seed):
+        """Initial states, fixed-effect draws and the simulation key for one seed.
+
+        Shared by simulate() and cross_section_batched(), so both draw the
+        same shocks from the same seed.
         """
-        Simulate lifecycle paths.
-
-        Returns the 22-tuple matching LifecycleModelPerfectForesight.simulate().
-        Phase 8: each agent draws alpha_idx from self.alpha_probs at t=0; the
-        6-D per-alpha policies (self.{a,c,l}_policy_alpha) and the implied
-        per-agent multiplier alpha_mult = exp(alpha_grid[alpha_idx]) flow into
-        simulate_lifecycle_jax. With n_alpha=1, alpha_idx is all zero,
-        alpha_mult is all one, and behavior matches pre-Phase-8 exactly.
-        """
-        if self.V is None:
-            raise RuntimeError("Must call solve() before simulate().")
-        if (float(self.transfer_floor) > 0.0
-                and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
-            raise NotImplementedError(
-                "the simulated transfer_sim replicates the solve's budget without "
-                "child costs; a positive transfer_floor with schooling_years > 0 "
-                "would record the wrong transfer")
-
-        if T_sim is None:
-            T_sim = self.T - self.current_age
-
         key = jax.random.PRNGKey(seed)
 
         # Initial conditions (same logic as NumPy model)
@@ -1295,12 +1430,77 @@ class LifecycleModelJAX:
             alpha_idx_sim = jnp.zeros(n_sim, dtype=jnp.int32)
         alpha_mult_sim = jnp.exp(self.alpha_grid[alpha_idx_sim])
 
+        key, subkey = jax.random.split(key)
+        return (initial_i_a, initial_i_y, initial_i_h, initial_i_y_last,
+                initial_avg_earnings, initial_n_years,
+                alpha_idx_sim, alpha_mult_sim, subkey)
+
+    def _simulate_inputs_batched(self, n_sim, seeds):
+        """_simulate_inputs for every seed in one compiled call.
+
+        Each output gains a leading seed axis. The per-seed method issues
+        about thirty-five small device operations per seed; on a GPU their
+        dispatch, not the arithmetic, is what costs.
+        """
+        edu_u = self.config.edu_params[self.config.education_type]['unemployment_rate']
+        if edu_u < 1e-10:
+            y_mode, stationary = 'employed', jnp.zeros(self.n_y)
+        else:
+            eigenvalues, eigenvectors = eig(np.asarray(self.P_y_2d).T)
+            st = eigenvectors[:, np.argmax(eigenvalues.real)].real
+            y_mode, stationary = 'stationary', jnp.array(st / st.sum())
+        i_a_fixed = 0
+        asset_dist = jnp.zeros(1)
+        if self.config.initial_asset_distribution is not None:
+            a_mode = 'dist'
+            asset_dist = jnp.array(np.asarray(self.config.initial_asset_distribution))
+        elif self.config.initial_assets is not None:
+            a_mode = 'fixed'
+            i_a_fixed = int(jnp.argmin(jnp.abs(self.a_grid - self.config.initial_assets)))
+        else:
+            a_mode = 'zero'
+        if self.config.initial_avg_earnings is not None:
+            earnings_mode, avg0 = 'given', float(self.config.initial_avg_earnings)
+        else:
+            earnings_mode, avg0 = 'zero', 0.0
+        keys = jax.vmap(jax.random.PRNGKey)(jnp.asarray(seeds, dtype=jnp.int64))
+        return _draw_sim_inputs_jit(
+            keys, stationary, asset_dist, self.a_grid, self.alpha_probs, self.alpha_grid,
+            i_a_fixed, avg0, float(self.current_age),
+            n_sim=int(n_sim), n_y=int(self.n_y), n_alpha=int(self.n_alpha),
+            y_mode=y_mode, a_mode=a_mode, earnings_mode=earnings_mode)
+
+    def simulate(self, T_sim=None, n_sim=10000, seed=42, **kwargs):
+        """
+        Simulate lifecycle paths.
+
+        Returns the 22-tuple matching LifecycleModelPerfectForesight.simulate().
+        Phase 8: each agent draws alpha_idx from self.alpha_probs at t=0; the
+        6-D per-alpha policies (self.{a,c,l}_policy_alpha) and the implied
+        per-agent multiplier alpha_mult = exp(alpha_grid[alpha_idx]) flow into
+        simulate_lifecycle_jax. With n_alpha=1, alpha_idx is all zero,
+        alpha_mult is all one, and behavior matches pre-Phase-8 exactly.
+        """
+        if self.V is None:
+            raise RuntimeError("Must call solve() before simulate().")
+        if (float(self.transfer_floor) > 0.0
+                and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
+            raise NotImplementedError(
+                "the simulated transfer_sim replicates the solve's budget without "
+                "child costs; a positive transfer_floor with schooling_years > 0 "
+                "would record the wrong transfer")
+
+        if T_sim is None:
+            T_sim = self.T - self.current_age
+
+        (initial_i_a, initial_i_y, initial_i_h, initial_i_y_last,
+         initial_avg_earnings, initial_n_years,
+         alpha_idx_sim, alpha_mult_sim, subkey) = self._simulate_inputs(n_sim, seed)
+
         # Convert per-alpha policies to JAX (shape (n_alpha, T, n_a, n_y, n_h, n_y))
         a_policy_jax = jnp.array(self.a_policy_alpha)
         c_policy_jax = jnp.array(self.c_policy_alpha)
         l_policy_jax = jnp.array(self.l_policy_alpha)
-
-        key, subkey = jax.random.split(key)
 
         # Build P_y_4d dummy for JAX tracing if not age/health-dependent
         P_y_4d_sim = self.P_y_4d if self.P_y_age_health else None
@@ -1337,6 +1537,60 @@ class LifecycleModelJAX:
 
         # Convert all outputs to numpy arrays (23-tuple: panel, alpha_idx_panel, transfer_sim)
         return tuple(np.asarray(x) for x in result)
+
+    def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None):
+        """Row j of cohort j's panel, for cohorts that differ only in survival.
+
+        Cohort j solves this model's lifecycle problem under survival_stack[j]
+        (T, n_h) and simulates n_sim agents from seeds[j]; the result is the
+        23-tuple of simulate() with row j of cohort j's panel in row j, shape
+        (C, n_sim) per field. Equivalent to C separate solve() + simulate()
+        calls on copies of this model, run as two compiled calls: the initial
+        draws, then the solve sweeps, simulation and row selection.
+
+        chunk_size bounds how many cohorts are simulated at once: the
+        simulation holds C x T x n_sim values per output before the row is
+        taken. None simulates every cohort at once.
+        """
+        surv = jnp.asarray(survival_stack, dtype=jnp.float64)
+        C = surv.shape[0]
+        if len(seeds) != C:
+            raise ValueError(f'{len(seeds)} seeds for {C} survival schedules')
+        if C > self.T - self.current_age:
+            raise ValueError(f'{C} cohorts but the panel has '
+                             f'{self.T - self.current_age} rows')
+        if (float(self.transfer_floor) > 0.0
+                and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
+            raise NotImplementedError(
+                "the simulated transfer_sim replicates the solve's budget without "
+                "child costs; a positive transfer_floor with schooling_years > 0 "
+                "would record the wrong transfer")
+        sim_inputs = self._simulate_inputs_batched(n_sim, seeds)
+        chunk = C if chunk_size is None else max(1, min(int(chunk_size), C))
+        alpha_mults = np.exp(np.asarray(self.alpha_grid))
+        out = _cross_section_jit(
+            surv, sim_inputs, jnp.asarray(alpha_mults),
+            self.a_grid, self.y_grid, self.h_grid, self.m_grid,
+            self.P_y_2d, self.P_h, self.P_y_4d if self.P_y_age_health else None,
+            self.w_at_retirement,
+            (self.r_path, self.w_path, self.tau_c_path, self.tau_l_path,
+             self.tau_p_path, self.tau_k_path, self.pension_replacement_path),
+            self.ui_replacement_rate, self.kappa, self.beta, self.gamma,
+            self.pension_min_floor, self.tax_kappa_hsv, self.tax_eta,
+            self.transfer_floor, self.education_subsidy_rate,
+            self.child_cost_profile, self.nu, self.phi, self.trend_growth,
+            self.wage_age_profile, self.pension_avg_weight,
+            self.mean_kappa_working, self.mean_y_employed,
+            float(self.bequest_lumpsum),
+            T=int(self.T), retirement_age=int(self.retirement_age),
+            current_age=int(self.current_age), n_sim=int(n_sim),
+            tax_progressive=bool(self.tax_progressive),
+            schooling_years=int(self.schooling_years),
+            labor_supply=bool(self.labor_supply),
+            P_y_age_health=bool(self.P_y_age_health),
+            n_alpha=int(self.n_alpha), chunk=chunk,
+        )
+        return tuple(np.asarray(x) for x in out)
 
 
 # ---------------------------------------------------------------------------
