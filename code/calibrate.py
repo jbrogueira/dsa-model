@@ -1704,6 +1704,7 @@ def build_olg_transition(config_data, backend='numpy'):
         survival_table=survival_table,
         demography=demography,
         cohort_retirement=cohort_retirement_table(config_data),
+        aggregation=trans.get('aggregation', 'simulation'),
         education_shares=config_data.get('education_shares'),
         backend=backend,
         jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,
