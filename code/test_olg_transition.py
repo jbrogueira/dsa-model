@@ -3344,5 +3344,95 @@ class TestAuditFixes20261002:
         assert 'B' in drift and abs(drift['B'] - 0.01 / 1.02) < 1e-9
 
 
+class TestHoursSolve:
+    """The JAX period solve finds hours on the y_last = 0 slice and, under log
+    utility, from the one-variable form of the first-order condition."""
+
+    T = 12
+
+    @classmethod
+    def _cfg(cls, **kw):
+        T = cls.T
+        base = dict(T=T, n_a=40, n_y=3, n_h=1, n_alpha=2, retirement_age=8, labor_supply=True,
+                    nu=12.0, phi=1.5, gamma=1.0, trend_growth=0.017, beta=0.97,
+                    survival_probs=np.linspace(0.97, 0.80, T).reshape(T, 1),
+                    transfer_floor=0.08, pension_min_floor=0.05, education_type='medium')
+        base.update(kw)
+        cfg = LifecycleConfig(**base)
+        ep = dict(cfg.edu_params); ep['medium'] = dict(ep['medium'], sigma_alpha=0.3)
+        return cfg._replace(edu_params=ep)
+
+    @pytest.mark.parametrize('nu,phi', [(12.27, 1.5), (1.0, 2.0), (0.02, 2.0), (5.0, 0.5)])
+    def test_log_utility_hours_solve_the_first_order_condition(self, nu, phi):
+        # lifecycle_jax first: it selects the CPU platform before jax is imported.
+        from lifecycle_jax import (solve_labor_log_jax, solve_labor_robust_jax,
+                                   hours_table_log_utility, _HOURS_CAP)
+        import jax.numpy as jnp
+        rng = np.random.default_rng(0)
+        tau_c = 0.2
+        mw = rng.uniform(0.05, 5.0, 4000)
+        c_guess = rng.uniform(-50.0, 50.0, 4000)
+        l = np.asarray(solve_labor_log_jax(jnp.array(c_guess), jnp.array(mw), nu, phi, tau_c,
+                                           hours_table_log_utility(nu, phi)))
+        z = c_guess * (1 + tau_c) / mw - 1.0
+        z_cap = 1.0 / (nu * _HOURS_CAP ** phi) - _HOURS_CAP       # z at which the root is the cap
+        inside = z > z_cap
+        assert inside.any() and (~inside).any()
+        assert np.all(l[~inside] == _HOURS_CAP)
+        assert np.all(l[inside] > 0) and np.all(l[inside] < _HOURS_CAP)
+        assert np.all(z[inside] + l[inside] > 0)                  # consumption is positive
+        resid = nu * l[inside] ** phi * (z[inside] + l[inside]) - 1.0
+        assert np.abs(resid).max() < 1e-10
+        # Same root as the bracketed Newton solve, where that one has converged.
+        ref = np.asarray(solve_labor_robust_jax(jnp.array(c_guess), jnp.array(mw), nu, phi, 1.0,
+                                                tau_c, n_iters=200))
+        ref_resid = nu * ref ** phi * (z + ref) - 1.0
+        ok = inside & (np.abs(ref_resid) < 1e-9)
+        assert ok.sum() > 0.9 * inside.sum()
+        np.testing.assert_allclose(l[ok], ref[ok], rtol=1e-8, atol=1e-10)
+        # No productive labor: zero hours, as in solve_labor_robust_jax.
+        assert float(solve_labor_log_jax(jnp.array(1.0), jnp.array(0.0), nu, phi, tau_c,
+                                         hours_table_log_utility(nu, phi))) == 0.0
+
+    @pytest.mark.parametrize('progressive', [False, True])
+    def test_employed_budget_does_not_depend_on_last_income_state(self, progressive):
+        """The premise of solving hours on the y_last = 0 slice."""
+        from lifecycle_jax import LifecycleModelJAX, compute_budget_jax
+        m = LifecycleModelJAX(self._cfg(tax_progressive=progressive), verbose=False)
+        age = 3
+        budget = np.asarray(compute_budget_jax(
+            m.a_grid, m.y_grid, m.h_grid, m.m_grid[age], m.P_y_2d, m.P_h[age],
+            m.r_path[age], m.w_path[age], m.w_at_retirement,
+            m.tau_l_path[age], m.tau_p_path[age], m.tau_k_path[age],
+            m.pension_replacement_path[age], m.ui_replacement_rate, m.kappa, False,
+            pension_min_floor=m.pension_min_floor, tax_progressive=m.tax_progressive,
+            tax_kappa_hsv=m.tax_kappa_hsv, tax_eta=m.tax_eta, transfer_floor=m.transfer_floor,
+            kappa_wage_t=m.wage_age_profile[age], kappa_wage_ret=m.wage_age_profile[m.retirement_age - 1],
+            pension_avg_weight=m.pension_avg_weight, mean_kappa_working=m.mean_kappa_working,
+            mean_y_employed=m.mean_y_employed, alpha_mult=1.3))
+        employed = np.asarray(m.y_grid) > 0
+        assert employed.any() and not employed.all()
+        assert np.ptp(budget[:, employed], axis=-1).max() == 0.0
+        assert np.ptp(budget[:, ~employed], axis=-1).max() > 0.0   # UI does depend on it
+
+    @pytest.mark.parametrize('gamma', [1.0, 2.0])
+    def test_backends_agree_on_policies(self, gamma):
+        """Both hours branches of the JAX solve against the NumPy solve."""
+        from lifecycle_jax import LifecycleModelJAX
+        cfg = self._cfg(gamma=gamma, nu=12.0 if gamma == 1.0 else 3.0)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False); m.solve(verbose=False)
+        mj = LifecycleModelJAX(cfg, verbose=False); mj.solve(verbose=False)
+        assert np.array_equal(np.asarray(m.a_policy_alpha), np.asarray(mj.a_policy_alpha))
+        np.testing.assert_allclose(np.asarray(mj.V_alpha), np.asarray(m.V_alpha), rtol=0, atol=1e-9)
+        np.testing.assert_allclose(np.asarray(mj.c_policy_alpha), np.asarray(m.c_policy_alpha),
+                                   rtol=0, atol=1e-9)
+        np.testing.assert_allclose(np.asarray(mj.l_policy_alpha), np.asarray(m.l_policy_alpha),
+                                   rtol=0, atol=1e-9)
+        # Hours respond to the state among the employed and are 1 elsewhere.
+        l = np.asarray(mj.l_policy_alpha)
+        assert np.ptp(l[:, :cfg.retirement_age, :, 1:]) > 1e-3
+        assert np.all(l[:, cfg.retirement_age:] == 1.0) and np.all(l[:, :, :, 0] == 1.0)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

@@ -100,6 +100,54 @@ def solve_labor_robust_jax(c_guess, mw, nu, phi, gamma, tau_c_t, n_iters=12):
     return jnp.where(mw > 1e-12, jnp.maximum(l, 0.0), 0.0)
 
 
+# Largest hours solve_labor_robust_jax can return: its upper bracket after six
+# doublings from 1. The log-utility solve below caps hours at the same value.
+_HOURS_CAP = 64.0
+_HOURS_TABLE_SIZE = 2048
+
+
+def hours_table_log_utility(nu, phi):
+    """Nodes (z, l) of the hours rule under log utility, z ascending.
+
+    With γ = 1 and c(l) = c_guess + MW·(l−1)/(1+τ_c), the intratemporal FOC
+    ν·l^φ·(1+τ_c) = MW/c(l) reduces to
+        ν·l^φ·(z + l) = 1,   z = c_guess·(1+τ_c)/MW − 1,
+    so hours depend on the state and on a' only through the scalar z. The
+    inverse is closed form, z(l) = 1/(ν·l^φ) − l, strictly decreasing in l; the
+    table evaluates it on a log-spaced grid of l from _HOURS_CAP down to 1e-10.
+    """
+    l = jnp.exp(jnp.linspace(jnp.log(_HOURS_CAP), jnp.log(1e-10), _HOURS_TABLE_SIZE))
+    z = 1.0 / (nu * l ** phi) - l
+    return z, l
+
+
+def solve_labor_log_jax(c_guess, mw, nu, phi, tau_c_t, hours_table, n_newton=3):
+    """Labor hours under log utility (γ = 1); same root as solve_labor_robust_jax.
+
+    Solves ν·l^φ·(z + l) = 1 (see hours_table_log_utility) by linear
+    interpolation in the table followed by n_newton Newton steps. Adjacent
+    table nodes are 1.3% apart in l, so the interpolated start is within ~1e-5
+    of the root and three steps reach machine precision. Hours are capped at
+    _HOURS_CAP, the value solve_labor_robust_jax returns when the root lies
+    above its bracket. Returns 0 when MW ≤ 0, as solve_labor_robust_jax does.
+    """
+    z_tab, l_tab = hours_table
+    onetc = 1.0 + tau_c_t
+    mws = jnp.maximum(mw, 1e-12)
+    z = c_guess * onetc / mws - 1.0
+    i = jnp.clip(jnp.searchsorted(z_tab, z) - 1, 0, _HOURS_TABLE_SIZE - 2)
+    z_lo, z_hi = z_tab[i], z_tab[i + 1]
+    weight = jnp.clip((z - z_lo) / (z_hi - z_lo), 0.0, 1.0)
+    l = l_tab[i] + weight * (l_tab[i + 1] - l_tab[i])
+    for _ in range(n_newton):
+        p = l ** (phi - 1.0)
+        G = nu * p * l * (z + l) - 1.0
+        Gp = nu * p * (phi * (z + l) + l)
+        l = l - G / Gp
+    l = jnp.where(z > z_tab[0], l, _HOURS_CAP)
+    return jnp.where(mw > 1e-12, l, 0.0)
+
+
 def labor_disutility_jax(l, nu, phi):
     """nu * l^(1+phi) / (1+phi)"""
     return nu * l ** (1 + phi) / (1 + phi)
@@ -220,7 +268,8 @@ def compute_budget_jax(
 # Vectorised single-period solve
 # ---------------------------------------------------------------------------
 
-def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
+def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
+                     hours_table=None):
     """
     Solve a single non-terminal period via grid search.
 
@@ -243,6 +292,8 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
         Phase 8 permanent productivity FE multiplier (= exp(alpha_grid[k]) for
         the alpha being solved). Multiplies wage income, UI benefit, and
         pension wage component.
+    hours_table : (z, l) arrays from hours_table_log_utility(nu, phi), or None
+        to build them here. Used only when gamma == 1 and labor_supply is on.
 
     Returns
     -------
@@ -300,28 +351,43 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
     # income tax falls on income net of payroll, so the wedge is multiplicative
     #   flat:        MW = effective_wage·(1−τ_p)(1−τ_l)
     #   progressive: MW ≈ effective_wage·(1−τ_p)   (HSV marginal handled separately)
-    y_5d = y_grid[None, :, None, None, None]       # (1, n_y, 1, 1, 1)
-    h_5d = h_grid[None, None, :, None, None]       # (1, 1, n_h, 1, 1)
-    effective_wage = w_t * kappa_wage_t * y_5d * h_5d * alpha_mult  # (1, n_y, n_h, 1, 1)
-    wedge = jnp.where(tax_progressive, 1.0 - tau_p_t, (1.0 - tau_p_t) * (1.0 - tau_l_t))
-    mw_5d = effective_wage * wedge  # (1, n_y, n_h, 1, 1)
+    #
+    # Hours are solved on the y_last = 0 slice, (n_a, n_y, n_h, n_a_next), and
+    # broadcast over y_last: the budget of an employed working-age state does
+    # not depend on y_last (it enters only UI and the pension), and the hours
+    # of the unemployed and the retired are not used (set to 1 below).
+    if labor_supply:
+        y_4d = y_grid[None, :, None, None]         # (1, n_y, 1, 1)
+        h_4d = h_grid[None, None, :, None]         # (1, 1, n_h, 1)
+        effective_wage = w_t * kappa_wage_t * y_4d * h_4d * alpha_mult  # (1, n_y, n_h, 1)
+        wedge = jnp.where(tax_progressive, 1.0 - tau_p_t, (1.0 - tau_p_t) * (1.0 - tau_l_t))
+        mw_4d = effective_wage * wedge             # (1, n_y, n_h, 1)
 
-    is_unemployed_5d = (y_5d == 0.0)                # (1, n_y, 1, 1, 1)
-    l_star = solve_labor_robust_jax(c_all, mw_5d, nu, phi, gamma, tau_c_t)
-    l_star = jnp.where(is_unemployed_5d | is_retired, 1.0, l_star)
+        if hours_table is None:
+            hours_table = hours_table_log_utility(nu, phi)
+        is_unemployed_4d = (y_4d == 0.0)           # (1, n_y, 1, 1)
+        l_star = lax.cond(
+            gamma == 1.0,
+            lambda c: solve_labor_log_jax(c, mw_4d, nu, phi, tau_c_t, hours_table),
+            lambda c: solve_labor_robust_jax(c, mw_4d, nu, phi, gamma, tau_c_t),
+            c_all[:, :, :, 0, :],
+        )
+        l_star = jnp.where(is_unemployed_4d | is_retired, 1.0, l_star)
 
-    # Budget adjustment for l≠1 uses the same marginal after-tax wage MW.
-    delta_budget = jnp.where(labor_supply, mw_5d * (l_star - 1.0), 0.0)
-    l_all = jnp.where(labor_supply, l_star, 1.0)
+        # Budget adjustment for l≠1 uses the same marginal after-tax wage MW.
+        delta_budget = (mw_4d * (l_star - 1.0))[:, :, :, None, :]
+        c_all = (budget[..., None] + delta_budget - a_next) / (1.0 + tau_c_t)
+        l_all = jnp.broadcast_to(l_star[:, :, :, None, :], c_all.shape)
 
-    c_all = (budget[..., None] + delta_budget - a_next) / (1.0 + tau_c_t)
-
-    # Labor disutility — only working-age EMPLOYED agents work (retired and
-    # unemployed bear no labor disutility; l_all is held at 1.0 for them only
-    # to zero delta_budget, not because they work).
-    work_employed = (~is_retired) & (y_5d > 0.0)
-    v_labor = jnp.where(labor_supply & work_employed,
-                        labor_disutility_jax(l_all, nu, phi), 0.0)
+        # Labor disutility — only working-age EMPLOYED agents work (retired and
+        # unemployed bear no labor disutility; l_star is held at 1.0 for them
+        # only to zero delta_budget, not because they work).
+        work_employed = (~is_retired) & (y_4d > 0.0)
+        v_labor = jnp.where(work_employed,
+                            labor_disutility_jax(l_star, nu, phi), 0.0)[:, :, :, None, :]
+    else:
+        l_all = jnp.ones_like(c_all)
+        v_labor = 0.0
 
     # 3. Expected continuation value
     EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, V_next)
@@ -351,7 +417,13 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0):
     # 4. Grid search
     EV_for_search = jnp.transpose(EV, (1, 2, 3, 0))
 
-    u_all = utility_jax(c_all, gamma) - v_labor
+    # utility_jax on one branch: only the log or the CRRA form is evaluated.
+    u_all = lax.cond(
+        gamma == 1.0,
+        jnp.log,
+        lambda c: c ** (1.0 - gamma) / (1.0 - gamma),
+        jnp.maximum(c_all, 1e-10),
+    ) - v_labor
     val_all = u_all + beta * EV_for_search
 
     val_all = jnp.where(c_all > 0, val_all, -jnp.inf)
@@ -588,6 +660,9 @@ def solve_lifecycle_jax(
         jnp.full(ts.shape, wage_age_profile[retirement_age - 1]),
     )
 
+    # The hours table depends on (nu, phi) only: built once, used at every age.
+    hours_table = hours_table_log_utility(nu, phi) if labor_supply else None
+
     def scan_fn(V_next, period_params_slice):
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
@@ -604,6 +679,7 @@ def solve_lifecycle_jax(
              kappa_wage_ret),
             model_params_t,
             alpha_mult=alpha_mult,
+            hours_table=hours_table,
         )
         return V_t, (V_t, a_pol_t, c_pol_t, l_pol_t)
 
