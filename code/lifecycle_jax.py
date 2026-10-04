@@ -744,47 +744,27 @@ _solve_lifecycle_jax_batched = jax.jit(
 # Phase 2: JAX simulation
 # ---------------------------------------------------------------------------
 
-def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
-                    a_grid, y_grid, h_grid, m_grid,
-                    P_y, P_h,
-                    w_path, w_at_retirement,
-                    tau_c_path, tau_l_path, tau_p_path, tau_k_path,
-                    r_path, pension_replacement_path,
-                    ui_replacement_rate, kappa,
-                    retirement_age, T, current_age,
-                    pension_min_floor=0.0,
-                    tax_progressive=False,
-                    tax_kappa_hsv=0.8,
-                    tax_eta=0.15,
-                    P_y_age_health=False,
-                    P_y_4d=None,
-                    survival_probs=None,
-                    wage_age_profile=None,
-                    pension_avg_weight=1.0,
-                    mean_kappa_working=1.0,
-                    mean_y_employed=1.0,
-                    alpha_idx=0,
-                    alpha_mult=1.0,
-                    trend_growth=0.0,
-                    transfer_floor=0.0,
-                    bequest_lumpsum=0.0):
+def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
+                        a_policy, c_policy, l_policy,
+                        a_grid, y_grid, h_grid, m_grid,
+                        w_path, w_at_retirement,
+                        tau_c_path, tau_l_path, tau_p_path, tau_k_path,
+                        r_path, pension_replacement_path,
+                        ui_replacement_rate, kappa,
+                        retirement_age, current_age,
+                        pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
+                        wage_age_profile,
+                        pension_avg_weight, mean_kappa_working, mean_y_employed,
+                        alpha_idx, alpha_mult,
+                        transfer_floor, bequest_lumpsum):
+    """Period outcomes of a living household in state (i_a, i_y, i_h, i_y_last)
+    with fixed effect alpha_idx at lifecycle_age.
+
+    Everything here is a function of the state and the age. The simulation
+    evaluates it at each agent's drawn state (_agent_step_jax); the exact
+    aggregation evaluates it at every state of the grid (exact_age_means_jax).
     """
-    Single time-step for one agent.
-
-    carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive)
-    t_data: (t_sim_idx, u_y, u_h, u_alive)
-
-    Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
-    [n_alpha, T, n_a, n_y, n_h, n_y]. The agent's permanent FE is captured by the
-    closed-over `alpha_idx` (slice into the leading axis) and `alpha_mult`
-    (= exp(alpha_grid[alpha_idx]), multiplies wage, UI, and pension wage component).
-    """
-    i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive = carry
-    t_sim_idx, u_y, u_h, u_alive = t_data
-
-    lifecycle_age = current_age + t_sim_idx
     is_retired = lifecycle_age >= retirement_age
-    is_last_step = (t_sim_idx == (T - current_age - 1))
 
     # Look up policy on the agent's alpha slice
     a_pol_val = a_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
@@ -870,6 +850,83 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                   + jnp.where(lifecycle_age == current_age, bequest_lumpsum, 0.0))
     transfer = jnp.where(transfer_floor > 0.0,
                          jnp.maximum(0.0, transfer_floor - budget_pre), 0.0)
+
+    return dict(
+        a_pol_val=a_pol_val, c_pol_val=c_pol_val, l_pol_val=l_pol_val,
+        a_val=a_val, y_val=y_val, h_val=h_val,
+        is_retired=is_retired, employed=employed,
+        pension=pension, ui=ui, wage_income=wage_income, effective_y=effective_y,
+        m_val=m_val, oop_m=oop_m, gov_m=gov_m,
+        tax_c=tax_c, tax_l=tax_l, tax_p=tax_p, tax_k=tax_k,
+        transfer=transfer,
+    )
+
+
+
+def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
+                    a_grid, y_grid, h_grid, m_grid,
+                    P_y, P_h,
+                    w_path, w_at_retirement,
+                    tau_c_path, tau_l_path, tau_p_path, tau_k_path,
+                    r_path, pension_replacement_path,
+                    ui_replacement_rate, kappa,
+                    retirement_age, T, current_age,
+                    pension_min_floor=0.0,
+                    tax_progressive=False,
+                    tax_kappa_hsv=0.8,
+                    tax_eta=0.15,
+                    P_y_age_health=False,
+                    P_y_4d=None,
+                    survival_probs=None,
+                    wage_age_profile=None,
+                    pension_avg_weight=1.0,
+                    mean_kappa_working=1.0,
+                    mean_y_employed=1.0,
+                    alpha_idx=0,
+                    alpha_mult=1.0,
+                    trend_growth=0.0,
+                    transfer_floor=0.0,
+                    bequest_lumpsum=0.0):
+    """
+    Single time-step for one agent.
+
+    carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive)
+    t_data: (t_sim_idx, u_y, u_h, u_alive)
+
+    Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
+    [n_alpha, T, n_a, n_y, n_h, n_y]. The agent's permanent FE is captured by the
+    closed-over `alpha_idx` (slice into the leading axis) and `alpha_mult`
+    (= exp(alpha_grid[alpha_idx]), multiplies wage, UI, and pension wage component).
+    """
+    i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive = carry
+    t_sim_idx, u_y, u_h, u_alive = t_data
+
+    lifecycle_age = current_age + t_sim_idx
+    is_last_step = (t_sim_idx == (T - current_age - 1))
+
+    s = _state_outcomes_jax(
+        i_a, i_y, i_h, i_y_last, lifecycle_age,
+        a_policy, c_policy, l_policy,
+        a_grid, y_grid, h_grid, m_grid,
+        w_path, w_at_retirement,
+        tau_c_path, tau_l_path, tau_p_path, tau_k_path,
+        r_path, pension_replacement_path,
+        ui_replacement_rate, kappa,
+        retirement_age, current_age,
+        pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
+        wage_age_profile,
+        pension_avg_weight, mean_kappa_working, mean_y_employed,
+        alpha_idx, alpha_mult,
+        transfer_floor, bequest_lumpsum,
+    )
+    a_pol_val, c_pol_val, l_pol_val = s['a_pol_val'], s['c_pol_val'], s['l_pol_val']
+    a_val, y_val, h_val = s['a_val'], s['y_val'], s['h_val']
+    is_retired, employed = s['is_retired'], s['employed']
+    pension, ui = s['pension'], s['ui']
+    wage_income, effective_y = s['wage_income'], s['effective_y']
+    m_val, oop_m, gov_m = s['m_val'], s['oop_m'], s['gov_m']
+    tax_c, tax_l, tax_p, tax_k = s['tax_c'], s['tax_l'], s['tax_p'], s['tax_k']
+    transfer = s['transfer']
 
     # Update average earnings (working years only)
     new_n_years = jnp.where(is_retired, n_earnings_years, n_earnings_years + 1)
@@ -1116,6 +1173,170 @@ _simulate_lifecycle_jax_batched = jax.jit(
     jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES),
     static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
                      'tax_progressive', 'P_y_age_health'),
+)
+
+
+# ---------------------------------------------------------------------------
+# Exact aggregation: the distribution over states, carried forward by age
+# ---------------------------------------------------------------------------
+
+def exact_age_means_jax(
+    a_policy, c_policy, l_policy,
+    a_grid, y_grid, h_grid, m_grid,
+    P_y, P_h,
+    w_path, w_at_retirement,
+    tau_c_path, tau_l_path, tau_p_path, tau_k_path,
+    r_path, pension_replacement_path,
+    ui_replacement_rate, kappa,
+    retirement_age, T, current_age,
+    initial_dist, alpha_grid,
+    pension_min_floor=0.0,
+    tax_progressive=False,
+    tax_kappa_hsv=0.8,
+    tax_eta=0.15,
+    P_y_age_health=False,
+    P_y_4d=None,
+    survival_probs=None,
+    wage_age_profile=None,
+    pension_avg_weight=1.0,
+    mean_kappa_working=1.0,
+    mean_y_employed=1.0,
+    trend_growth=0.0,
+    transfer_floor=0.0,
+    bequest_lumpsum=0.0,
+    return_dist=False,
+):
+    """
+    Per-age population means of the panel variables, without simulation.
+
+    The distribution of households over (alpha, a, y, h, y_last) is carried
+    forward from initial_dist: the decision rule moves mass between asset
+    nodes (a' is a node, so nothing is interpolated), P_y and P_h move it
+    between income and health states, and survival scales it. Each mean is the
+    mass-weighted sum over the grid of the same per-state outcomes the
+    simulation records (_state_outcomes_jax), the dead counting as zero as
+    they do in a panel mean.
+
+    initial_dist : (n_alpha, n_a, n_y, n_h, n_y), mass at age current_age,
+        summing to one.
+    alpha_grid : (n_alpha,) log fixed effects.
+
+    Returns means, (T_sim, 23): column i is the mean of element i of the
+    simulate_lifecycle_jax panel. Column 15 (average past earnings) is NaN: it
+    depends on the household's history, not on its state. With return_dist
+    also returns the mass at the start of each age,
+    (T_sim, n_alpha, n_a, n_y, n_h, n_y).
+    """
+    T_sim = T - current_age
+    n_alpha = a_policy.shape[0]
+    n_a, n_y, n_h = a_grid.shape[0], y_grid.shape[0], h_grid.shape[0]
+
+    if wage_age_profile is None:
+        wage_age_profile = jnp.ones(T)
+    if P_y_4d is None:
+        P_y_4d = jnp.zeros((T, n_h, n_y, n_y))
+    survival = jnp.ones((T, n_h)) if survival_probs is None else jnp.asarray(survival_probs)
+
+    # State indices on the grid, each of shape (n_alpha, n_a, n_y, n_h, n_y)
+    K, A, Y, H, YL = jnp.meshgrid(jnp.arange(n_alpha), jnp.arange(n_a), jnp.arange(n_y),
+                                  jnp.arange(n_h), jnp.arange(n_y), indexing='ij')
+    alpha_mult = jnp.exp(alpha_grid)[K]
+    mean_alpha_idx = jnp.sum(initial_dist * K)
+
+    def outcomes_at(age):
+        def one_state(i_a, i_y, i_h, i_y_last, alpha_idx, mult):
+            return _state_outcomes_jax(
+                i_a, i_y, i_h, i_y_last, age,
+                a_policy, c_policy, l_policy,
+                a_grid, y_grid, h_grid, m_grid,
+                w_path, w_at_retirement,
+                tau_c_path, tau_l_path, tau_p_path, tau_k_path,
+                r_path, pension_replacement_path,
+                ui_replacement_rate, kappa,
+                retirement_age, current_age,
+                pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
+                wage_age_profile,
+                pension_avg_weight, mean_kappa_working, mean_y_employed,
+                alpha_idx, mult,
+                transfer_floor, bequest_lumpsum,
+            )
+        flat = jax.vmap(one_state)(A.ravel(), Y.ravel(), H.ravel(), YL.ravel(),
+                                   K.ravel(), alpha_mult.ravel())
+        return {name: x.reshape(K.shape) for name, x in flat.items()}
+
+    def step(mu, t):
+        age = current_age + t
+        s = outcomes_at(age)
+        surv = survival[age][H]
+        # Accidental bequest of those who die at this age: the wealth carried
+        # out of the period, (1+g) a'.
+        bequest = (1.0 - surv) * (1.0 + trend_growth) * a_grid[s['a_pol_val']]
+        columns = (
+            s['a_val'], s['c_pol_val'], s['y_val'], s['h_val'], H,
+            s['effective_y'], s['employed'], s['ui'],
+            s['m_val'], s['oop_m'], s['gov_m'],
+            s['tax_c'], s['tax_l'], s['tax_p'], s['tax_k'],
+            None,                                               # avg_earnings
+            s['pension'], s['is_retired'],
+            jnp.where(s['employed'], s['l_pol_val'], 0.0),      # hours supplied
+            jnp.ones_like(mu),                                  # alive
+            bequest,
+            None,                                               # alpha index
+            s['transfer'],
+        )
+        means = jnp.stack([
+            jnp.sum(mu * x) if x is not None
+            else (jnp.nan if i == 15 else mean_alpha_idx)
+            for i, x in enumerate(columns)])
+
+        # Next age. Survivors move to their chosen asset node; then
+        #   working: y' ~ P_y(age, h)[y, .], y_last' = y
+        #   retired: y' = 0,                 y_last' = y_last
+        # and h' ~ P_h(age)[h, .].
+        moved = jnp.zeros_like(mu).at[K, s['a_pol_val'], Y, H, YL].add(mu * surv)
+        P_y_age = jnp.where(P_y_age_health, P_y_4d[age],
+                            jnp.broadcast_to(P_y, (n_h, n_y, n_y)))
+        P_h_age = P_h[age]
+        working = jnp.einsum('kayh,hyz,hg->kazgy', moved.sum(axis=4), P_y_age, P_h_age)
+        retired = jnp.zeros_like(mu).at[:, :, 0, :, :].set(
+            jnp.einsum('kayhl,hg->kagl', moved, P_h_age))
+        mu_next = jnp.where(age >= retirement_age, retired, working)
+        return mu_next, ((means, mu) if return_dist else means)
+
+    _, out = lax.scan(step, initial_dist, jnp.arange(T_sim))
+    return out
+
+
+_EXACT_STATIC = ('retirement_age', 'T', 'current_age', 'tax_progressive',
+                 'P_y_age_health', 'return_dist')
+_exact_age_means_jax_jit = jax.jit(exact_age_means_jax, static_argnames=_EXACT_STATIC)
+
+# Batched over cohorts that share the grids, the initial distribution and the
+# retirement age.
+_EXACT_IN_AXES = (
+        0, 0, 0,                 # a_policy, c_policy, l_policy
+        None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
+        None, None,              # P_y, P_h
+        0, 0,                    # w_path, w_at_retirement
+        0, 0, 0, 0,             # tau_c/l/p/k_path
+        0, 0,                    # r_path, pension_replacement_path
+        None, None,              # ui_replacement_rate, kappa
+        None, None, None,        # retirement_age, T, current_age
+        None, None,              # initial_dist, alpha_grid
+        None, None,              # pension_min_floor, tax_progressive
+        None, None,              # tax_kappa_hsv, tax_eta
+        None, None,              # P_y_age_health, P_y_4d
+        0,                       # survival_probs (per-cohort)
+        None,                    # wage_age_profile (shared)
+        None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
+        None,                    # trend_growth
+        None,                    # transfer_floor
+        0,                       # bequest_lumpsum (per-cohort scalar)
+        None,                    # return_dist
+)
+_exact_age_means_jax_batched = jax.jit(
+    jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES),
+    static_argnames=_EXACT_STATIC,
 )
 
 
@@ -1613,6 +1834,55 @@ class LifecycleModelJAX:
 
         # Convert all outputs to numpy arrays (23-tuple: panel, alpha_idx_panel, transfer_sim)
         return tuple(np.asarray(x) for x in result)
+
+    def exact_age_means(self, T_sim=None, return_dist=False):
+        """Per-age population means of the panel variables, without simulation.
+
+        Same interface and conventions as
+        LifecycleModelPerfectForesight.exact_age_means(): (T_sim, 23), column i
+        the mean of element i of the simulate() panel. See exact_age_means_jax.
+        """
+        if self.V is None:
+            raise RuntimeError("Must call solve() before exact_age_means().")
+        if (float(self.transfer_floor) > 0.0
+                and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
+            raise NotImplementedError(
+                "the recorded transfer replicates the solve's budget without "
+                "child costs; a positive transfer_floor with schooling_years > 0 "
+                "would record the wrong transfer")
+        if T_sim is not None and T_sim != self.T - self.current_age:
+            raise ValueError("exact_age_means covers ages current_age..T-1")
+
+        out = _exact_age_means_jax_jit(
+            jnp.array(self.a_policy_alpha), jnp.array(self.c_policy_alpha),
+            jnp.array(self.l_policy_alpha),
+            self.a_grid, self.y_grid, self.h_grid, self.m_grid,
+            self.P_y_2d, self.P_h,
+            self.w_path, self.w_at_retirement,
+            self.tau_c_path, self.tau_l_path, self.tau_p_path, self.tau_k_path,
+            self.r_path, self.pension_replacement_path,
+            self.ui_replacement_rate, self.kappa,
+            self.retirement_age, self.T, self.current_age,
+            jnp.array(self._np_model._initial_distribution()), self.alpha_grid,
+            pension_min_floor=self.pension_min_floor,
+            tax_progressive=self.tax_progressive,
+            tax_kappa_hsv=self.tax_kappa_hsv,
+            tax_eta=self.tax_eta,
+            P_y_age_health=self.P_y_age_health,
+            P_y_4d=self.P_y_4d if self.P_y_age_health else None,
+            survival_probs=self.survival_probs,
+            wage_age_profile=self.wage_age_profile,
+            pension_avg_weight=self.pension_avg_weight,
+            mean_kappa_working=self.mean_kappa_working,
+            mean_y_employed=self.mean_y_employed,
+            trend_growth=self.trend_growth,
+            transfer_floor=float(self.transfer_floor),
+            bequest_lumpsum=float(self.bequest_lumpsum),
+            return_dist=bool(return_dist),
+        )
+        if return_dist:
+            return np.asarray(out[0]), np.asarray(out[1])
+        return np.asarray(out)
 
     def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None,
                               rows=None):

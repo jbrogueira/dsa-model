@@ -1200,6 +1200,91 @@ def run_nfa_constrained(olg, scenario: FiscalScenario, base_paths: dict,
 
 
 # ---------------------------------------------------------------------------
+# Baseline
+# ---------------------------------------------------------------------------
+
+def _with_default_paths(olg, base_paths: dict) -> dict:
+    """Shallow copy of base_paths with G_path / I_g_path / r_B_path filled in."""
+    base_paths = dict(base_paths)  # shallow copy; don't mutate caller's dict
+    if 'G_path' not in base_paths:
+        base_paths['G_path'] = olg.govt_spending_path
+    if 'I_g_path' not in base_paths:
+        base_paths['I_g_path'] = olg.I_g_path
+
+    # Sovereign rate path: broadcast scalar r_B, else fall back to capital r_path.
+    # Used by compute_debt_path (B law of motion) and by _balance_residual's
+    # terminal_flow_balance condition.  Adding it here lets all three financing
+    # branches (debt / tax / NFA) pick it up uniformly.
+    if 'r_B_path' not in base_paths:
+        _r_path_arr = np.asarray(base_paths['r_path'], dtype=float)
+        base_paths['r_B_path'] = (np.full(len(_r_path_arr), float(olg.r_B))
+                                  if olg.r_B is not None else _r_path_arr)
+    return base_paths
+
+
+def _baseline_settings(n_post, n_sim, recompute_bequests) -> dict:
+    return dict(n_post=int(n_post), n_sim=int(n_sim),
+                recompute_bequests=bool(recompute_bequests))
+
+
+def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
+                 recompute_bequests: bool = False, verbose: bool = False) -> dict:
+    """Run the no-shock baseline once and attach its results to a copy of base_paths.
+
+    The returned dict carries 'base_macro', 'base_budget', 'w_path' and
+    '_pre_transition_paths'. Passing it to run_fiscal_scenario() for scenarios
+    with the same n_post, n_sim and recompute_bequests reuses this baseline
+    instead of re-running it for every scenario.
+    """
+    base_paths = _with_default_paths(olg, base_paths)
+    if '_pre_transition_paths' in base_paths:
+        pre_tp = base_paths['_pre_transition_paths']
+    else:
+        pre_tp = _build_pre_transition_paths(olg, base_paths)
+        base_paths['_pre_transition_paths'] = pre_tp
+
+    # Extend baseline paths if the scenarios request post-target dynamics.
+    ext_base = _extend_base_paths(base_paths, n_post)
+    T = len(np.asarray(ext_base['r_path']))
+    base_cf = _apply_shock(
+        FiscalScenario(name='_baseline'),  # zero shock
+        ext_base, T, instrument_delta=0.0, shock_scale=0.0,
+    )
+    # Baseline simulation: no shock, so MIT stitching is a no-op (counterfactual
+    # paths = baseline paths). Skip pre_transition_paths to avoid 177 redundant
+    # NumPy baseline solves. The solved models are then cached for counterfactual runs.
+    base_macro, base_budget = _run_one_simulation(
+        olg, ext_base, base_cf, n_sim=n_sim, verbose=verbose,
+        recompute_bequests=recompute_bequests,
+        pre_transition_paths=None,
+    )
+    # Capture baseline wage path so that MIT-shock stitching in counterfactual
+    # runs uses the correct (baseline) wages, not the counterfactual ones.
+    # Critical when I_g shocks change K_g → w.
+    # Store only the first T_TR periods (before any post-target extension) so
+    # that _extend_base_paths can safely extend it later.
+    T_orig = len(np.asarray(base_paths['r_path']))
+    base_paths['w_path'] = np.array(olg.w_path[:T_orig])
+
+    # Pre-populate the MIT baseline cache from the baseline run's solutions.
+    # Counterfactual runs need baseline policy functions for stitching
+    # pre-transition ages. The baseline run just solved these exact models —
+    # reuse them instead of re-solving 177 NumPy models sequentially.
+    if olg.birth_cohort_solutions is not None:
+        for edu_type, models_dict in olg.birth_cohort_solutions.items():
+            for bp, model in models_dict.items():
+                if bp < 0:
+                    olg._mit_baseline_cache[(edu_type, bp)] = model
+        # Set the pre_tp id so the cache is not invalidated
+        olg._mit_pre_tp_id = id(pre_tp)
+
+    base_paths['base_macro'] = base_macro
+    base_paths['base_budget'] = base_budget
+    base_paths['_baseline_settings'] = _baseline_settings(n_post, n_sim, recompute_bequests)
+    return base_paths
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1234,72 +1319,25 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
     -------
     FiscalScenarioResult
     """
-    # ── Fill in G_path / I_g_path defaults from olg object ──────────────────
-    base_paths = dict(base_paths)  # shallow copy; don't mutate caller's dict
-    if 'G_path' not in base_paths:
-        base_paths['G_path'] = olg.govt_spending_path
-    if 'I_g_path' not in base_paths:
-        base_paths['I_g_path'] = olg.I_g_path
-
-    # Sovereign rate path: broadcast scalar r_B, else fall back to capital r_path.
-    # Used by compute_debt_path (B law of motion) and by _balance_residual's
-    # terminal_flow_balance condition.  Adding it here lets all three financing
-    # branches (debt / tax / NFA) pick it up uniformly.
-    if 'r_B_path' not in base_paths:
-        _r_path_arr = np.asarray(base_paths['r_path'], dtype=float)
-        base_paths['r_B_path'] = (np.full(len(_r_path_arr), float(olg.r_B))
-                                  if olg.r_B is not None else _r_path_arr)
-
     # ── Run (or retrieve) baseline ───────────────────────────────────────────
-    # Reuse pre_transition_paths if already in base_paths (avoids cache invalidation
-    # across scenarios sharing the same baseline).
-    if '_pre_transition_paths' in base_paths:
-        pre_tp = base_paths['_pre_transition_paths']
-    else:
-        pre_tp = _build_pre_transition_paths(olg, base_paths)
-        base_paths['_pre_transition_paths'] = pre_tp
-
-    if 'base_macro' in base_paths and 'base_budget' in base_paths:
-        base_macro  = base_paths['base_macro']
-        base_budget = base_paths['base_budget']
+    base_paths = _with_default_paths(olg, base_paths)
+    settings = _baseline_settings(scenario.n_post, n_sim, scenario.recompute_bequests)
+    have_baseline = ('base_macro' in base_paths and 'base_budget' in base_paths
+                     # a baseline from run_baseline() under other settings is not this one
+                     and base_paths.get('_baseline_settings', settings) == settings)
+    if have_baseline:
+        # Reuse pre_transition_paths if already in base_paths (avoids cache
+        # invalidation across scenarios sharing the same baseline).
+        if '_pre_transition_paths' not in base_paths:
+            base_paths['_pre_transition_paths'] = _build_pre_transition_paths(olg, base_paths)
     else:
         if verbose:
             print(f"[run_fiscal_scenario] Running baseline for scenario '{scenario.name}'...")
-        # Extend baseline paths if the scenario requests post-target dynamics.
-        n_post_base = scenario.n_post
-        ext_base = _extend_base_paths(base_paths, n_post_base)
-        T = len(np.asarray(ext_base['r_path']))
-        base_cf = _apply_shock(
-            FiscalScenario(name='_baseline'),  # zero shock
-            ext_base, T, instrument_delta=0.0, shock_scale=0.0,
-        )
-        # Baseline simulation: no shock, so MIT stitching is a no-op (counterfactual
-        # paths = baseline paths). Skip pre_transition_paths to avoid 177 redundant
-        # NumPy baseline solves. The solved models are then cached for counterfactual runs.
-        base_macro, base_budget = _run_one_simulation(
-            olg, ext_base, base_cf, n_sim=n_sim, verbose=verbose,
-            recompute_bequests=scenario.recompute_bequests,
-            pre_transition_paths=None,
-        )
-        # Capture baseline wage path so that MIT-shock stitching in counterfactual
-        # runs uses the correct (baseline) wages, not the counterfactual ones.
-        # Critical when I_g shocks change K_g → w.
-        # Store only the first T_TR periods (before any post-target extension) so
-        # that _extend_base_paths can safely extend it later.
-        T_orig = len(np.asarray(base_paths['r_path']))
-        base_paths['w_path'] = np.array(olg.w_path[:T_orig])
-
-        # Pre-populate the MIT baseline cache from the baseline run's solutions.
-        # Counterfactual runs need baseline policy functions for stitching
-        # pre-transition ages. The baseline run just solved these exact models —
-        # reuse them instead of re-solving 177 NumPy models sequentially.
-        if olg.birth_cohort_solutions is not None:
-            for edu_type, models_dict in olg.birth_cohort_solutions.items():
-                for bp, model in models_dict.items():
-                    if bp < 0:
-                        olg._mit_baseline_cache[(edu_type, bp)] = model
-            # Set the pre_tp id so the cache is not invalidated
-            olg._mit_pre_tp_id = id(pre_tp)
+        base_paths = run_baseline(olg, base_paths, n_post=scenario.n_post, n_sim=n_sim,
+                                  recompute_bequests=scenario.recompute_bequests,
+                                  verbose=verbose)
+    base_macro  = base_paths['base_macro']
+    base_budget = base_paths['base_budget']
 
     # ── Dispatch ─────────────────────────────────────────────────────────────
     kwargs = dict(n_sim=n_sim, verbose=verbose)
