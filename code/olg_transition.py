@@ -143,6 +143,10 @@ class OLGTransition:
                  # period tables along its calendar diagonal, clamped to [years[0], years[-1]].
                  survival_table=None,
                  demography=None,
+                 # Cohort-specific retirement: {entry_year: (retirement_age, pension_avg_weight)}
+                 # for the cohort entering at model age 0 in entry_year. None keeps
+                 # lifecycle_config.retirement_age for every cohort.
+                 cohort_retirement=None,
                  # Backend selection
                  backend='numpy',
                  # JAX simulation chunk size (None = all cohorts at once; set e.g. 10 to avoid GPU OOM)
@@ -164,6 +168,7 @@ class OLGTransition:
         self.n_y = self.lifecycle_config.n_y
         self.n_h = self.lifecycle_config.n_h
         self.retirement_age = self.lifecycle_config.retirement_age
+        self.cohort_retirement = cohort_retirement
         
         # Production parameters
         self.alpha = alpha
@@ -409,131 +414,154 @@ class OLGTransition:
         self._birth_sim_cache[key] = res
         return res
 
+    @staticmethod
+    def _retirement_groups(models_by_bp):
+        """Birth periods grouped by the retirement-dependent scalars of their models.
+
+        The batched JAX solve and simulation take retirement_age as a static
+        argument and pension_avg_weight and mean_kappa_working as scalars shared
+        across the batch, so cohorts that differ in them are batched separately.
+        Groups come in order of their first birth period.
+        """
+        groups = {}
+        for b in sorted(models_by_bp):
+            m = models_by_bp[b]
+            key = (int(m.retirement_age), float(m.pension_avg_weight),
+                   float(m.mean_kappa_working))
+            groups.setdefault(key, []).append(b)
+        return list(groups.values())
+
     def _solve_cohorts_jax_batched(self, birth_cohort_solutions, verbose=False):
-        """Batch-solve all cohort lifecycle problems in one vmapped XLA call per education type."""
+        """Batch-solve the cohort lifecycle problems, one vmapped XLA call per
+        education type and retirement group."""
+        for edu_type in self.education_shares.keys():
+            models_dict = birth_cohort_solutions[edu_type]
+            for group in self._retirement_groups(models_dict):
+                self._solve_jax_group(edu_type, models_dict, group, verbose)
+
+    def _solve_jax_group(self, edu_type, models_dict, birth_periods, verbose=False):
+        """Batch-solve the cohorts in `birth_periods`, which share retirement_age,
+        pension_avg_weight and mean_kappa_working."""
         import jax.numpy as jnp
         from lifecycle_jax import _solve_lifecycle_jax_batched
 
-        for edu_type in self.education_shares.keys():
-            models_dict = birth_cohort_solutions[edu_type]
-            birth_periods = sorted(models_dict.keys())
-            model_list = [models_dict[b] for b in birth_periods]
+        model_list = [models_dict[b] for b in birth_periods]
 
-            if verbose:
-                print(f"  JAX batched solve: {edu_type} ({len(model_list)} cohorts)")
+        if verbose:
+            print(f"  JAX batched solve: {edu_type} ({len(model_list)} cohorts)")
 
-            ref = model_list[0]
+        ref = model_list[0]
 
-            # Stack per-cohort paths (already JAX arrays from LifecycleModelJAX.__init__)
-            r_paths = jnp.stack([m.r_path for m in model_list])
-            w_paths = jnp.stack([m.w_path for m in model_list])
-            tau_c_paths = jnp.stack([m.tau_c_path for m in model_list])
-            tau_l_paths = jnp.stack([m.tau_l_path for m in model_list])
-            tau_p_paths = jnp.stack([m.tau_p_path for m in model_list])
-            tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
-            pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
-            w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
+        # Stack per-cohort paths (already JAX arrays from LifecycleModelJAX.__init__)
+        r_paths = jnp.stack([m.r_path for m in model_list])
+        w_paths = jnp.stack([m.w_path for m in model_list])
+        tau_c_paths = jnp.stack([m.tau_c_path for m in model_list])
+        tau_l_paths = jnp.stack([m.tau_l_path for m in model_list])
+        tau_p_paths = jnp.stack([m.tau_p_path for m in model_list])
+        tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
+        pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
+        w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
 
-            # Pass all args positionally to match vmap in_axes
-            P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
-            bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
-                                          for b in birth_periods])
-            # Per-cohort survival schedules (in_axes=0). Cohorts may have distinct
-            # schedules (data cohort-historical survival or survival_improvement_rate);
-            # fall back to ones (no mortality) where a model has none.
-            _ones_surv = jnp.ones((ref.T, self.n_h))
-            surv_paths = jnp.stack([
-                (m.survival_probs if getattr(m, 'survival_probs', None) is not None
-                 else _ones_surv) for m in model_list])
-            n_cohorts = len(model_list)
-            chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
+        # Pass all args positionally to match vmap in_axes
+        P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
+        bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
+                                      for b in birth_periods])
+        # Per-cohort survival schedules (in_axes=0). Cohorts may have distinct
+        # schedules (data cohort-historical survival or survival_improvement_rate);
+        # fall back to ones (no mortality) where a model has none.
+        _ones_surv = jnp.ones((ref.T, self.n_h))
+        surv_paths = jnp.stack([
+            (m.survival_probs if getattr(m, 'survival_probs', None) is not None
+             else _ones_surv) for m in model_list])
+        n_cohorts = len(model_list)
+        chunk_size = self.jax_sim_chunk_size if self.jax_sim_chunk_size is not None else n_cohorts
 
-            # Phase 8: alpha_mult is shared across cohorts within one solve sweep,
-            # so the permanent-FE grid is handled by an outer loop over alpha
-            # nodes — one batched solve sweep per node — mirroring the per-alpha
-            # loops in LifecycleModelPerfectForesight.solve and
-            # LifecycleModelJAX.solve. The per-agent simulation side draws alpha
-            # indices over the full grid (Phase 8.5b), so the solve must supply
-            # matching per-alpha policies.
-            def _solve_chunk(alpha_mult_jax, w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c, surv_c):
-                return _solve_lifecycle_jax_batched(
-                    ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
-                    ref.P_y_2d, ref.P_h,
-                    w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
-                    ref.ui_replacement_rate, ref.kappa,
-                    ref.beta, ref.gamma,
-                    ref.T, ref.retirement_age,
-                    ref.pension_min_floor, ref.tax_progressive,
-                    ref.tax_kappa_hsv, ref.tax_eta,
-                    ref.transfer_floor, ref.education_subsidy_rate,
-                    ref.child_cost_profile, ref.schooling_years,
-                    surv_c, P_y_4d_arg,
-                    ref.labor_supply, ref.nu, ref.phi, ref.trend_growth,
-                    beq_c,
-                    ref.wage_age_profile,
-                    ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
-                    alpha_mult_jax,
-                )
+        # Phase 8: alpha_mult is shared across cohorts within one solve sweep,
+        # so the permanent-FE grid is handled by an outer loop over alpha
+        # nodes — one batched solve sweep per node — mirroring the per-alpha
+        # loops in LifecycleModelPerfectForesight.solve and
+        # LifecycleModelJAX.solve. The per-agent simulation side draws alpha
+        # indices over the full grid (Phase 8.5b), so the solve must supply
+        # matching per-alpha policies.
+        def _solve_chunk(alpha_mult_jax, w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c, surv_c):
+            return _solve_lifecycle_jax_batched(
+                ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                ref.P_y_2d, ref.P_h,
+                w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
+                ref.ui_replacement_rate, ref.kappa,
+                ref.beta, ref.gamma,
+                ref.T, ref.retirement_age,
+                ref.pension_min_floor, ref.tax_progressive,
+                ref.tax_kappa_hsv, ref.tax_eta,
+                ref.transfer_floor, ref.education_subsidy_rate,
+                ref.child_cost_profile, ref.schooling_years,
+                surv_c, P_y_4d_arg,
+                ref.labor_supply, ref.nu, ref.phi, ref.trend_growth,
+                beq_c,
+                ref.wage_age_profile,
+                ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
+                alpha_mult_jax,
+            )
 
-            batched_arrays = (w_at_rets, r_paths, w_paths,
-                              tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
-                              pension_paths, bequest_lumpsums, surv_paths)
+        batched_arrays = (w_at_rets, r_paths, w_paths,
+                          tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
+                          pension_paths, bequest_lumpsums, surv_paths)
 
-            n_alpha = ref.n_alpha
-            V_alpha_sweeps, a_alpha_sweeps, c_alpha_sweeps, l_alpha_sweeps = [], [], [], []
-            for alpha_idx in range(n_alpha):
-                alpha_mult_jax = float(np.exp(np.asarray(ref.alpha_grid)[alpha_idx]))
-                if chunk_size >= n_cohorts:
-                    V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *batched_arrays)
-                    # Move everything to CPU to free GPU memory
-                    V_batch = np.asarray(V_b)
-                    a_pol_batch = np.asarray(a_b)
-                    c_pol_batch = np.asarray(c_b)
-                    l_pol_batch = np.asarray(l_b)
-                else:
-                    V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
-                    for start in range(0, n_cohorts, chunk_size):
-                        end = min(start + chunk_size, n_cohorts)
-                        actual = end - start
-                        pad = chunk_size - actual
-                        sliced = tuple(arr[start:end] for arr in batched_arrays)
-                        if pad > 0:
-                            sliced = tuple(
-                                jnp.concatenate([s, jnp.repeat(s[-1:], pad, axis=0)])
-                                for s in sliced
-                            )
-                        V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *sliced)
-                        # Move everything to CPU immediately to free GPU memory
-                        V_chunks.append(np.asarray(V_b[:actual]))
-                        a_chunks.append(np.asarray(a_b[:actual]))
-                        c_chunks.append(np.asarray(c_b[:actual]))
-                        l_chunks.append(np.asarray(l_b[:actual]))
-                    V_batch = np.concatenate(V_chunks)
-                    a_pol_batch = np.concatenate(a_chunks)
-                    c_pol_batch = np.concatenate(c_chunks)
-                    l_pol_batch = np.concatenate(l_chunks)
-                V_alpha_sweeps.append(V_batch)
-                a_alpha_sweeps.append(a_pol_batch)
-                c_alpha_sweeps.append(c_pol_batch)
-                l_alpha_sweeps.append(l_pol_batch)
+        n_alpha = ref.n_alpha
+        V_alpha_sweeps, a_alpha_sweeps, c_alpha_sweeps, l_alpha_sweeps = [], [], [], []
+        for alpha_idx in range(n_alpha):
+            alpha_mult_jax = float(np.exp(np.asarray(ref.alpha_grid)[alpha_idx]))
+            if chunk_size >= n_cohorts:
+                V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *batched_arrays)
+                # Move everything to CPU to free GPU memory
+                V_batch = np.asarray(V_b)
+                a_pol_batch = np.asarray(a_b)
+                c_pol_batch = np.asarray(c_b)
+                l_pol_batch = np.asarray(l_b)
+            else:
+                V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
+                for start in range(0, n_cohorts, chunk_size):
+                    end = min(start + chunk_size, n_cohorts)
+                    actual = end - start
+                    pad = chunk_size - actual
+                    sliced = tuple(arr[start:end] for arr in batched_arrays)
+                    if pad > 0:
+                        sliced = tuple(
+                            jnp.concatenate([s, jnp.repeat(s[-1:], pad, axis=0)])
+                            for s in sliced
+                        )
+                    V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *sliced)
+                    # Move everything to CPU immediately to free GPU memory
+                    V_chunks.append(np.asarray(V_b[:actual]))
+                    a_chunks.append(np.asarray(a_b[:actual]))
+                    c_chunks.append(np.asarray(c_b[:actual]))
+                    l_chunks.append(np.asarray(l_b[:actual]))
+                V_batch = np.concatenate(V_chunks)
+                a_pol_batch = np.concatenate(a_chunks)
+                c_pol_batch = np.concatenate(c_chunks)
+                l_pol_batch = np.concatenate(l_chunks)
+            V_alpha_sweeps.append(V_batch)
+            a_alpha_sweeps.append(a_pol_batch)
+            c_alpha_sweeps.append(c_pol_batch)
+            l_alpha_sweeps.append(l_pol_batch)
 
-            # Policy arrays are not cached on GPU — with limited VRAM, the simulation
-            # re-uploads per chunk from the CPU-resident model objects below.
+        # Policy arrays are not cached on GPU — with limited VRAM, the simulation
+        # re-uploads per chunk from the CPU-resident model objects below.
 
-            # Inject results into individual model objects (CPU arrays).
-            # Per-alpha policies on a leading (n_alpha, T, ...) axis; scalar
-            # attributes alias alpha=0, matching LifecycleModelJAX.solve and
-            # LifecycleModelPerfectForesight.solve conventions.
-            for ci, b in enumerate(birth_periods):
-                model = models_dict[b]
-                model.V_alpha = np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0)
-                model.a_policy_alpha = np.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
-                model.c_policy_alpha = np.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
-                model.l_policy_alpha = np.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
-                model.V = model.V_alpha[0]
-                model.a_policy = model.a_policy_alpha[0]
-                model.c_policy = model.c_policy_alpha[0]
-                model.l_policy = model.l_policy_alpha[0]
+        # Inject results into individual model objects (CPU arrays).
+        # Per-alpha policies on a leading (n_alpha, T, ...) axis; scalar
+        # attributes alias alpha=0, matching LifecycleModelJAX.solve and
+        # LifecycleModelPerfectForesight.solve conventions.
+        for ci, b in enumerate(birth_periods):
+            model = models_dict[b]
+            model.V_alpha = np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0)
+            model.a_policy_alpha = np.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
+            model.c_policy_alpha = np.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
+            model.l_policy_alpha = np.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
+            model.V = model.V_alpha[0]
+            model.a_policy = model.a_policy_alpha[0]
+            model.c_policy = model.c_policy_alpha[0]
+            model.l_policy = model.l_policy_alpha[0]
 
     def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False):
         """Batched simulation of all cohorts in one vmapped XLA call per education type."""
@@ -718,59 +746,62 @@ class OLGTransition:
                 beq_lumps,
             )
 
-            for chunk_start in range(0, n_cohorts, chunk_size):
-                chunk_end = min(chunk_start + chunk_size, n_cohorts)
-                chunk_actual = chunk_end - chunk_start
+            # Cohorts with different retirement ages cannot share a batch (the
+            # age is a static argument), so simulate each retirement group in
+            # its own chunks, each padded to the group's chunk length.
+            bp_index = {int(b): ci for ci, b in enumerate(birth_periods)}
+            groups = self._retirement_groups(
+                {int(b): m for b, m in zip(birth_periods, model_list)})
+            for group in groups:
+                gidx = [bp_index[b] for b in group]
+                gref = model_list[gidx[0]]
+                g_chunk = min(chunk_size, len(gidx))
+                for start in range(0, len(gidx), g_chunk):
+                    sel = gidx[start:start + g_chunk]
+                    chunk_actual = len(sel)
+                    idx = jnp.array(sel + [sel[-1]] * (g_chunk - chunk_actual))
 
-                # Pad last chunk to keep shape static (same JIT-compiled kernel reused)
-                if chunk_actual < chunk_size:
-                    pad = chunk_size - chunk_actual
-                    idx = jnp.array(list(range(chunk_start, chunk_end)) + [chunk_end - 1] * pad)
-                else:
-                    idx = jnp.arange(chunk_start, chunk_end)
+                    def s(arr):
+                        return arr[idx]
 
-                def s(arr):
-                    return arr[idx]
+                    (ca_pol, cc_pol, cl_pol,
+                     cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
+                     ckeys,
+                     ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
+                     calpha_idx, calpha_mult, csurv, cbeq) = (s(a) for a in per_cohort_arrs)
 
-                (ca_pol, cc_pol, cl_pol,
-                 cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
-                 ckeys,
-                 ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
-                 calpha_idx, calpha_mult, csurv, cbeq) = (s(a) for a in per_cohort_arrs)
+                    chunk_results = _simulate_lifecycle_jax_batched(
+                        ca_pol, cc_pol, cl_pol,
+                        ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                        ref.P_y_2d, ref.P_h,
+                        cw, cwret,
+                        ctau_c, ctau_l, ctau_p, ctau_k,
+                        cr, cpen,
+                        ref.ui_replacement_rate, ref.kappa,
+                        gref.retirement_age, ref.T, ref.current_age,
+                        n_sim, ckeys,
+                        ci_a, ci_y, ci_h, ci_y_last,
+                        cavg, cn_yr,
+                        ref.pension_min_floor, ref.tax_progressive,
+                        ref.tax_kappa_hsv, ref.tax_eta,
+                        ref.P_y_age_health, P_y_4d_sim,
+                        csurv,
+                        ref.wage_age_profile,
+                        gref.pension_avg_weight, gref.mean_kappa_working, ref.mean_y_employed,
+                        calpha_idx, calpha_mult,
+                        ref.trend_growth,
+                        ref.transfer_floor,
+                        cbeq,
+                    )
 
-                chunk_results = _simulate_lifecycle_jax_batched(
-                    ca_pol, cc_pol, cl_pol,
-                    ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
-                    ref.P_y_2d, ref.P_h,
-                    cw, cwret,
-                    ctau_c, ctau_l, ctau_p, ctau_k,
-                    cr, cpen,
-                    ref.ui_replacement_rate, ref.kappa,
-                    ref.retirement_age, ref.T, ref.current_age,
-                    n_sim, ckeys,
-                    ci_a, ci_y, ci_h, ci_y_last,
-                    cavg, cn_yr,
-                    ref.pension_min_floor, ref.tax_progressive,
-                    ref.tax_kappa_hsv, ref.tax_eta,
-                    ref.P_y_age_health, P_y_4d_sim,
-                    csurv,
-                    ref.wage_age_profile,
-                    ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
-                    calpha_idx, calpha_mult,
-                    ref.trend_growth,
-                    ref.transfer_floor,
-                    cbeq,
-                )
-
-                # Store only actual (non-padded) cohorts
-                for ci_local in range(chunk_actual):
-                    ci = chunk_start + ci_local
-                    b = birth_periods[ci]
-                    panel = tuple(np.asarray(arr[ci_local]) for arr in chunk_results)
-                    panels[edu_type][int(b)] = panel
-                    cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci],
-                                 getattr(self, '_policy_version', 0))
-                    self._birth_sim_cache[cache_key] = panel
+                    # Store only actual (non-padded) cohorts
+                    for ci_local, ci in enumerate(sel):
+                        b = birth_periods[ci]
+                        panel = tuple(np.asarray(arr[ci_local]) for arr in chunk_results)
+                        panels[edu_type][int(b)] = panel
+                        cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci],
+                                     getattr(self, '_policy_version', 0))
+                        self._birth_sim_cache[cache_key] = panel
 
         return panels
 
@@ -1084,6 +1115,23 @@ class OLGTransition:
                 sched[j, :] = 1.0
         return sched
 
+    def _cohort_retirement_kwargs(self, birth_period):
+        """Config overrides fixing the retirement age of one birth cohort.
+
+        The cohort with birth period b enters in year current_year + b. Entry
+        years outside the table take its nearest end, where the statutory age
+        is constant.
+        """
+        if not self.cohort_retirement:
+            return {}
+        years = sorted(self.cohort_retirement)
+        k = int(np.clip(int(self.current_year) + int(birth_period), years[0], years[-1]))
+        J_R, lam = self.cohort_retirement[k]
+        out = {'retirement_age': int(J_R)}
+        if lam is not None:
+            out['pension_avg_weight'] = float(lam)
+        return out
+
     def solve_cohort_problems(self, r_path, w_path,
                           tau_c_path=None, tau_l_path=None,
                           tau_p_path=None, tau_k_path=None,
@@ -1194,6 +1242,7 @@ class OLGTransition:
 
                 # Create and solve the model for this birth cohort
                 cohort_feature_kwargs = dict(_feature_kwargs)
+                cohort_feature_kwargs.update(self._cohort_retirement_kwargs(birth_period))
                 if _use_per_cohort_survival:
                     cohort_surv = self._cohort_survival_schedule(birth_period)
                     cohort_feature_kwargs['survival_probs'] = cohort_surv

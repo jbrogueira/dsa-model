@@ -102,7 +102,10 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
          'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
         ('$T$', 'model ages (real ages 25--84)', mod.get('T'), ''),
-        ('$J_R$', 'retirement age (real age 64)', mod.get('retirement_age'), ''),
+        ('$J_R$', f"retirement age in 2023 (real age {25 + int(mod.get('retirement_age'))})",
+         mod.get('retirement_age'),
+         'rises with life expectancy at 65' if cfg.get('transition', {}).get('retirement_age_file')
+         else ''),
     ]
     # One row per parameter the configuration lists for the SMM; a parameter
     # the last fit did not cover shows no value rather than its initial.

@@ -1093,7 +1093,7 @@ _draw_sim_inputs_jit = jax.jit(
 )
 
 
-def _cross_section(surv, sim_inputs, alpha_mults,
+def _cross_section(surv, sim_inputs, alpha_mults, rows,
                    a_grid, y_grid, h_grid, m_grid, P_y_2d, P_h, P_y_4d,
                    w_at_retirement, paths,
                    ui_replacement_rate, kappa, beta, gamma,
@@ -1107,8 +1107,8 @@ def _cross_section(surv, sim_inputs, alpha_mults,
     """Body of LifecycleModelJAX.cross_section_batched, compiled as one call.
 
     Solves every cohort once per fixed-effect node (vmapped over the survival
-    schedules), simulates them in chunks of *chunk* cohorts, and keeps row j of
-    cohort j. Every call below is the same function the per-cohort solve() and
+    schedules), simulates them in chunks of *chunk* cohorts, and keeps panel row
+    rows[c] of cohort c. Every call below is the same function the per-cohort solve() and
     simulate() call, vmapped over cohorts.
     """
     C = surv.shape[0]
@@ -1179,9 +1179,9 @@ def _cross_section(surv, sim_inputs, alpha_mults,
             transfer_floor,
             beq_c,
         )
-        # Each output is (chunk, T_sim, n_sim); keep row j of cohort j.
+        # Each output is (chunk, T_sim, n_sim); keep row rows[c] of cohort c.
         local = np.arange(stop - start)
-        pieces.append([x[local, local + start] for x in out])
+        pieces.append([x[local, rows[start:stop]] for x in out])
     return tuple(jnp.concatenate([p[f] for p in pieces]) for f in range(len(pieces[0])))
 
 
@@ -1538,13 +1538,14 @@ class LifecycleModelJAX:
         # Convert all outputs to numpy arrays (23-tuple: panel, alpha_idx_panel, transfer_sim)
         return tuple(np.asarray(x) for x in result)
 
-    def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None):
-        """Row j of cohort j's panel, for cohorts that differ only in survival.
+    def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None,
+                              rows=None):
+        """One panel row per cohort, for cohorts that differ only in survival.
 
-        Cohort j solves this model's lifecycle problem under survival_stack[j]
-        (T, n_h) and simulates n_sim agents from seeds[j]; the result is the
-        23-tuple of simulate() with row j of cohort j's panel in row j, shape
-        (C, n_sim) per field. Equivalent to C separate solve() + simulate()
+        Cohort c solves this model's lifecycle problem under survival_stack[c]
+        (T, n_h), simulates n_sim agents from seeds[c] and contributes row
+        rows[c] of its panel (default rows[c] = c, the cohort aged c); the
+        result is the 23-tuple of simulate() with shape (C, n_sim) per field. Equivalent to C separate solve() + simulate()
         calls on copies of this model, run as two compiled calls: the initial
         draws, then the solve sweeps, simulation and row selection.
 
@@ -1556,9 +1557,10 @@ class LifecycleModelJAX:
         C = surv.shape[0]
         if len(seeds) != C:
             raise ValueError(f'{len(seeds)} seeds for {C} survival schedules')
-        if C > self.T - self.current_age:
-            raise ValueError(f'{C} cohorts but the panel has '
-                             f'{self.T - self.current_age} rows')
+        rows = np.arange(C) if rows is None else np.asarray(rows, dtype=int)
+        if rows.shape != (C,) or rows.min() < 0 or rows.max() >= self.T - self.current_age:
+            raise ValueError(f'rows {rows} do not index the panel\'s '
+                             f'{self.T - self.current_age} rows for {C} cohorts')
         if (float(self.transfer_floor) > 0.0
                 and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
             raise NotImplementedError(
@@ -1569,7 +1571,7 @@ class LifecycleModelJAX:
         chunk = C if chunk_size is None else max(1, min(int(chunk_size), C))
         alpha_mults = np.exp(np.asarray(self.alpha_grid))
         out = _cross_section_jit(
-            surv, sim_inputs, jnp.asarray(alpha_mults),
+            surv, sim_inputs, jnp.asarray(alpha_mults), jnp.asarray(rows),
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
             self.P_y_2d, self.P_h, self.P_y_4d if self.P_y_age_health else None,
             self.w_at_retirement,

@@ -3,7 +3,7 @@
   "description": "Greece \u2014 income process from LIS Greek pool GR03-GR21 (n=76,255 emp_fyft); AR(1) baseline rho=0.95, sigma_y per-edu from MD fit on var(u) age profile",
   "model": {
     "T": 60,
-    "retirement_age": 39,
+    "retirement_age": 42,
     "n_a": 100,
     "n_y": 5,
     "n_h": 1,
@@ -400,6 +400,7 @@
     "r_decay": 5,
     "n_sim": 2000,
     "survival_data_file": "../data/survival_GR.npz",
-    "demography_file": "../data/demography_GR.npz"
+    "demography_file": "../data/demography_GR.npz",
+    "retirement_age_file": "../data/retirement_age_GR.npz"
   }
 }

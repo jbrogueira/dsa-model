@@ -320,6 +320,10 @@ class CalibrationSpec:
     age_weights: Optional[np.ndarray] = None  # (T,) stationary age distribution
     cohort_survival: Optional[np.ndarray] = None  # (T, T) row j = cohort aged 25+j
     n_sim_cohorts: int = 2000   # agents per cohort when cohort_survival is set
+    # Retirement age and career-average pension weight of the cohort aged 25+j
+    # in the base year, (T,) each; None keeps base_config's for every cohort.
+    cohort_retirement_age: Optional[np.ndarray] = None
+    cohort_pension_avg_weight: Optional[np.ndarray] = None
     backend: str = 'numpy'  # 'numpy' or 'jax'
     production: dict = field(default_factory=lambda: {
         'alpha': 0.33, 'delta': 0.07, 'A_tfp': 1.0,
@@ -818,33 +822,54 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
            else LifecycleModelPerfectForesight)
     seed = spec.seed if seed is None else seed
 
+    # Retirement age and pension weight of each cohort (the base config's when
+    # the spec carries none).
+    if spec.cohort_retirement_age is not None:
+        ret = [(int(J), float(lam)) for J, lam in zip(spec.cohort_retirement_age,
+                                                      spec.cohort_pension_avg_weight)]
+    else:
+        ret = [(int(config.retirement_age), float(config.pension_avg_weight))] * T
+
+    def cohort_config(edu_type, surv, j):
+        return config._replace(
+            education_type=edu_type,
+            survival_probs=surv,
+            r_path=np.full(T, spec.r),
+            w_path=np.full(T, spec.w),
+            retirement_age=ret[j][0],
+            pension_avg_weight=ret[j][1],
+        )
+
     panels = {}
     for edu_type in spec.education_shares:
         if batched and cls is LifecycleModelJAX:
-            surv_stack = np.stack([S if shared else S[j].reshape(T, config.n_h)
-                                   for j in range(T)])
-            cfg_e = config._replace(
-                education_type=edu_type,
-                survival_probs=surv_stack[0],
-                r_path=np.full(T, spec.r),
-                w_path=np.full(T, spec.w),
-            )
-            model = cls(cfg_e, verbose=False)
-            seeds = [seed + j if seed_per_cohort else seed for j in range(T)]
-            panels[edu_type] = wrap_sim_output(model.cross_section_batched(
-                surv_stack, seeds, n_sim, chunk_size=chunk_size))
+            # One batched call per retirement group: the retirement age is a
+            # static argument of the JAX solve and the pension weight a scalar
+            # shared by the batch.
+            groups = {}
+            for j in range(T):
+                groups.setdefault(ret[j], []).append(j)
+            out = None
+            for js in groups.values():
+                surv_stack = np.stack([S if shared else S[j].reshape(T, config.n_h)
+                                       for j in js])
+                model = cls(cohort_config(edu_type, surv_stack[0], js[0]), verbose=False)
+                seeds = [seed + j if seed_per_cohort else seed for j in js]
+                part = model.cross_section_batched(surv_stack, seeds, n_sim,
+                                                   chunk_size=chunk_size, rows=js)
+                if out is None:
+                    out = [np.zeros((T, n_sim), dtype=x.dtype) for x in part]
+                for o, x in zip(out, part):
+                    o[js] = x
+            panels[edu_type] = wrap_sim_output(tuple(out))
             if verbose:
-                print(f'    {edu_type}: {T} cohorts (batched)', flush=True)
+                print(f'    {edu_type}: {T} cohorts in {len(groups)} retirement '
+                      f'groups (batched)', flush=True)
             continue
         rows = None
         for j in range(T):
             surv_j = S if shared else S[j].reshape(T, config.n_h)
-            cfg_j = config._replace(
-                education_type=edu_type,
-                survival_probs=surv_j,
-                r_path=np.full(T, spec.r),
-                w_path=np.full(T, spec.w),
-            )
+            cfg_j = cohort_config(edu_type, surv_j, j)
             model = cls(cfg_j, verbose=False)
             model.solve(verbose=False)
             panel = wrap_sim_output(model.simulate(
@@ -1320,6 +1345,10 @@ def load_config(path):
                 'calibration.base_year_cohorts is set but the cohort survival '
                 'schedules are unavailable; check transition.demography_file')
 
+    cohort_J_R = cohort_lam = None
+    if cohort_survival is not None:
+        cohort_J_R, cohort_lam = base_year_cohort_retirement(raw, T)
+
     # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]
     moments = [TargetMoment(**m) for m in raw['calibration']['targets']]
@@ -1346,6 +1375,8 @@ def load_config(path):
         age_weights=age_weights,
         cohort_survival=cohort_survival,
         n_sim_cohorts=sim.get('n_sim_cohorts', 2000),
+        cohort_retirement_age=cohort_J_R,
+        cohort_pension_avg_weight=cohort_lam,
         backend=sim.get('backend', 'numpy'),
         production=production,
     )
@@ -1426,20 +1457,88 @@ def build_lifecycle_config(raw, w=None):
         kwargs['m_age_profile'] = np.array(raw['m_age_profile'])
     if raw.get('wage_age_profile') is not None:
         kwargs['wage_age_profile'] = np.array(raw['wage_age_profile'])
-    # Pension avg weight
-    paw = raw.get('pension_avg_weight')
-    if paw is not None:
-        kwargs['pension_avg_weight'] = paw
-    else:
-        ret_age = raw['model'].get('retirement_age', 40)
-        rho_init = 0.95
-        for p in raw.get('calibration', {}).get('params', []):
-            if p['name'] == 'rho_y':
-                rho_init = p['initial']
-                break
-        kwargs['pension_avg_weight'] = (1 - rho_init ** ret_age) / (ret_age * (1 - rho_init))
+    kwargs['pension_avg_weight'] = pension_avg_weight_for(
+        raw, raw['model'].get('retirement_age', 40))
 
     return LifecycleConfig(**kwargs), eq_prices
+
+
+def pension_avg_weight_for(raw, ret_age):
+    """Weight on the last income state in the career-average pension base.
+
+    The config's pension_avg_weight if set; otherwise
+    lambda = (1 - rho^J_R) / (J_R (1 - rho)), the weight that makes the
+    last-state base match the career average of an AR(1) with persistence rho
+    over J_R working years, so it depends on the retirement age.
+    """
+    paw = raw.get('pension_avg_weight')
+    if paw is not None:
+        return paw
+    rho = 0.95
+    for p in raw.get('calibration', {}).get('params', []):
+        if p['name'] == 'rho_y':
+            rho = p['initial']
+            break
+    return (1 - rho ** ret_age) / (ret_age * (1 - rho))
+
+
+def _sidecar_path(raw, key):
+    """Absolute path of transition.<key>, or None when unset or missing."""
+    rel = raw.get('transition', {}).get(key)
+    if not rel:
+        return None
+    path = rel if os.path.isabs(rel) else \
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
+    if not os.path.exists(path):
+        print(f"  [load_config] {key} not found: {path}")
+        return None
+    return path
+
+
+def cohort_retirement_table(raw):
+    """{entry_year: (J_R, pension_avg_weight)} from transition.retirement_age_file.
+
+    entry_year is the year the cohort enters at model age 0 (real age 25); J_R
+    is its first period of retirement (build_retirement_age_GR.py). None when
+    the file is not configured, in which case model.retirement_age applies to
+    every cohort.
+    """
+    path = _sidecar_path(raw, 'retirement_age_file')
+    if path is None:
+        return None
+    d = np.load(path)
+    T = raw['model']['T']
+    table = {}
+    for k, J in zip(d['entry_years'].tolist(), d['J_R'].tolist()):
+        if not 0 < J < T:
+            raise ValueError(f'retirement index {J} for entry year {k} outside 1..{T - 1}')
+        table[int(k)] = (int(J), pension_avg_weight_for(raw, int(J)))
+    base = int(raw.get('transition', {}).get('current_year', 2023))
+    J_model = raw['model'].get('retirement_age')
+    # The cohort that turns 25 + J_model in the base year retires in it; its
+    # retirement age is the base-year statutory age, which model.retirement_age
+    # must equal for the base-year moments that read base_config.retirement_age.
+    k_base = base - J_model
+    if J_model is not None and k_base in table and table[k_base][0] != J_model:
+        raise ValueError(f'model.retirement_age = {J_model} but the cohort retiring in '
+                         f'{base} retires at index {table[k_base][0]} in the table')
+    return table
+
+
+def base_year_cohort_retirement(raw, T):
+    """(J_R, pension_avg_weight) arrays, (T,) each, for the cohort aged 25+j
+    in the base year, or (None, None) without a retirement table."""
+    table = cohort_retirement_table(raw)
+    if table is None:
+        return None, None
+    base = int(raw.get('transition', {}).get('current_year', 2023))
+    years = sorted(table)
+    J, lam = [], []
+    for j in range(T):
+        k = int(np.clip(base - j, years[0], years[-1]))
+        J.append(table[k][0])
+        lam.append(table[k][1])
+    return np.array(J, dtype=int), np.array(lam, dtype=float)
 
 
 def build_olg_transition(config_data, backend='numpy'):
@@ -1506,6 +1605,7 @@ def build_olg_transition(config_data, backend='numpy'):
         current_year=trans.get('current_year', 2020),
         survival_table=survival_table,
         demography=demography,
+        cohort_retirement=cohort_retirement_table(config_data),
         education_shares=config_data.get('education_shares'),
         backend=backend,
         jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,

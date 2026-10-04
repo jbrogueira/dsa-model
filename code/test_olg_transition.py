@@ -2798,7 +2798,9 @@ class TestBaseYearCrossSection:
         spec = dataclasses.replace(L['spec'], backend='numpy', n_sim=200,
                                    base_config=b._replace(**kw),
                                    education_shares={'medium': 1.0},
-                                   cohort_survival=None)
+                                   cohort_survival=None,
+                                   cohort_retirement_age=None,
+                                   cohort_pension_avg_weight=None)
         from calibrate import theta_from_config
         theta = theta_from_config(L['config_data'], spec, verbose=False)
         return L['config_data'], spec, theta
@@ -2952,6 +2954,104 @@ class TestBaseYearCrossSection:
             assert np.array_equal(np.asarray(v), ref), f'output {k} differs ({assets})'
 
 
+    def test_batched_cross_section_with_cohort_retirement_ages(self):
+        """Cohorts retiring at different ages: the batched route, which solves
+        one retirement group per call, must equal the one-at-a-time route."""
+        import dataclasses
+        from calibrate import base_year_cross_section
+        cfg, spec, theta = self._small()
+        T, n_h = self.T, spec.base_config.n_h
+        J = np.array([11] * 3 + [10] * 4 + [9] * (T - 7))
+        lam = 0.4 + 0.01 * (J - 9)
+        spec = dataclasses.replace(spec, backend='jax',
+                                   base_config=spec.base_config._replace(n_alpha=3),
+                                   cohort_retirement_age=J,
+                                   cohort_pension_avg_weight=lam)
+        shared = np.asarray(spec.base_config.survival_probs, dtype=float).reshape(T, n_h)
+        per_cohort = np.clip(
+            shared.ravel()[None, :] - np.linspace(0.0, 0.25, T)[:, None], 0.01, 0.999)
+        one = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                      survival=per_cohort, batched=False)['medium']
+        vec = base_year_cross_section(theta, spec, cfg, n_sim=spec.n_sim,
+                                      survival=per_cohort, batched=True)['medium']
+        for f in one._fields:
+            a, b = np.asarray(getattr(one, f)), np.asarray(getattr(vec, f))
+            if np.issubdtype(a.dtype, np.floating):
+                np.testing.assert_allclose(b, a, rtol=1e-10, atol=1e-12, err_msg=f)
+            else:
+                assert np.array_equal(a, b), f'{f} differs between the routes'
+        # The retirement ages reach the solve: the cohort aged j is retired in
+        # the cross-section exactly when j >= its own J_R.
+        ret = np.asarray(one.retired_sim, bool)
+        alive = np.asarray(one.alive_sim, bool)
+        for j in range(T):
+            if j >= J[j]:
+                assert ret[j][alive[j]].all(), j
+            else:
+                assert not ret[j].any(), j
+
+
+class TestCohortRetirement:
+    """Cohort-specific retirement ages in the transition.
+
+    The JAX batched solve and simulation take the retirement age as a static
+    argument, so cohorts retiring at different ages are batched separately;
+    these tests check each cohort gets its own age and that grouping changes
+    nothing else.
+    """
+
+    T_TR = 4
+
+    def _economy(self, backend):
+        from calibrate import SimPanel  # noqa: F401  (import check)
+        cfg = get_test_config()                              # T = 20, J_R = 15
+        lam = lambda J: (1 - 0.95 ** J) / (J * (1 - 0.95))
+        # Entry years 2004..2026 (birth periods -19..3 from 2023): three ages.
+        table = {k: ((15 if k < 2012 else 16 if k < 2020 else 17),) for k in range(2004, 2027)}
+        table = {k: (v[0], lam(v[0])) for k, v in table.items()}
+        olg = OLGTransition(lifecycle_config=cfg, education_shares={'medium': 1.0},
+                            birth_year=2023, current_year=2023, backend=backend,
+                            cohort_retirement=table)
+        olg.T_transition = self.T_TR
+        olg.solve_cohort_problems(r_path=np.full(self.T_TR, 0.04),
+                                  w_path=np.full(self.T_TR, 1.0), verbose=False)
+        return olg, table
+
+    def test_each_cohort_gets_its_retirement_age(self):
+        olg, table = self._economy('numpy')
+        for bp, m in olg.birth_cohort_solutions['medium'].items():
+            J, lam = table[2023 + bp]
+            assert m.config.retirement_age == J, bp
+            assert m.config.pension_avg_weight == pytest.approx(lam), bp
+
+    def test_grouped_jax_solve_matches_each_cohort_solved_alone(self):
+        from lifecycle_jax import LifecycleModelJAX
+        olg, _ = self._economy('jax')
+        models = olg.birth_cohort_solutions['medium']
+        assert len({m.retirement_age for m in models.values()}) == 3
+        for bp, m in models.items():
+            alone = LifecycleModelJAX(m.config, verbose=False)
+            alone.solve(verbose=False)
+            assert np.array_equal(np.asarray(m.a_policy_alpha),
+                                  np.asarray(alone.a_policy_alpha)), bp
+            np.testing.assert_allclose(np.asarray(m.c_policy_alpha),
+                                       np.asarray(alone.c_policy_alpha),
+                                       rtol=1e-10, atol=1e-12, err_msg=str(bp))
+
+    def test_grouped_jax_simulation_retires_each_cohort_at_its_age(self):
+        from calibrate import SimPanel
+        olg, table = self._economy('jax')
+        panels = olg._simulate_cohorts_jax_batched(200, 7)['medium']
+        i_ret = SimPanel._fields.index('retired_sim')
+        i_alive = SimPanel._fields.index('alive_sim')
+        for bp, panel in panels.items():
+            J = table[int(np.clip(2023 + bp, 2004, 2026))][0]
+            retired = np.asarray(panel[i_ret], bool)
+            alive = np.asarray(panel[i_alive], bool)
+            assert not retired[:J].any(), bp
+            assert retired[J:][alive[J:]].all(), bp
+
+
 class TestPensionBaseAcrossBackends:
     """The pension base must be the same in both solves, with a sloped wage profile.
 
@@ -3066,7 +3166,9 @@ class TestCrossRoutineLevels:
         spec = dataclasses.replace(L['spec'], backend='numpy', n_sim=self.N_SIM,
                                    base_config=cfg,
                                    education_shares={'medium': 1.0},
-                                   cohort_survival=None)
+                                   cohort_survival=None,
+                                   cohort_retirement_age=None,
+                                   cohort_pension_avg_weight=None)
         return L['config_data'], cfg, spec
 
     def test_output_and_ratios_agree_at_the_base_year(self):
