@@ -79,7 +79,7 @@ measured cross-section, the K_g vintage (0.745 → 0.7030 at the 2023 roll-forwa
 the JAX pension base (it valued the career-average component at the retiree's
 current-age wage multiplier, not the one at retirement), and this session's
 `b_min` = 0.1671 and new `ui_over_Y` target with `ui_replacement_rate` as its
-instrument. **Not yet done: the recalibration itself, and Steps 6 and 7.**
+instrument. **The recalibration was run on 2026-10-03 (`f748f19`; README, current status). Not yet done: Steps 6 and 7.**
 
 
 Decided 2026-09-29, before any further calibration, so that the assumptions
@@ -614,6 +614,8 @@ are arithmetic, not model output. The superseded r_B = 0 run, without the popula
 factor, fell 1.95pp per year.
 
 ## Step 5 — recalibration
+
+**Done 2026-10-03** on an A100 with `SMM_EXTRA="--tol 1e-5 --method least_squares"`: Nelder–Mead stalled at objective 7.8e-4 (hours and pensions/Y both ~2% high); least squares reached 6e-7 in 30 evaluations and the scale loop converged in round 2. Six parameters, not the five listed below (`ui_replacement_rate` was added with the UI/Y target). The seeds below are superseded by the result.
 
 Run `bash run_scale_loop.sh` on the V100 instance (needs ≥32GB RAM). Each
 round warm-starts the SMM initials from `_derived.theta`, runs the SMM for

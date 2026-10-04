@@ -45,6 +45,14 @@ Baseline path: Y per capita 1.00 at t = 0, 0.81 at t ≈ 25, 0.946 terminal; pen
 
 Code changes: the JAX base-year cross-section is batched over cohorts (bit-identical, ~3× faster), and `calibrate.py --method least_squares` replaces Nelder–Mead for this calibration, which stalled at objective 7.8e-4 (see `code/CLAUDE.md`).
 
+Baseline debt ratio, from the saved primary deficit with `compute_debt_path` (no solve; debt is external and no tax responds in the baseline):
+
+| year | 2023 | 2033 | 2043 | 2048 | 2063 | 2083 | 2123 | 2163 | 2202 |
+|---|---|---|---|---|---|---|---|---|---|
+| B/Y | 1.64 | 1.88 | 2.65 | 3.28 | 5.02 | 5.97 | 7.88 | 8.74 | 10.41 |
+
+The ratio does not stabilise: the terminal primary deficit is 2.4% of Y and r_B exceeds Γ_T − 1. The calibration report (`code/reports/calibration_report.tex`, three pages) was refreshed in `710ee52`: two new figures (aggregates; government accounts and debt) from `code/reports/baseline_figures.py`, corrected parameter rows (τ_l, τ_k and J_R had been missing), a one-column growth table, and the prose rewritten.
+
 **Next:** the first fiscal run on the fixed code (`run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`, then `eval_fiscal_results.py`) on a GPU instance. It gives the debt drift, which this baseline does not: r_B = 0.019 > Γ_T − 1 = 0.017 and the terminal primary deficit is 2.4% of Y.
 
 ---
