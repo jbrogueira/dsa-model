@@ -159,6 +159,11 @@ class OLGTransition:
                  # Number of simulate_transition() calls whose per-cohort age means are
                  # kept for reuse by later calls with the same household inputs (0 = off)
                  household_cache_size=0,
+                 # JAX backend: keep the cohort policy functions on the device between
+                 # the solve and the simulation instead of copying them to the host and
+                 # back (and do not keep the value functions). Holds every cohort's
+                 # policies in device memory at once.
+                 jax_policies_on_device=False,
                  # How cohort age means are obtained from the decision rules:
                  # 'simulation' draws n_sim household histories per cohort;
                  # 'exact' carries the distribution over states forward by age
@@ -287,6 +292,7 @@ class OLGTransition:
         self.jax_sim_chunk_size = jax_sim_chunk_size
         self.sim_agent_batch_size = int(sim_agent_batch_size)
         self.household_cache_size = int(household_cache_size)
+        self.jax_policies_on_device = bool(jax_policies_on_device)
         if aggregation not in ('simulation', 'exact'):
             raise ValueError(f"aggregation must be 'simulation' or 'exact', got {aggregation!r}")
         self.aggregation = aggregation
@@ -539,17 +545,23 @@ class OLGTransition:
                           tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                           pension_paths, bequest_lumpsums, surv_paths)
 
+        # Where the results are kept: host arrays (the default; frees device
+        # memory chunk by chunk), or device arrays with jax_policies_on_device,
+        # in which case the value functions are dropped.
+        on_device = self.jax_policies_on_device
+        xp = jnp if on_device else np
+        keep = (lambda x: x) if on_device else np.asarray
+
         n_alpha = ref.n_alpha
         V_alpha_sweeps, a_alpha_sweeps, c_alpha_sweeps, l_alpha_sweeps = [], [], [], []
         for alpha_idx in range(n_alpha):
             alpha_mult_jax = float(np.exp(np.asarray(ref.alpha_grid)[alpha_idx]))
             if chunk_size >= n_cohorts:
                 V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *batched_arrays)
-                # Move everything to CPU to free GPU memory
-                V_batch = np.asarray(V_b)
-                a_pol_batch = np.asarray(a_b)
-                c_pol_batch = np.asarray(c_b)
-                l_pol_batch = np.asarray(l_b)
+                V_batch = None if on_device else np.asarray(V_b)
+                a_pol_batch = keep(a_b)
+                c_pol_batch = keep(c_b)
+                l_pol_batch = keep(l_b)
             else:
                 V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
                 for start in range(0, n_cohorts, chunk_size):
@@ -563,34 +575,32 @@ class OLGTransition:
                             for s in sliced
                         )
                     V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *sliced)
-                    # Move everything to CPU immediately to free GPU memory
-                    V_chunks.append(np.asarray(V_b[:actual]))
-                    a_chunks.append(np.asarray(a_b[:actual]))
-                    c_chunks.append(np.asarray(c_b[:actual]))
-                    l_chunks.append(np.asarray(l_b[:actual]))
-                V_batch = np.concatenate(V_chunks)
-                a_pol_batch = np.concatenate(a_chunks)
-                c_pol_batch = np.concatenate(c_chunks)
-                l_pol_batch = np.concatenate(l_chunks)
+                    if not on_device:
+                        V_chunks.append(np.asarray(V_b[:actual]))
+                    a_chunks.append(keep(a_b[:actual]))
+                    c_chunks.append(keep(c_b[:actual]))
+                    l_chunks.append(keep(l_b[:actual]))
+                V_batch = None if on_device else np.concatenate(V_chunks)
+                a_pol_batch = xp.concatenate(a_chunks)
+                c_pol_batch = xp.concatenate(c_chunks)
+                l_pol_batch = xp.concatenate(l_chunks)
             V_alpha_sweeps.append(V_batch)
             a_alpha_sweeps.append(a_pol_batch)
             c_alpha_sweeps.append(c_pol_batch)
             l_alpha_sweeps.append(l_pol_batch)
 
-        # Policy arrays are not cached on GPU — with limited VRAM, the simulation
-        # re-uploads per chunk from the CPU-resident model objects below.
-
-        # Inject results into individual model objects (CPU arrays).
+        # Inject results into individual model objects.
         # Per-alpha policies on a leading (n_alpha, T, ...) axis; scalar
         # attributes alias alpha=0, matching LifecycleModelJAX.solve and
         # LifecycleModelPerfectForesight.solve conventions.
         for ci, b in enumerate(birth_periods):
             model = models_dict[b]
-            model.V_alpha = np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0)
-            model.a_policy_alpha = np.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
-            model.c_policy_alpha = np.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
-            model.l_policy_alpha = np.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
-            model.V = model.V_alpha[0]
+            model.V_alpha = (None if on_device
+                             else np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0))
+            model.a_policy_alpha = xp.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
+            model.c_policy_alpha = xp.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
+            model.l_policy_alpha = xp.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
+            model.V = None if on_device else model.V_alpha[0]
             model.a_policy = model.a_policy_alpha[0]
             model.c_policy = model.c_policy_alpha[0]
             model.l_policy = model.l_policy_alpha[0]
@@ -667,15 +677,19 @@ class OLGTransition:
             # simulation to avoid holding all cohorts' policies on GPU at once.
             # If a_policy_alpha is missing (older code path), wrap the 5-D scalar
             # policy on a singleton leading axis to keep the shape uniform.
+            on_device = self.jax_policies_on_device
+
             def _as_alpha_indexed(m, attr_alpha, attr_scalar):
                 arr = getattr(m, attr_alpha, None)
                 if arr is None:
                     arr = getattr(m, attr_scalar)[None, ...]
-                return np.asarray(arr)
+                return arr if on_device else np.asarray(arr)
 
-            a_policies = np.stack([_as_alpha_indexed(m, 'a_policy_alpha', 'a_policy') for m in model_list])
-            c_policies = np.stack([_as_alpha_indexed(m, 'c_policy_alpha', 'c_policy') for m in model_list])
-            l_policies = np.stack([_as_alpha_indexed(m, 'l_policy_alpha', 'l_policy') for m in model_list])
+            def _policy_stack(cohorts, attr_alpha, attr_scalar):
+                """Policies of the cohorts of one chunk, stacked where they live."""
+                arrs = [_as_alpha_indexed(model_list[ci], attr_alpha, attr_scalar)
+                        for ci in cohorts]
+                return jnp.stack(arrs) if on_device else np.stack(arrs)
             w_paths = jnp.stack([m.w_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
             r_paths = jnp.stack([m.r_path for m in model_list])
@@ -795,7 +809,6 @@ class OLGTransition:
 
             # Per-cohort arrays indexed along axis 0 — group them for easy slicing.
             per_cohort_arrs = (
-                a_policies, c_policies, l_policies,
                 w_paths, w_at_rets,
                 tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                 r_paths, pension_paths,
@@ -820,13 +833,16 @@ class OLGTransition:
                 for start in range(0, len(gidx), g_chunk):
                     sel = gidx[start:start + g_chunk]
                     chunk_actual = len(sel)
-                    idx = jnp.array(sel + [sel[-1]] * (g_chunk - chunk_actual))
+                    padded = sel + [sel[-1]] * (g_chunk - chunk_actual)
+                    idx = jnp.array(padded)
 
                     def s(arr):
                         return arr[idx]
 
-                    (ca_pol, cc_pol, cl_pol,
-                     cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
+                    ca_pol = _policy_stack(padded, 'a_policy_alpha', 'a_policy')
+                    cc_pol = _policy_stack(padded, 'c_policy_alpha', 'c_policy')
+                    cl_pol = _policy_stack(padded, 'l_policy_alpha', 'l_policy')
+                    (cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                      ckeys,
                      ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
                      calpha_idx, calpha_mult, csurv, cbeq) = (s(a) for a in per_cohort_arrs)
@@ -1560,11 +1576,17 @@ class OLGTransition:
                         jax_arr  = getattr(jax_m, attr, None)
                         if base_arr is None or jax_arr is None:
                             continue
-                        arr = np.asarray(jax_arr).copy()
-                        if attr.endswith('_alpha'):
-                            arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                        if self.jax_policies_on_device:
+                            import jax.numpy as jnp
+                            ages = ((slice(None), slice(None, pre)) if attr.endswith('_alpha')
+                                    else (slice(None, pre),))
+                            arr = jnp.asarray(jax_arr).at[ages].set(jnp.asarray(base_arr)[ages])
                         else:
-                            arr[:pre] = np.asarray(base_arr)[:pre]
+                            arr = np.asarray(jax_arr).copy()
+                            if attr.endswith('_alpha'):
+                                arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                            else:
+                                arr[:pre] = np.asarray(base_arr)[:pre]
                         setattr(jax_m, attr, arr)
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions

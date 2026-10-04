@@ -3731,5 +3731,48 @@ class TestExactCalibrationMoments:
             assert abs(_quantile(x, q, counts) - _quantile(expanded, q)) < 0.01 * _quantile(expanded, q)
 
 
+class TestPoliciesOnDevice:
+    """OLGTransition(jax_policies_on_device=True) keeps the cohort policy
+    functions as device arrays between the solve and the simulation. Results
+    are those of the default route, which copies them to the host and back."""
+
+    @staticmethod
+    def _results(on_device, aggregation):
+        from fiscal_experiments import FiscalScenario, run_fiscal_scenario
+        olg = OLGTransition(lifecycle_config=TestExactAggregation._cfg(),
+                            education_shares={'medium': 1.0}, backend='jax',
+                            aggregation=aggregation, jax_policies_on_device=on_device,
+                            jax_sim_chunk_size=4, pop_growth=0.0,
+                            economy_type='soe', r_star=0.04, alpha=0.33, delta=0.05, A=1.0)
+        T_tr = 5
+        bp = dict(r_path=np.full(T_tr, 0.04), tau_l_path=np.full(T_tr, 0.15),
+                  tau_c_path=np.full(T_tr, 0.1), tau_p_path=np.full(T_tr, 0.2),
+                  tau_k_path=np.full(T_tr, 0.1), pension_replacement_path=np.full(T_tr, 0.4))
+        # A tax change from t = 2 on: pre-transition ages are stitched from the baseline.
+        scn = FiscalScenario(name='taul', financing='debt',
+                             delta_tau_l_path=np.r_[0.0, 0.0, np.full(T_tr - 2, 0.05)])
+        res = run_fiscal_scenario(olg, scn, bp, n_sim=300, verbose=False)
+        return olg, res
+
+    @pytest.mark.parametrize('aggregation', ['simulation', 'exact'])
+    def test_same_results_as_the_host_route(self, aggregation):
+        import jax
+        olg_h, res_h = self._results(False, aggregation)
+        olg_d, res_d = self._results(True, aggregation)
+        for key in ('Y', 'A', 'C', 'L'):
+            assert np.array_equal(np.asarray(res_h.cf_macro[key]), np.asarray(res_d.cf_macro[key])), key
+            assert np.array_equal(np.asarray(res_h.base_macro[key]), np.asarray(res_d.base_macro[key])), key
+        for key in ('primary_deficit', 'tax_l', 'transfers'):
+            assert np.array_equal(np.asarray(res_h.cf_budget[key]), np.asarray(res_d.cf_budget[key])), key
+        assert res_d.cf_macro['A'][0] == res_d.base_macro['A'][0]
+        assert not np.array_equal(np.asarray(res_d.cf_macro['A']), np.asarray(res_d.base_macro['A']))
+        model_h = olg_h.birth_cohort_solutions['medium'][-3]
+        model_d = olg_d.birth_cohort_solutions['medium'][-3]
+        assert isinstance(model_d.a_policy_alpha, jax.Array) and model_d.V is None
+        assert isinstance(model_h.a_policy_alpha, np.ndarray) and model_h.V is not None
+        assert np.array_equal(np.asarray(model_d.a_policy_alpha), model_h.a_policy_alpha)
+        assert np.array_equal(np.asarray(model_d.c_policy_alpha), model_h.c_policy_alpha)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

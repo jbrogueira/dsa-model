@@ -1921,7 +1921,7 @@ class LifecycleModelJAX:
         simulate_lifecycle_jax. With n_alpha=1, alpha_idx is all zero,
         alpha_mult is all one, and behavior matches pre-Phase-8 exactly.
         """
-        if self.V is None:
+        if self.a_policy_alpha is None:
             raise RuntimeError("Must call solve() before simulate().")
         if (float(self.transfer_floor) > 0.0
                 and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
@@ -1985,7 +1985,7 @@ class LifecycleModelJAX:
         LifecycleModelPerfectForesight.exact_age_means(): (T_sim, 23), column i
         the mean of element i of the simulate() panel. See exact_age_means_jax.
         """
-        if self.V is None:
+        if self.a_policy_alpha is None:
             raise RuntimeError("Must call solve() before exact_age_means().")
         if (float(self.transfer_floor) > 0.0
                 and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
@@ -2035,7 +2035,7 @@ class LifecycleModelJAX:
         mass is the mass of households on each state at that age. A column with
         zero mass is a state nobody is in. See exact_age_means_jax.
         """
-        if self.V is None:
+        if self.a_policy_alpha is None:
             raise RuntimeError("Must call solve() before exact_panel().")
         T_sim = self.T - self.current_age
         rows = np.arange(T_sim) if rows is None else np.asarray(rows, dtype=int)
