@@ -1205,6 +1205,7 @@ def exact_age_means_jax(
     transfer_floor=0.0,
     bequest_lumpsum=0.0,
     return_dist=False,
+    panel_rows=None,
 ):
     """
     Per-age population means of the panel variables, without simulation.
@@ -1226,6 +1227,14 @@ def exact_age_means_jax(
     depends on the household's history, not on its state. With return_dist
     also returns the mass at the start of each age,
     (T_sim, n_alpha, n_a, n_y, n_h, n_y).
+
+    With panel_rows, an integer array (R,) of age indices, returns
+    (means, panel, mass): panel is (R, 23, n_states), the value of each panel
+    element at every state of the grid at those ages (booleans and indices as
+    floats), and mass is (R, n_states), the mass on each state. Together they
+    are a cross-section in which a state stands for a household and its mass
+    is the household's weight; the bequest element is its expected value,
+    (1 - survival) * (1+g) * a'.
     """
     T_sim = T - current_age
     n_alpha = a_policy.shape[0]
@@ -1264,8 +1273,9 @@ def exact_age_means_jax(
                                    K.ravel(), alpha_mult.ravel())
         return {name: x.reshape(K.shape) for name, x in flat.items()}
 
-    def step(mu, t):
-        age = current_age + t
+    def columns_at(age):
+        """The 23 panel elements at every state (None where not a function of
+        the state), with the decision rule and survival used to move the mass."""
         s = outcomes_at(age)
         surv = survival[age][H]
         # Accidental bequest of those who die at this age: the wealth carried
@@ -1279,11 +1289,18 @@ def exact_age_means_jax(
             None,                                               # avg_earnings
             s['pension'], s['is_retired'],
             jnp.where(s['employed'], s['l_pol_val'], 0.0),      # hours supplied
-            jnp.ones_like(mu),                                  # alive
+            jnp.ones(K.shape),                                  # alive
             bequest,
             None,                                               # alpha index
             s['transfer'],
         )
+        return s, surv, columns
+
+    keep_dist = return_dist or panel_rows is not None
+
+    def step(mu, t):
+        age = current_age + t
+        s, surv, columns = columns_at(age)
         means = jnp.stack([
             jnp.sum(mu * x) if x is not None
             else (jnp.nan if i == 15 else mean_alpha_idx)
@@ -1301,10 +1318,25 @@ def exact_age_means_jax(
         retired = jnp.zeros_like(mu).at[:, :, 0, :, :].set(
             jnp.einsum('kayhl,hg->kagl', moved, P_h_age))
         mu_next = jnp.where(age >= retirement_age, retired, working)
-        return mu_next, ((means, mu) if return_dist else means)
+        return mu_next, ((means, mu) if keep_dist else means)
 
     _, out = lax.scan(step, initial_dist, jnp.arange(T_sim))
-    return out
+    if panel_rows is None:
+        return out
+
+    means, dists = out
+
+    def panel_row(r):
+        _, _, columns = columns_at(current_age + r)
+        return jnp.stack([
+            jnp.asarray(x, dtype=jnp.float64).reshape(-1) if x is not None
+            else (jnp.full(K.size, jnp.nan) if i == 15
+                  else K.reshape(-1).astype(jnp.float64))
+            for i, x in enumerate(columns)])
+
+    panel = jax.vmap(panel_row)(panel_rows)
+    mass = dists[panel_rows].reshape(panel_rows.shape[0], -1)
+    return means, panel, mass
 
 
 _EXACT_STATIC = ('retirement_age', 'T', 'current_age', 'tax_progressive',
@@ -1337,6 +1369,117 @@ _EXACT_IN_AXES = (
 _exact_age_means_jax_batched = jax.jit(
     jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES),
     static_argnames=_EXACT_STATIC,
+)
+
+
+# Integer and boolean elements of the panel; exact_age_means_jax returns every
+# element as a float.
+_PANEL_INT_FIELDS = (4, 21)
+_PANEL_BOOL_FIELDS = (6, 17, 19)
+
+
+def _exact_panel_to_numpy(panel, mass):
+    """(R, 23, n_states) panel and (R, n_states) mass -> the 23-tuple layout of
+    simulate(), each element (R, n_states), and the mass."""
+    panel = np.asarray(panel)
+    fields = []
+    for i in range(panel.shape[1]):
+        x = panel[:, i]
+        if i in _PANEL_INT_FIELDS:
+            x = np.rint(x).astype(np.int32)
+        elif i in _PANEL_BOOL_FIELDS:
+            x = x > 0.5
+        fields.append(x)
+    return tuple(fields), np.asarray(mass)
+
+
+def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
+                         a_grid, y_grid, h_grid, m_grid, P_y_2d, P_h, P_y_4d,
+                         w_at_retirement, paths,
+                         ui_replacement_rate, kappa, beta, gamma,
+                         pension_min_floor, tax_kappa_hsv, tax_eta,
+                         transfer_floor, education_subsidy_rate,
+                         child_cost_profile, nu, phi, trend_growth,
+                         wage_age_profile, pension_avg_weight,
+                         mean_kappa_working, mean_y_employed, bequest_lumpsum,
+                         T, retirement_age, current_age, tax_progressive,
+                         schooling_years, labor_supply, P_y_age_health, n_alpha, chunk):
+    """Body of LifecycleModelJAX.cross_section_exact, compiled as one call.
+
+    Solves every cohort once per fixed-effect node, as _cross_section does,
+    then carries each cohort's distribution over states forward and keeps the
+    state-level panel row rows[c] of cohort c with the mass on each state.
+    """
+    C = surv.shape[0]
+    bc = lambda x: jnp.broadcast_to(x, (C,) + jnp.shape(x))
+    r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c = (bc(x) for x in paths)
+    w_ret_c = bc(jnp.asarray(w_at_retirement, dtype=jnp.float64))
+
+    solve = jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES)
+
+    def solve_node(alpha_mult):
+        _, a_b, c_b, l_b = solve(
+            a_grid, y_grid, h_grid, m_grid, P_y_2d, P_h,
+            w_ret_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
+            ui_replacement_rate, kappa, beta, gamma,
+            T, retirement_age,
+            pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
+            transfer_floor, education_subsidy_rate,
+            child_cost_profile, schooling_years,
+            surv, P_y_4d,
+            labor_supply, nu, phi, trend_growth,
+            jnp.zeros(C),
+            wage_age_profile,
+            pension_avg_weight, mean_kappa_working, mean_y_employed,
+            alpha_mult,
+        )
+        return a_b, c_b, l_b
+
+    nodes = [solve_node(alpha_mults[k]) for k in range(n_alpha)]
+    a_pol, c_pol, l_pol = (jnp.stack([nd[f] for nd in nodes], axis=1) for f in range(3))
+
+    exact = jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES + (0,))
+    beq_c = jnp.full(chunk, bequest_lumpsum)
+    panels, masses = [], []
+    for start in range(0, C, chunk):
+        stop = min(start + chunk, C)
+        # Pad the last chunk to the chunk length by repeating its last cohort.
+        idx = np.concatenate([np.arange(start, stop),
+                              np.full(chunk - (stop - start), stop - 1)])
+        take = lambda x: x[idx]
+        _, panel, mass = exact(
+            take(a_pol), take(c_pol), take(l_pol),
+            a_grid, y_grid, h_grid, m_grid,
+            P_y_2d, P_h,
+            take(w_c), take(w_ret_c),
+            take(tc_c), take(tl_c), take(tp_c), take(tk_c),
+            take(r_c), take(pen_c),
+            ui_replacement_rate, kappa,
+            retirement_age, T, current_age,
+            initial_dist, alpha_grid,
+            pension_min_floor, tax_progressive,
+            tax_kappa_hsv, tax_eta,
+            P_y_age_health, P_y_4d,
+            take(surv),
+            wage_age_profile,
+            pension_avg_weight, mean_kappa_working, mean_y_employed,
+            trend_growth,
+            transfer_floor,
+            beq_c,
+            False,
+            take(rows)[:, None],
+        )
+        n = stop - start
+        panels.append(panel[:n, 0])
+        masses.append(mass[:n, 0])
+    return jnp.concatenate(panels), jnp.concatenate(masses)
+
+
+_cross_section_exact_jit = jax.jit(
+    _cross_section_exact,
+    static_argnames=('T', 'retirement_age', 'current_age', 'tax_progressive',
+                     'schooling_years', 'labor_supply', 'P_y_age_health',
+                     'n_alpha', 'chunk'),
 )
 
 
@@ -1883,6 +2026,95 @@ class LifecycleModelJAX:
         if return_dist:
             return np.asarray(out[0]), np.asarray(out[1])
         return np.asarray(out)
+
+    def exact_panel(self, rows=None):
+        """State-level cross-sections at the ages in *rows* (default: all).
+
+        Returns (panel, mass): panel is the 23-tuple layout of simulate() with
+        one column per state of the grid, each element (len(rows), n_states);
+        mass is the mass of households on each state at that age. A column with
+        zero mass is a state nobody is in. See exact_age_means_jax.
+        """
+        if self.V is None:
+            raise RuntimeError("Must call solve() before exact_panel().")
+        T_sim = self.T - self.current_age
+        rows = np.arange(T_sim) if rows is None else np.asarray(rows, dtype=int)
+        _, panel, mass = _exact_age_means_jax_jit(
+            jnp.array(self.a_policy_alpha), jnp.array(self.c_policy_alpha),
+            jnp.array(self.l_policy_alpha),
+            self.a_grid, self.y_grid, self.h_grid, self.m_grid,
+            self.P_y_2d, self.P_h,
+            self.w_path, self.w_at_retirement,
+            self.tau_c_path, self.tau_l_path, self.tau_p_path, self.tau_k_path,
+            self.r_path, self.pension_replacement_path,
+            self.ui_replacement_rate, self.kappa,
+            self.retirement_age, self.T, self.current_age,
+            jnp.array(self._np_model._initial_distribution()), self.alpha_grid,
+            pension_min_floor=self.pension_min_floor,
+            tax_progressive=self.tax_progressive,
+            tax_kappa_hsv=self.tax_kappa_hsv,
+            tax_eta=self.tax_eta,
+            P_y_age_health=self.P_y_age_health,
+            P_y_4d=self.P_y_4d if self.P_y_age_health else None,
+            survival_probs=self.survival_probs,
+            wage_age_profile=self.wage_age_profile,
+            pension_avg_weight=self.pension_avg_weight,
+            mean_kappa_working=self.mean_kappa_working,
+            mean_y_employed=self.mean_y_employed,
+            trend_growth=self.trend_growth,
+            transfer_floor=float(self.transfer_floor),
+            bequest_lumpsum=float(self.bequest_lumpsum),
+            panel_rows=jnp.asarray(rows),
+        )
+        return _exact_panel_to_numpy(panel, mass)
+
+    def cross_section_exact(self, survival_stack, rows=None, chunk_size=None):
+        """One state-level panel row per cohort, for cohorts that differ only
+        in survival: the exact counterpart of cross_section_batched().
+
+        Cohort c solves this model's lifecycle problem under survival_stack[c]
+        and contributes its cross-section over states at age index rows[c]
+        (default rows[c] = c). Returns (panel, mass) as exact_panel() does,
+        each element (C, n_states).
+        """
+        surv = jnp.asarray(survival_stack, dtype=jnp.float64)
+        C = surv.shape[0]
+        rows = np.arange(C) if rows is None else np.asarray(rows, dtype=int)
+        if rows.shape != (C,) or rows.min() < 0 or rows.max() >= self.T - self.current_age:
+            raise ValueError(f'rows {rows} do not index the panel\'s '
+                             f'{self.T - self.current_age} rows for {C} cohorts')
+        if (float(self.transfer_floor) > 0.0
+                and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
+            raise NotImplementedError(
+                "the recorded transfer replicates the solve's budget without "
+                "child costs; a positive transfer_floor with schooling_years > 0 "
+                "would record the wrong transfer")
+        chunk = C if chunk_size is None else max(1, min(int(chunk_size), C))
+        alpha_mults = np.exp(np.asarray(self.alpha_grid))
+        panel, mass = _cross_section_exact_jit(
+            surv, jnp.asarray(alpha_mults), jnp.asarray(rows),
+            jnp.array(self._np_model._initial_distribution()), self.alpha_grid,
+            self.a_grid, self.y_grid, self.h_grid, self.m_grid,
+            self.P_y_2d, self.P_h, self.P_y_4d if self.P_y_age_health else None,
+            self.w_at_retirement,
+            (self.r_path, self.w_path, self.tau_c_path, self.tau_l_path,
+             self.tau_p_path, self.tau_k_path, self.pension_replacement_path),
+            self.ui_replacement_rate, self.kappa, self.beta, self.gamma,
+            self.pension_min_floor, self.tax_kappa_hsv, self.tax_eta,
+            self.transfer_floor, self.education_subsidy_rate,
+            self.child_cost_profile, self.nu, self.phi, self.trend_growth,
+            self.wage_age_profile, self.pension_avg_weight,
+            self.mean_kappa_working, self.mean_y_employed,
+            float(self.bequest_lumpsum),
+            T=int(self.T), retirement_age=int(self.retirement_age),
+            current_age=int(self.current_age),
+            tax_progressive=bool(self.tax_progressive),
+            schooling_years=int(self.schooling_years),
+            labor_supply=bool(self.labor_supply),
+            P_y_age_health=bool(self.P_y_age_health),
+            n_alpha=int(self.n_alpha), chunk=chunk,
+        )
+        return _exact_panel_to_numpy(panel, mass)
 
     def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None,
                               rows=None):

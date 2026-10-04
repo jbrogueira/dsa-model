@@ -3633,5 +3633,103 @@ class TestExactAggregation:
                           aggregation='quadrature')
 
 
+class TestExactCalibrationMoments:
+    """Calibration moments from exact cross-sections (aggregation='exact'): a
+    column of the panel is a state of the grid, weighted by its mass."""
+
+    T = TestBaseYearCrossSection.T
+
+    def _spec(self, backend='jax', aggregation='exact', n_alpha=3):
+        import dataclasses
+        cfg, spec, theta = TestBaseYearCrossSection()._small()
+        # a_max = 8: asset nodes where this small economy's households are, so
+        # that the wealth moments are not degenerate.
+        spec = dataclasses.replace(spec, backend=backend, aggregation=aggregation,
+                                   base_config=spec.base_config._replace(n_alpha=n_alpha,
+                                                                         a_max=8.0))
+        return cfg, spec, theta
+
+    def _per_cohort_survival(self, spec):
+        n_h = spec.base_config.n_h
+        shared = np.asarray(spec.base_config.survival_probs, dtype=float).reshape(self.T, n_h)
+        return np.clip(shared.ravel()[None, :] - np.linspace(0.0, 0.25, self.T)[:, None],
+                       0.01, 0.999)
+
+    def test_cross_section_routes_agree(self):
+        """Batched JAX, one-at-a-time JAX and one-at-a-time NumPy give the same
+        states, values and masses."""
+        from calibrate import base_year_cross_section
+        cfg, spec, theta = self._spec()
+        S = self._per_cohort_survival(spec)
+        vec = base_year_cross_section(theta, spec, cfg, survival=S, batched=True)['medium']
+        one = base_year_cross_section(theta, spec, cfg, survival=S, batched=False)['medium']
+        import dataclasses
+        ref = base_year_cross_section(theta, dataclasses.replace(spec, backend='numpy'),
+                                      cfg, survival=S)['medium']
+        assert vec.weight_sim is not None and vec.a_sim.shape == vec.weight_sim.shape
+        np.testing.assert_allclose(vec.weight_sim.sum(axis=1)[0], 1.0, atol=1e-12)
+        assert np.all(np.diff(vec.weight_sim.sum(axis=1)) < 0)           # mortality
+        alive = np.asarray(vec.alive_sim, bool)
+        for other, skip in ((one, ()), (ref, ('y_sim',))):
+            np.testing.assert_allclose(other.weight_sim, vec.weight_sim, rtol=0, atol=1e-13)
+            assert np.array_equal(np.asarray(other.alive_sim, bool), alive)
+            for f in vec._fields:
+                if f in skip or f in ('avg_earnings_sim', 'weight_sim', 'alive_sim'):
+                    continue
+                a = np.asarray(getattr(vec, f), dtype=float)[alive]
+                b = np.asarray(getattr(other, f), dtype=float)[alive]
+                np.testing.assert_allclose(b, a, rtol=1e-10, atol=1e-12, err_msg=f)
+
+    def test_moments_are_what_simulated_moments_converge_to(self):
+        """Every moment of the dispatch table, single-solve route: the exact
+        value against simulations of increasing size."""
+        import dataclasses
+        from calibrate import run_model_moments, MOMENT_DISPATCH, TargetMoment
+        cfg, spec, theta = self._spec()
+        keys = [k for k in MOMENT_DISPATCH]
+        spec = dataclasses.replace(
+            spec, moments=[TargetMoment(name=k, value=1.0, compute_key=k) for k in keys])
+        exact = run_model_moments(theta, spec)
+        gaps = []
+        for n in (2_000, 200_000):
+            sim = run_model_moments(theta, dataclasses.replace(
+                spec, aggregation='simulation', n_sim=n))
+            gaps.append(np.abs(sim - exact) / np.maximum(np.abs(exact), 1e-8))
+        assert np.all(np.isfinite(exact))
+        moments = dict(zip(keys, exact))
+        assert moments['wealth_gini'] > 0.1 and 0.0 < moments['zero_wealth_fraction'] < 1.0
+        # At 200,000 households every moment is within 2% of its exact value
+        # (the slope of the earnings variance is near zero, hence the absolute
+        # term), and closer than at 2,000.
+        assert np.all(gaps[1] < 0.02 + 5e-5 / np.maximum(np.abs(exact), 1e-8)), \
+            dict(zip(keys, np.round(gaps[1], 4)))
+        assert np.median(gaps[1]) <= np.median(gaps[0]) + 1e-12
+
+    def test_moments_do_not_depend_on_seed_or_sample_size(self):
+        import dataclasses
+        from calibrate import run_model_moments
+        cfg, spec, theta = self._spec()
+        S = self._per_cohort_survival(spec)
+        spec = dataclasses.replace(spec, cohort_survival=S)
+        a = run_model_moments(theta, spec)
+        b = run_model_moments(theta, dataclasses.replace(spec, seed=spec.seed + 99,
+                                                         n_sim=17, n_sim_cohorts=17))
+        assert np.array_equal(a, b)
+        c = run_model_moments(theta, dataclasses.replace(spec, backend='numpy'))
+        np.testing.assert_allclose(c, a, rtol=1e-9, atol=1e-12)
+
+    def test_weighted_quantile(self):
+        from calibrate import _quantile
+        rng = np.random.default_rng(1)
+        x = rng.lognormal(size=4000)
+        for q in (0.1, 0.5, 0.9):
+            assert abs(_quantile(x, q, np.ones_like(x)) - _quantile(x, q)) < 0.01 * _quantile(x, q)
+        # A value carrying k times the mass counts as k copies.
+        counts = rng.integers(1, 5, size=x.size)
+        expanded = np.repeat(x, counts)
+        for q in (0.1, 0.5, 0.9):
+            assert abs(_quantile(x, q, counts) - _quantile(expanded, q)) < 0.01 * _quantile(expanded, q)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

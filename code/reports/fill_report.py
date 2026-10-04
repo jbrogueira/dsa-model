@@ -291,15 +291,24 @@ def implied_stats(panels, spec, cfg):
             if not np.any(a_t):
                 continue
             wt = sh * aw[t]
+            # Mean among the alive: weighted by the state masses when the panel
+            # is an exact cross-section (calibrate.exact_panel_to_simpanel).
+            w_t = None if panel.weight_sim is None else panel.weight_sim[t, a_t]
+
+            def mean(x):
+                if w_t is None:
+                    return float(np.mean(x))
+                return float(np.sum(w_t * x) / np.sum(w_t))
+
             # gross wage income excludes UI, which effective_y_sim includes
             wage = panel.effective_y_sim[t, a_t] - panel.ui_sim[t, a_t]
-            tot['wage']  += wt * float(np.mean(wage))
-            tot['tax_p'] += wt * float(np.mean(panel.tax_p_sim[t, a_t]))
+            tot['wage']  += wt * mean(wage)
+            tot['tax_p'] += wt * mean(panel.tax_p_sim[t, a_t])
             if t == J_R:                    # first period of retirement
-                tot['pension_new'] += sh * float(np.mean(panel.pension_sim[t, a_t]))
+                tot['pension_new'] += sh * mean(panel.pension_sim[t, a_t])
                 tot['w_new'] += sh
             if t == J_R - 1:                # last working period
-                tot['wage_pre'] += sh * float(np.mean(wage))
+                tot['wage_pre'] += sh * mean(wage)
                 tot['w_pre'] += sh
     fr = compute_fiscal_ratios(panels, spec, cfg)
     Y = None if 'error' in fr else float(fr['Y'])
