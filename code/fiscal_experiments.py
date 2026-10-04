@@ -6,8 +6,8 @@ Computes budget-balanced (or debt-financed) transition paths under exogenous
 policy shocks.  Three experiment types:
 
   Type A — Debt-financed    : one simulate_transition() call; B_path is the residual.
-  Type B — Tax/transfer-financed : bisect on a scalar Δτ until the chosen balance
-             condition is satisfied (~10–15 simulate calls).
+  Type B — Tax/transfer-financed : root-find on a scalar Δτ until the chosen balance
+             condition is satisfied, starting from Δτ = 0.
   Type C — NFA/CA-constrained : outer NFA/CA feasibility check + inner bisection
              on shock scale (Mode I) or tax rate (Mode II).
 
@@ -807,7 +807,9 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
                      tol: float = 1e-4,
                      max_iter: int = 40,
                      Delta_lo: float = -0.5,
-                     Delta_hi: float = 0.5) -> FiscalScenarioResult:
+                     Delta_hi: float = 0.5,
+                     Delta_init: float = 0.0,
+                     Delta_step: float = 0.02) -> FiscalScenarioResult:
     """Tax/transfer-financed experiment via scalar bisection.
 
     Finds the scalar Δ such that:
@@ -820,7 +822,13 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
     Parameters
     ----------
     Delta_lo, Delta_hi : float
-        Initial bisection bracket.  Expanded geometrically if needed.
+        Bounds of the search.  They are the bracket only if stepping from
+        Delta_init finds no sign change inside them; Delta_hi is then expanded
+        geometrically if needed.
+    Delta_init : float
+        First Δ evaluated.  0 is the debt-financed path of the same shock.
+    Delta_step : float
+        Size of the first step away from Delta_init.
     """
 
     T_base  = len(np.asarray(base_paths['r_path'], dtype=float))  # original unextended T
@@ -897,24 +905,74 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
 
     else:
         # Bisection for 'terminal_debt_gdp' and 'pv_balance'
-        # ── Verify / expand bracket ──────────────────────────────────────────
-        res_lo, _, _, _ = _simulate_and_residual_cached(Delta_lo)
-        residual_history.append(res_lo)
-        res_hi, _, _, _ = _simulate_and_residual_cached(Delta_hi)
-        residual_history.append(res_hi)
+        converged  = False
+        cf_budget = B_path = Y_path = None
 
-        # Expand hi until we have opposite signs
-        _expand = 0
-        while np.sign(res_lo) == np.sign(res_hi) and _expand < 10:
-            Delta_hi *= 2.0
+        # ── Bracket the root from Delta_init ─────────────────────────────────
+        # Evaluate at Delta_init, step by Delta_step in the direction that
+        # lowers the residual (a higher tax or lower spending when it is
+        # positive), then extrapolate by the secant until two evaluations have
+        # residuals of opposite sign. Each extrapolation is at most four times
+        # the previous step and stays inside [Delta_lo, Delta_hi].
+        raises_deficit = scenario.financing in ('pension_replacement', 'transfer_floor')
+        D_a = float(np.clip(Delta_init, Delta_lo, Delta_hi))
+        res_a, last_budget, last_B, last_Y = _simulate_and_residual_cached(D_a)
+        residual_history.append(res_a)
+        D_b, res_b = D_a, res_a
+        if abs(res_a) < tol:
+            Delta_star = D_a
+            cf_budget, B_path, Y_path = last_budget, last_B, last_Y
+            converged = True
+        else:
+            direction = (1.0 if res_a > 0 else -1.0) * (-1.0 if raises_deficit else 1.0)
+            D_b = float(np.clip(D_a + direction * abs(Delta_step), Delta_lo, Delta_hi))
+            if D_b == D_a:
+                D_b = float(np.clip(D_a - direction * abs(Delta_step), Delta_lo, Delta_hi))
+            for _ in range(8):
+                res_b, last_budget, last_B, last_Y = _simulate_and_residual_cached(D_b)
+                residual_history.append(res_b)
+                if abs(res_b) < tol:
+                    Delta_star = D_b
+                    cf_budget, B_path, Y_path = last_budget, last_B, last_Y
+                    converged = True
+                    break
+                if np.sign(res_b) != np.sign(res_a):
+                    break
+                step = D_b - D_a
+                if res_b != res_a:
+                    move = float(np.clip(-res_b * step / (res_b - res_a),
+                                         -4.0 * abs(step), 4.0 * abs(step)))
+                else:
+                    move = 2.0 * step
+                D_new = float(np.clip(D_b + move, Delta_lo, Delta_hi))
+                if D_new == D_b:
+                    break
+                D_a, res_a = D_b, res_b
+                D_b = D_new
+
+        if not converged and np.sign(res_a) != np.sign(res_b):
+            if D_a < D_b:
+                Delta_lo, res_lo, Delta_hi, res_hi = D_a, res_a, D_b, res_b
+            else:
+                Delta_lo, res_lo, Delta_hi, res_hi = D_b, res_b, D_a, res_a
+        elif not converged:
+            # No sign change found from Delta_init: bracket with the bounds.
+            res_lo, _, _, _ = _simulate_and_residual_cached(Delta_lo)
+            residual_history.append(res_lo)
             res_hi, _, _, _ = _simulate_and_residual_cached(Delta_hi)
             residual_history.append(res_hi)
-            _expand += 1
 
-        converged  = False
+            # Expand hi until we have opposite signs
+            _expand = 0
+            while np.sign(res_lo) == np.sign(res_hi) and _expand < 10:
+                Delta_hi *= 2.0
+                res_hi, _, _, _ = _simulate_and_residual_cached(Delta_hi)
+                residual_history.append(res_hi)
+                _expand += 1
+
         n_iters    = len(residual_history)
-        Delta_star = Delta_lo  # fallback
-        cf_budget = B_path = Y_path = None
+        if not converged:
+            Delta_star = Delta_lo  # fallback
 
         # Illinois (modified regula falsi): keep the verified opposite-sign
         # bracket but step via secant interpolation instead of the midpoint,
@@ -923,8 +981,11 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         # prevent the classic regula-falsi stall. Falls back to the bisection
         # midpoint when the secant step would leave the bracket (e.g. a
         # non-bracketing interval after a failed expansion).
+        # Without a sign change the interval can shrink onto a point that is
+        # not a root; only a bracketing interval narrower than tol counts.
+        bracketed = (not converged) and np.sign(res_lo) != np.sign(res_hi)
         _side = 0
-        for _ in range(max_iter):
+        for _ in range(0 if converged else max_iter):
             denom = res_hi - res_lo
             if denom != 0.0:
                 Delta_mid = (Delta_lo * res_hi - Delta_hi * res_lo) / denom
@@ -936,10 +997,14 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
             res_mid, last_budget, last_B, last_Y = _simulate_and_residual_cached(Delta_mid)
             residual_history.append(res_mid)
             n_iters += 1
-            if abs(res_mid) < tol or (Delta_hi - Delta_lo) < tol:
+            if abs(res_mid) < tol or (bracketed and (Delta_hi - Delta_lo) < tol):
                 Delta_star = Delta_mid
                 cf_budget, B_path, Y_path = last_budget, last_B, last_Y
                 converged  = True
+                break
+            if not bracketed and (Delta_hi - Delta_lo) < tol:
+                Delta_star = Delta_mid
+                cf_budget, B_path, Y_path = last_budget, last_B, last_Y
                 break
             if np.sign(res_mid) == np.sign(res_lo):
                 Delta_lo, res_lo = Delta_mid, res_mid
@@ -1291,7 +1356,9 @@ def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
 def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
                         n_sim: int = 500, verbose: bool = False,
                         bisect_tol: float = 1e-4,
-                        bisect_max_iter: int = 40) -> FiscalScenarioResult:
+                        bisect_max_iter: int = 40,
+                        bisect_init: float = 0.0,
+                        bisect_step: float = 0.02) -> FiscalScenarioResult:
     """Run a fiscal scenario against a baseline.
 
     Parameters
@@ -1309,11 +1376,14 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
         olg.I_g_path values are used.
         Optionally contains 'base_macro' and 'base_budget' (pre-computed output
         of simulate_transition and compute_government_budget_path).  If absent,
-        the baseline simulation is run once here.
+        the baseline simulation is run once here.  Pass the dict returned by
+        run_baseline() to share one baseline run across scenarios.
     n_sim : int
         Number of Monte Carlo agents.
     verbose : bool
     bisect_tol, bisect_max_iter : convergence settings for tax-financed runs.
+    bisect_init, bisect_step : first Δ evaluated by a tax-financed run and the
+        size of its first step (see run_tax_financed).
 
     Returns
     -------
@@ -1356,6 +1426,7 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
         return run_tax_financed(olg, scenario, base_paths,
                                 base_macro, base_budget,
                                 tol=bisect_tol, max_iter=bisect_max_iter,
+                                Delta_init=bisect_init, Delta_step=bisect_step,
                                 **kwargs)
 
 

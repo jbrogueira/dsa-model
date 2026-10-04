@@ -632,3 +632,195 @@ class TestOutputUtilities:
                                  shock_variable='govt_spending',
                                  output_variable='Y')
         assert len(mult) == T_TRANSITION
+
+
+# ---------------------------------------------------------------------------
+# Shared baseline, household-results cache, search from Delta = 0
+# ---------------------------------------------------------------------------
+
+def _count_solves(olg):
+    """Wrap olg.solve_cohort_problems to count its calls."""
+    calls = []
+    inner = olg.solve_cohort_problems
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return inner(*args, **kwargs)
+
+    olg.solve_cohort_problems = counted
+    return calls
+
+
+def _same_result(a, b):
+    for key in ('Y', 'C', 'L', 'K'):
+        assert np.array_equal(np.asarray(a.cf_macro[key]), np.asarray(b.cf_macro[key])), key
+        assert np.array_equal(np.asarray(a.base_macro[key]), np.asarray(b.base_macro[key])), key
+    for key in ('primary_deficit', 'total_revenue', 'total_spending'):
+        assert np.array_equal(np.asarray(a.cf_budget[key]), np.asarray(b.cf_budget[key])), key
+        assert np.array_equal(np.asarray(a.base_budget[key]), np.asarray(b.base_budget[key])), key
+    assert np.array_equal(a.B_path, b.B_path)
+    assert a.adjustment_scalar == b.adjustment_scalar
+
+
+class TestSharedBaseline:
+    """run_baseline(): one baseline run shared by several scenarios."""
+
+    def _scenarios(self):
+        return (FiscalScenario(name='base', financing='debt', n_post=2),
+                FiscalScenario(name='g_debt', financing='debt', n_post=2,
+                               delta_G_path=np.full(T_TRANSITION, 0.02)))
+
+    def test_results_equal_those_with_a_baseline_per_scenario(self):
+        from fiscal_experiments import run_baseline
+        bp = _make_base_paths(tau_p=0.1)
+        olg_a, olg_b = _make_olg(), _make_olg()
+        calls_a, calls_b = _count_solves(olg_a), _count_solves(olg_b)
+        shared = run_baseline(olg_b, bp, n_post=2, n_sim=N_SIM)
+        for scn in self._scenarios():
+            res_a = run_fiscal_scenario(olg_a, scn, bp, n_sim=N_SIM, verbose=False)
+            res_b = run_fiscal_scenario(olg_b, scn, shared, n_sim=N_SIM, verbose=False)
+            _same_result(res_a, res_b)
+        # Per scenario: baseline + counterfactual. Shared: one baseline in all.
+        assert len(calls_a) == 4 and len(calls_b) == 3
+
+    def test_a_baseline_under_other_settings_is_not_reused(self):
+        from fiscal_experiments import run_baseline
+        bp = _make_base_paths()
+        olg = _make_olg()
+        shared = run_baseline(olg, bp, n_post=0, n_sim=N_SIM)
+        calls = _count_solves(olg)
+        scn = FiscalScenario(name='base', financing='debt', n_post=2)
+        res = run_fiscal_scenario(olg, scn, shared, n_sim=N_SIM, verbose=False)
+        assert len(calls) == 2                       # its own baseline, then the scenario
+        assert len(res.base_macro['Y']) == T_TRANSITION + 2
+
+    def test_output_at_t0_does_not_depend_on_the_horizon(self):
+        """Y(0) of a T-period run equals Y(0) of the same run extended by
+        frozen terminal paths, so it can be read off the experiments' baseline."""
+        bp = _make_base_paths(tau_p=0.1)
+        kw = {k: v for k, v in bp.items() if k != 'r_path'}
+        short = _make_olg().simulate_transition(r_path=bp['r_path'], n_sim=N_SIM, verbose=False, **kw)
+        ext = {k: np.concatenate([v, np.full(3, v[-1])]) for k, v in bp.items()}
+        kw = {k: v for k, v in ext.items() if k != 'r_path'}
+        long = _make_olg().simulate_transition(r_path=ext['r_path'], n_sim=N_SIM, verbose=False, **kw)
+        assert np.array_equal(np.asarray(short['Y']), np.asarray(long['Y'])[:T_TRANSITION])
+
+
+class TestHouseholdCache:
+    """OLGTransition(household_cache_size=...): calls with the same household
+    inputs reuse the cohort age means of the first."""
+
+    def _olg(self, size):
+        olg = _make_olg()
+        olg.household_cache_size = size
+        return olg
+
+    def test_cached_results_equal_uncached_results(self):
+        bp = _make_base_paths(tau_p=0.1)
+        G = np.full(T_TRANSITION, 0.02)
+        scenarios = (
+            FiscalScenario(name='base', financing='debt'),
+            FiscalScenario(name='g_debt', financing='debt', delta_G_path=G),
+            FiscalScenario(name='g_taul', financing='tau_l', delta_G_path=G,
+                           balance_condition='terminal_debt_gdp', target_debt_gdp=0.0),
+        )
+        plain, cached = self._olg(0), self._olg(8)
+        calls_plain, calls_cached = _count_solves(plain), _count_solves(cached)
+        for scn in scenarios:
+            res_p = run_fiscal_scenario(plain, scn, bp, n_sim=N_SIM, verbose=False, bisect_tol=1e-3)
+            res_c = run_fiscal_scenario(cached, scn, bp, n_sim=N_SIM, verbose=False, bisect_tol=1e-3)
+            _same_result(res_p, res_c)
+            assert res_p.residual_history == res_c.residual_history
+        assert plain._household_cache_hits == 0
+        # The repeated baselines, the G shock under debt financing (households
+        # face the baseline paths) and the first step of the tax search
+        # (Delta = 0) are served from the cache.
+        assert cached._household_cache_hits >= 4
+        assert len(calls_cached) == len(calls_plain) - cached._household_cache_hits
+
+    def test_household_inputs_decide_the_key(self):
+        bp = _make_base_paths()
+        kw = {k: v for k, v in bp.items() if k != 'r_path'}
+        olg = self._olg(4)
+        calls = _count_solves(olg)
+        run = lambda **over: olg.simulate_transition(
+            r_path=bp['r_path'], verbose=False, **dict(dict(kw, n_sim=N_SIM), **over))
+        first = run()
+        again = run(govt_spending_path=np.full(T_TRANSITION, 0.3))    # not a household input
+        assert len(calls) == 1 and olg._household_cache_hits == 1
+        assert np.array_equal(np.asarray(first['Y']), np.asarray(again['Y']))
+        assert olg.birth_cohort_solutions is None
+        run(tau_l_path=bp['tau_l_path'] + 0.01)
+        run(n_sim=N_SIM + 1)
+        run(transfer_floor=0.05)
+        assert len(calls) == 4 and olg._household_cache_hits == 1
+
+    def test_cache_is_bounded(self):
+        bp = _make_base_paths()
+        kw = {k: v for k, v in bp.items() if k != 'r_path'}
+        olg = self._olg(2)
+        for d in (0.0, 0.01, 0.02, 0.03):
+            olg.simulate_transition(r_path=bp['r_path'], n_sim=N_SIM, verbose=False,
+                                    **dict(kw, tau_l_path=bp['tau_l_path'] + d))
+        assert len(olg._household_cache) == 2
+
+
+class TestSearchFromDeltaInit:
+    """The tax search starts at Delta_init and brackets the root from there."""
+
+    def _scenario(self, target, **kw):
+        return FiscalScenario(name='taul', financing='tau_l',
+                              balance_condition='terminal_debt_gdp',
+                              target_debt_gdp=target, **kw)
+
+    def test_no_shock_and_the_baseline_target_need_one_evaluation(self):
+        olg, bp = _make_olg(), _make_base_paths(tau_p=0.1)
+        base = run_fiscal_scenario(olg, FiscalScenario(name='base', financing='debt'), bp,
+                                   n_sim=N_SIM, verbose=False)
+        T = T_TRANSITION
+        target = float(base.B_path[T - 1] / base.cf_macro['Y'][T - 1])
+        res = run_fiscal_scenario(olg, self._scenario(target), bp, n_sim=N_SIM,
+                                  verbose=False, bisect_tol=1e-6)
+        assert res.converged and res.n_iterations == 1 and res.adjustment_scalar == 0.0
+
+    def test_root_does_not_depend_on_the_starting_point(self):
+        bp = _make_base_paths(tau_p=0.1)
+        scn = self._scenario(0.0, delta_G_path=np.full(T_TRANSITION, 0.02))
+        roots = []
+        for init, step in ((0.0, 0.02), (0.0, 0.1), (0.2, 0.02), (-0.3, 0.05)):
+            res = run_fiscal_scenario(_make_olg(), scn, bp, n_sim=N_SIM, verbose=False,
+                                      bisect_tol=1e-4, bisect_init=init, bisect_step=step)
+            assert res.converged
+            assert res.residual_history[0] != res.residual_history[-1] or res.n_iterations == 1
+            roots.append(res.adjustment_scalar)
+        assert np.ptp(roots) < 5e-3, roots
+
+    def test_bounds_are_the_fallback_bracket(self):
+        """With bounds that exclude the root, stepping from Delta_init finds no
+        sign change and the search brackets with the bounds. The upper bound is
+        expanded, so a root above it is found; a root below the lower bound is
+        reported as not converged."""
+        from fiscal_experiments import run_baseline, run_tax_financed
+        bp = _make_base_paths(tau_p=0.1)
+
+        def solve(target, lo, hi):
+            olg = _make_olg()
+            shared = run_baseline(olg, bp, n_sim=N_SIM)
+            return run_tax_financed(olg, self._scenario(target), shared, shared['base_macro'],
+                                    shared['base_budget'], n_sim=N_SIM, tol=1e-4,
+                                    Delta_lo=lo, Delta_hi=hi)
+
+        base = run_fiscal_scenario(_make_olg(), FiscalScenario(name='base', financing='debt'),
+                                   bp, n_sim=N_SIM, verbose=False)
+        T = T_TRANSITION
+        base_ratio = float(base.B_path[T - 1] / base.cf_macro['Y'][T - 1])
+        for shift in (-0.05, 0.05):          # a lower target needs a higher tax, and conversely
+            wide = solve(base_ratio + shift, -0.5, 0.5)
+            assert wide.converged and abs(wide.adjustment_scalar) > 2e-3
+            assert np.sign(wide.adjustment_scalar) == -np.sign(shift)
+            narrow = solve(base_ratio + shift, -1e-3, 1e-3)
+            if wide.adjustment_scalar > 0:
+                assert narrow.converged
+                assert abs(narrow.adjustment_scalar - wide.adjustment_scalar) < 5e-3
+            else:
+                assert not narrow.converged

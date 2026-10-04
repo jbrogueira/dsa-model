@@ -3434,5 +3434,204 @@ class TestHoursSolve:
         assert np.all(l[:, cfg.retirement_age:] == 1.0) and np.all(l[:, :, :, 0] == 1.0)
 
 
+class TestIdenticalCohortsSolvedOnce:
+    """The batched JAX solve solves one cohort per distinct set of inputs and
+    the others share its policy functions."""
+
+    T_TR = 6
+
+    def _economy(self, tau_l_path=None):
+        cfg = get_test_config()                                  # T = 20
+        olg = OLGTransition(lifecycle_config=cfg, education_shares={'medium': 1.0},
+                            backend='jax')
+        n = self.T_TR + cfg.T
+        olg.T_transition = self.T_TR
+        olg.solve_cohort_problems(r_path=np.full(n, 0.04), w_path=np.full(n, 1.0),
+                                  tau_l_path=tau_l_path, verbose=False)
+        return olg
+
+    @staticmethod
+    def _assert_each_cohort_matches_its_own_solve(olg):
+        from lifecycle_jax import LifecycleModelJAX
+        for bp, m in olg.birth_cohort_solutions['medium'].items():
+            alone = LifecycleModelJAX(m.config, verbose=False)
+            alone.solve(verbose=False)
+            assert np.array_equal(np.asarray(m.a_policy_alpha),
+                                  np.asarray(alone.a_policy_alpha)), bp
+            np.testing.assert_allclose(np.asarray(m.c_policy_alpha),
+                                       np.asarray(alone.c_policy_alpha),
+                                       rtol=1e-10, atol=1e-12, err_msg=str(bp))
+
+    def test_constant_paths_need_one_solve(self):
+        olg = self._economy()
+        n_cohorts = self.T_TR + get_test_config().T - 1
+        assert olg._cohort_solve_counts == [1, n_cohorts]
+        models = list(olg.birth_cohort_solutions['medium'].values())
+        assert len(models) == n_cohorts
+        assert all(m.a_policy_alpha is models[0].a_policy_alpha for m in models)
+        self._assert_each_cohort_matches_its_own_solve(olg)
+
+    def test_a_tax_change_separates_the_cohorts_that_live_through_it(self):
+        T = get_test_config().T
+        tau_l = np.full(self.T_TR + T, 0.15)
+        tau_l[3:] = 0.25                                          # from t = 3 on
+        olg = self._economy(tau_l_path=tau_l)
+        distinct, total = olg._cohort_solve_counts
+        # Cohorts born from t = 3 on face 0.25 throughout and are one problem,
+        # as are those that die before t = 3; the T - 1 cohorts in between each
+        # face the change at another age.
+        assert total == self.T_TR + T - 1
+        assert distinct == (T - 1) + 2
+        self._assert_each_cohort_matches_its_own_solve(olg)
+
+
+class TestExactAggregation:
+    """Age means from the distribution over states carried forward by age
+    (exact_age_means, OLGTransition(aggregation='exact')) instead of from
+    simulated household histories."""
+
+    T = 12
+    # Panel columns compared across backends: all but y_sim (the NumPy panel
+    # records 0 for the retired, the JAX panel the last drawn state) and
+    # avg_earnings_sim (history-dependent, NaN in the exact means).
+    COLS = [i for i in range(23) if i not in (2, 15)]
+
+    @classmethod
+    def _cfg(cls, **kw):
+        T = cls.T
+        base = dict(T=T, n_a=40, n_y=3, n_h=1, n_alpha=2, retirement_age=8, labor_supply=True,
+                    nu=12.0, phi=1.5, gamma=1.0, trend_growth=0.017, beta=0.97,
+                    survival_probs=np.linspace(0.97, 0.80, T).reshape(T, 1),
+                    transfer_floor=0.08, pension_min_floor=0.05, education_type='medium')
+        base.update(kw)
+        cfg = LifecycleConfig(**base)
+        ep = dict(cfg.edu_params); ep['medium'] = dict(ep['medium'], sigma_alpha=0.3)
+        return cfg._replace(edu_params=ep)
+
+    @classmethod
+    def _solved(cls, **kw):
+        from lifecycle_jax import LifecycleModelJAX
+        cfg = cls._cfg(**kw)
+        m = LifecycleModelPerfectForesight(cfg, verbose=False); m.solve(verbose=False)
+        mj = LifecycleModelJAX(cfg, verbose=False); mj.solve(verbose=False)
+        return cfg, m, mj
+
+    @pytest.mark.parametrize('kw', [{}, {'tax_progressive': True}, {'initial_assets': 0.5},
+                                    {'transfer_floor': 0.0, 'survival_probs': None}])
+    def test_backends_agree(self, kw):
+        """Two separately written implementations give the same means and the
+        same distribution."""
+        cfg, m, mj = self._solved(**kw)
+        means_np, dist_np = m.exact_age_means(return_dist=True)
+        means_jx, dist_jx = mj.exact_age_means(return_dist=True)
+        np.testing.assert_allclose(means_jx[:, self.COLS], means_np[:, self.COLS],
+                                   rtol=0, atol=1e-12)
+        assert np.isnan(means_np[:, 15]).all() and np.isnan(means_jx[:, 15]).all()
+        # y differs between the panels only from the first retired age on.
+        np.testing.assert_allclose(means_jx[:cfg.retirement_age, 2],
+                                   means_np[:cfg.retirement_age, 2], rtol=0, atol=1e-12)
+        np.testing.assert_allclose(dist_jx[:cfg.retirement_age + 1],
+                                   dist_np[:cfg.retirement_age + 1], rtol=0, atol=1e-14)
+        # Mass alive at each age is cumulative survival.
+        alive = dist_np.sum(axis=(1, 2, 3, 4, 5))
+        if cfg.survival_probs is None:
+            np.testing.assert_allclose(alive, 1.0, rtol=0, atol=1e-12)
+        else:
+            surv = np.asarray(cfg.survival_probs)[:, 0]
+            np.testing.assert_allclose(alive, np.r_[1.0, np.cumprod(surv)[:-1]], rtol=0, atol=1e-12)
+            np.testing.assert_allclose(means_np[:, 19], alive, rtol=0, atol=1e-12)
+
+    def test_simulated_means_converge_to_the_exact_means(self):
+        """Each simulated column mean is within sampling error of its exact
+        counterpart, on both backends (independent draws)."""
+        cfg, m, mj = self._solved()
+        exact = mj.exact_age_means()
+        for model, n in ((mj, 200_000), (m, 4_000)):
+            panel = [np.asarray(x, dtype=float) for x in model.simulate(n_sim=n, seed=5)]
+            if model is m:
+                # The NumPy panel leaves l_sim at its initial 1 for the dead;
+                # the means count the dead as zero, as the JAX panel does.
+                panel[18] = panel[18] * panel[19]
+            for i in self.COLS:
+                mean = panel[i].mean(axis=1)
+                se = panel[i].std(axis=1) / np.sqrt(n)
+                gap = np.abs(mean - exact[:, i])
+                assert np.all(gap <= 5.0 * se + 1e-9), (type(model).__name__, i, gap.max())
+
+    def test_initial_distribution(self):
+        """It is the population counterpart of the simulation's initial draws."""
+        sample = np.array([0.0, 0.0, 0.4, 1.3, 1.3, 1.3, 7.0, 2.2])
+        cfg, m, mj = self._solved(initial_asset_distribution=sample, n_alpha=3)
+        mu = m._initial_distribution()
+        assert mu.shape == (3, cfg.n_a, cfg.n_y, cfg.n_h, cfg.n_y)
+        assert abs(mu.sum() - 1.0) < 1e-12
+        # y_last = y and h = 0 at entry
+        off_diagonal = mu.copy()
+        for i_y in range(cfg.n_y):
+            off_diagonal[:, :, i_y, :, i_y] = 0.0
+        assert off_diagonal.max() == 0.0
+        np.testing.assert_allclose(mu.sum(axis=(1, 2, 3, 4)), m.alpha_probs, atol=1e-12)
+        nodes = [int(np.argmin(np.abs(m.a_grid - v))) for v in sample]
+        p_a = np.bincount(nodes, minlength=cfg.n_a) / len(sample)
+        np.testing.assert_allclose(mu.sum(axis=(0, 2, 3, 4)), p_a, atol=1e-12)
+        # Mean assets at entry in both implementations
+        expected = float(np.dot(p_a, m.a_grid))
+        assert abs(m.exact_age_means()[0, 0] - expected) < 1e-12
+        assert abs(mj.exact_age_means()[0, 0] - expected) < 1e-12
+
+    def _economy(self, backend, aggregation, **kw):
+        return OLGTransition(lifecycle_config=self._cfg(**kw), education_shares={'medium': 1.0},
+                             backend=backend, aggregation=aggregation, pop_growth=0.0,
+                             economy_type='soe', r_star=0.04, alpha=0.33, delta=0.05, A=1.0)
+
+    def _run(self, backend, aggregation, n_sim, **kw):
+        olg = self._economy(backend, aggregation, **kw)
+        T_tr = 3
+        res = olg.simulate_transition(np.full(T_tr, 0.04), n_sim=n_sim, verbose=False,
+                                      tau_p_path=np.full(T_tr, 0.2),
+                                      tau_l_path=np.array([0.10, 0.15, 0.15]))
+        bud = olg.compute_government_budget_path(n_sim=n_sim, verbose=False)
+        return olg, res, bud
+
+    def test_transition_aggregates(self):
+        """With aggregation='exact' the transition does not depend on n_sim, is
+        the same on both backends, and is what the simulated transition
+        converges to."""
+        _, res_a, bud_a = self._run('jax', 'exact', n_sim=7)
+        _, res_b, bud_b = self._run('jax', 'exact', n_sim=5000)
+        _, res_n, bud_n = self._run('numpy', 'exact', n_sim=7)
+        olg_s, res_s, bud_s = self._run('jax', 'simulation', n_sim=60_000)
+        for key in ('Y', 'K', 'C', 'L', 'NFA'):
+            assert np.array_equal(np.asarray(res_a[key]), np.asarray(res_b[key])), key
+            np.testing.assert_allclose(res_n[key], res_a[key], rtol=1e-10, atol=1e-12, err_msg=key)
+            np.testing.assert_allclose(res_s[key], res_a[key], rtol=2e-2, atol=2e-3, err_msg=key)
+        for key in ('primary_deficit', 'total_revenue', 'total_spending', 'transfers', 'pension'):
+            np.testing.assert_allclose(bud_n[key], bud_a[key], rtol=1e-10, atol=1e-12, err_msg=key)
+            np.testing.assert_allclose(bud_s[key], bud_a[key], rtol=2e-2, atol=2e-3, err_msg=key)
+        # w*L is the wage bill in the exact aggregates too.
+        wL = np.asarray(res_a['w']) * np.asarray(res_a['L'])
+        np.testing.assert_allclose(wL, np.asarray(bud_a['tax_p']) / 0.2, rtol=1e-10, atol=0)
+
+    def test_fiscal_scenario_runs_on_exact_aggregates(self):
+        """The tax search on exact aggregates: assets at t = 0 are predetermined
+        and the search converges."""
+        from fiscal_experiments import FiscalScenario, run_fiscal_scenario
+        olg = self._economy('jax', 'exact')
+        T_tr = 4
+        bp = dict(r_path=np.full(T_tr, 0.04), tau_l_path=np.full(T_tr, 0.15),
+                  tau_c_path=np.full(T_tr, 0.1), tau_p_path=np.full(T_tr, 0.2),
+                  tau_k_path=np.full(T_tr, 0.1), pension_replacement_path=np.full(T_tr, 0.4))
+        scn = FiscalScenario(name='taul', financing='tau_l', delta_G_path=np.full(T_tr, 0.02),
+                             balance_condition='terminal_debt_gdp', target_debt_gdp=0.0)
+        res = run_fiscal_scenario(olg, scn, bp, n_sim=10, verbose=False, bisect_tol=1e-6)
+        assert res.converged
+        assert res.cf_macro['A'][0] == res.base_macro['A'][0]
+
+    def test_unknown_aggregation_is_refused(self):
+        with pytest.raises(ValueError):
+            OLGTransition(lifecycle_config=self._cfg(), education_shares={'medium': 1.0},
+                          aggregation='quadrature')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
