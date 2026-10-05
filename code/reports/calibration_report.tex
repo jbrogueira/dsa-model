@@ -56,7 +56,12 @@ the debt stock, averaged over 2012--24. $b_{min}$ is the Greek national pension,
 25--84: \EUR{224.7}bn of GDP (Eurostat) over 7{,}559{,}564 people, or
 \EUR{29{,}722} each. The pension amount comes from the legislation and the
 2024 Ageing Report country fiche, since Eurostat reports only aggregate pension
-spending.
+spending. The statutory retirement age is 67 in 2023. Under Law 4336/2015 it
+moves one for one with life expectancy at 65, reviewed every three years; the
+model applies the reviews from 2024, with life expectancy the mean of men and
+women in the EUROPOP2023 baseline projection. Each cohort retires at the
+statutory age in force when it reaches it, rounded to a whole year: cohorts
+entering in 2023 retire at 72, and those entering from 2050 on at 74.
 
 \vspace{0.1cm}
 \begin{table}[!htbp]\centering\footnotesize
@@ -73,7 +78,7 @@ not listed because they are set in the calibration. The untargeted rows
 compare income inequality. Eurostat measures equivalised \emph{household}
 disposable income; the model has individuals, not households, and its figure
 is individual income net of income tax and contributions. Taxes lower the
-model Gini from 0.397 to 0.377 and the p90/p10 ratio from 5.78 to 5.04.
+model Gini from 0.385 to 0.373 and the p90/p10 ratio from 5.26 to 4.74.
 Pooling income within households and equivalisation would lower both further,
 so the model figures are upper bounds on the comparable statistics.}
 \end{table}
@@ -86,8 +91,10 @@ so the model figures are upper bounds on the comparable statistics.}
 \noindent\footnotesize
 $\tau^p$ and $\rho^{pens}$ also have direct counterparts in the data. They
 differ because the model applies $\tau^p$ to the whole wage bill, with no
-contribution ceiling, and $\rho^{pens}$ to career-average earnings rather than
-the final wage.
+contribution ceiling, and $\rho^{pens}$ to career-average earnings capacity
+rather than the final wage. That base excludes hours worked, so with average
+hours of 0.31 in the last working year the first pension exceeds the final
+wage.
 
 \section*{Demographics}
 \vspace{-0.1cm}
@@ -104,11 +111,10 @@ the growth of entering cohorts falls to zero by 2120. The age distribution is
 constant from 2179 on.
 
 Since the 2023 population is not stationary, the economy is in transition
-even without any policy change. With tax rates fixed, ageing does not change
-any household's decisions: the return is set abroad and the wage follows from
-it. It changes only the aggregates and the government budget. Households
-respond once a tax adjusts to finance the budget, as in the tax-financed
-experiments.
+even without any policy change. Prices do not move: the return is set abroad
+and the wage follows from it. Ageing changes household decisions only through
+the retirement age, which is higher for later cohorts. Households also respond
+once a tax adjusts to finance the budget, as in the tax-financed experiments.
 
 \begin{table}[htbp]\centering\footnotesize
 \caption{Age structure}\vspace{-3pt}
@@ -130,7 +136,9 @@ world return fixes $K^{dom}/L$ and public capital per capita is constant.
 $I_t=\Gamma_t K^{dom}_{t+1}-(1-\delta)K^{dom}_t$, shown as a 5-year centred
 moving average because, as the change in a stock about 15 times larger, it
 carries about 20 times the stock's simulation noise. Household wealth is
-$A=K^{dom}+NFA$. All movement comes from the change in the age structure.}
+$A=K^{dom}+NFA$. All movement comes from the age structure and the rising
+retirement age; the steps fall in the years when successive cohorts' retirement
+age rises by one year.}
 \end{figure}
 
 \begin{figure}[htbp]\centering
@@ -142,9 +150,10 @@ as shares of output. Tax rates, $G/Y$, defence$/Y$ and $O/Y$ are fixed;
 pensions, health spending and the tax bases move with the age structure. The
 primary deficit excludes interest. Debt follows
 $B_{t+1}=[(1+r_B)B_t+PD_t]/\Gamma_t$ from its 2023 ratio. Since it is held
-abroad and no tax responds, it does not affect households. With
-$r_B>\Gamma_T-1$ and a primary deficit in the long run, the debt ratio does
-not stabilise.}
+abroad and no tax responds, it does not affect households. The debt ratio
+peaks at 3.3 in 2065 and then falls: as the retirement age rises, pensions
+fall to 11\% of output and the primary balance turns to a surplus of 5.4\% of
+output.}
 \end{figure}
 
 \begin{table}[htbp]\centering\footnotesize
@@ -158,6 +167,6 @@ $\frac{1}{T-t_0}\sum_{t\ge t_0}\log(\hat x_{t+1}/\hat x_t)$, from
 $t_0=2179$, when the age distribution becomes constant, to the end of the
 horizon. With correct detrending each series is flat, so the entries should be
 zero. A series left in levels would show $\Gamma_T-1$ (1.7\%), and one left
-in per-capita terms $g$ (also 1.7\%). The largest in absolute value is 0.010\%.
+in per-capita terms $g$ (also 1.7\%). The largest in absolute value is 0.011\%.
 
 \end{document}
