@@ -1,5 +1,8 @@
 import sys
 import time
+import hashlib
+import pickle
+from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 from lifecycle_perfect_foresight import LifecycleModelPerfectForesight, LifecycleConfig
@@ -152,7 +155,20 @@ class OLGTransition:
                  # JAX simulation chunk size (None = all cohorts at once; set e.g. 10 to avoid GPU OOM)
                  jax_sim_chunk_size=None,
                  # Agent simulation batch size: agents simulated at once per cohort (controls RAM)
-                 sim_agent_batch_size=10_000):
+                 sim_agent_batch_size=10_000,
+                 # Number of simulate_transition() calls whose per-cohort age means are
+                 # kept for reuse by later calls with the same household inputs (0 = off)
+                 household_cache_size=0,
+                 # JAX backend: keep the cohort policy functions on the device between
+                 # the solve and the simulation instead of copying them to the host and
+                 # back (and do not keep the value functions). Holds every cohort's
+                 # policies in device memory at once.
+                 jax_policies_on_device=False,
+                 # How cohort age means are obtained from the decision rules:
+                 # 'simulation' draws n_sim household histories per cohort;
+                 # 'exact' carries the distribution over states forward by age
+                 # (no draws; n_sim and the seeds then play no role)
+                 aggregation='simulation'):
         
         # Use provided config or create default
         if lifecycle_config is None:
@@ -275,6 +291,15 @@ class OLGTransition:
         self._lifecycle_model_class = _get_lifecycle_model_class(backend)
         self.jax_sim_chunk_size = jax_sim_chunk_size
         self.sim_agent_batch_size = int(sim_agent_batch_size)
+        self.household_cache_size = int(household_cache_size)
+        self.jax_policies_on_device = bool(jax_policies_on_device)
+        if aggregation not in ('simulation', 'exact'):
+            raise ValueError(f"aggregation must be 'simulation' or 'exact', got {aggregation!r}")
+        self.aggregation = aggregation
+        self._household_cache = OrderedDict()
+        self._household_cache_hits = 0
+        # [distinct cohort problems solved, cohort problems] by the batched JAX solve
+        self._cohort_solve_counts = [0, 0]
 
         # Population aging parameters (Feature #21)
         if fertility_path is not None:
@@ -445,10 +470,23 @@ class OLGTransition:
         import jax.numpy as jnp
         from lifecycle_jax import _solve_lifecycle_jax_batched
 
+        # Cohorts with identical inputs have identical solutions: solve one of
+        # each and let the others share its arrays. With constant prices and
+        # policies, cohorts differ only in their survival schedule, which is
+        # the same for every cohort entering after the mortality projection ends.
+        group_birth_periods = birth_periods
+        solved_as, first_with = {}, {}
+        for b in group_birth_periods:
+            solved_as[b] = first_with.setdefault(self._solve_inputs_key(models_dict[b]), b)
+        birth_periods = [b for b in group_birth_periods if solved_as[b] == b]
+        self._cohort_solve_counts[0] += len(birth_periods)
+        self._cohort_solve_counts[1] += len(group_birth_periods)
+
         model_list = [models_dict[b] for b in birth_periods]
 
         if verbose:
-            print(f"  JAX batched solve: {edu_type} ({len(model_list)} cohorts)")
+            print(f"  JAX batched solve: {edu_type} ({len(group_birth_periods)} cohorts, "
+                  f"{len(model_list)} distinct)")
 
         ref = model_list[0]
 
@@ -507,17 +545,23 @@ class OLGTransition:
                           tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                           pension_paths, bequest_lumpsums, surv_paths)
 
+        # Where the results are kept: host arrays (the default; frees device
+        # memory chunk by chunk), or device arrays with jax_policies_on_device,
+        # in which case the value functions are dropped.
+        on_device = self.jax_policies_on_device
+        xp = jnp if on_device else np
+        keep = (lambda x: x) if on_device else np.asarray
+
         n_alpha = ref.n_alpha
         V_alpha_sweeps, a_alpha_sweeps, c_alpha_sweeps, l_alpha_sweeps = [], [], [], []
         for alpha_idx in range(n_alpha):
             alpha_mult_jax = float(np.exp(np.asarray(ref.alpha_grid)[alpha_idx]))
             if chunk_size >= n_cohorts:
                 V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *batched_arrays)
-                # Move everything to CPU to free GPU memory
-                V_batch = np.asarray(V_b)
-                a_pol_batch = np.asarray(a_b)
-                c_pol_batch = np.asarray(c_b)
-                l_pol_batch = np.asarray(l_b)
+                V_batch = None if on_device else np.asarray(V_b)
+                a_pol_batch = keep(a_b)
+                c_pol_batch = keep(c_b)
+                l_pol_batch = keep(l_b)
             else:
                 V_chunks, a_chunks, c_chunks, l_chunks = [], [], [], []
                 for start in range(0, n_cohorts, chunk_size):
@@ -531,40 +575,67 @@ class OLGTransition:
                             for s in sliced
                         )
                     V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *sliced)
-                    # Move everything to CPU immediately to free GPU memory
-                    V_chunks.append(np.asarray(V_b[:actual]))
-                    a_chunks.append(np.asarray(a_b[:actual]))
-                    c_chunks.append(np.asarray(c_b[:actual]))
-                    l_chunks.append(np.asarray(l_b[:actual]))
-                V_batch = np.concatenate(V_chunks)
-                a_pol_batch = np.concatenate(a_chunks)
-                c_pol_batch = np.concatenate(c_chunks)
-                l_pol_batch = np.concatenate(l_chunks)
+                    if not on_device:
+                        V_chunks.append(np.asarray(V_b[:actual]))
+                    a_chunks.append(keep(a_b[:actual]))
+                    c_chunks.append(keep(c_b[:actual]))
+                    l_chunks.append(keep(l_b[:actual]))
+                V_batch = None if on_device else np.concatenate(V_chunks)
+                a_pol_batch = xp.concatenate(a_chunks)
+                c_pol_batch = xp.concatenate(c_chunks)
+                l_pol_batch = xp.concatenate(l_chunks)
             V_alpha_sweeps.append(V_batch)
             a_alpha_sweeps.append(a_pol_batch)
             c_alpha_sweeps.append(c_pol_batch)
             l_alpha_sweeps.append(l_pol_batch)
 
-        # Policy arrays are not cached on GPU — with limited VRAM, the simulation
-        # re-uploads per chunk from the CPU-resident model objects below.
-
-        # Inject results into individual model objects (CPU arrays).
+        # Inject results into individual model objects.
         # Per-alpha policies on a leading (n_alpha, T, ...) axis; scalar
         # attributes alias alpha=0, matching LifecycleModelJAX.solve and
         # LifecycleModelPerfectForesight.solve conventions.
         for ci, b in enumerate(birth_periods):
             model = models_dict[b]
-            model.V_alpha = np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0)
-            model.a_policy_alpha = np.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
-            model.c_policy_alpha = np.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
-            model.l_policy_alpha = np.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
-            model.V = model.V_alpha[0]
+            model.V_alpha = (None if on_device
+                             else np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0))
+            model.a_policy_alpha = xp.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
+            model.c_policy_alpha = xp.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
+            model.l_policy_alpha = xp.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
+            model.V = None if on_device else model.V_alpha[0]
             model.a_policy = model.a_policy_alpha[0]
             model.c_policy = model.c_policy_alpha[0]
             model.l_policy = model.l_policy_alpha[0]
 
-    def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False):
-        """Batched simulation of all cohorts in one vmapped XLA call per education type."""
+        # Cohorts not solved themselves take the arrays of their duplicate.
+        # (The MIT stitching copies an array before writing into it.)
+        for b in group_birth_periods:
+            if solved_as[b] != b:
+                solved, model = models_dict[solved_as[b]], models_dict[b]
+                for attr in ('V_alpha', 'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha',
+                             'V', 'a_policy', 'c_policy', 'l_policy'):
+                    setattr(model, attr, getattr(solved, attr))
+
+    @staticmethod
+    def _solve_inputs_key(model):
+        """Bytes of the per-cohort inputs to the batched solve (the paths along
+        the cohort's diagonal, the wage at retirement, the bequest receipt and
+        the survival schedule). Everything else is shared within a group."""
+        surv = getattr(model, 'survival_probs', None)
+        parts = (model.r_path, model.w_path, model.tau_c_path, model.tau_l_path,
+                 model.tau_p_path, model.tau_k_path, model.pension_replacement_path,
+                 model.w_at_retirement, model.bequest_lumpsum,
+                 surv if surv is not None else ())
+        return b'|'.join(np.asarray(x, dtype=float).tobytes() for x in parts)
+
+    def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False,
+                                      age_means=False):
+        """Batched simulation of all cohorts in one vmapped XLA call per education type.
+
+        Returns dict[edu_type][birth_period] -> the 23-tuple panel of (T, n_sim)
+        arrays, or with age_means=True the 12-tuple of (T,) per-age means of
+        _panel_to_age_means. The means are taken on the device, so the panels
+        (18.6 MB per cohort at n_sim = 2000) are not copied to the host and not
+        kept in _birth_sim_cache.
+        """
         import jax
         import jax.numpy as jnp
         from scipy.linalg import eig
@@ -606,15 +677,19 @@ class OLGTransition:
             # simulation to avoid holding all cohorts' policies on GPU at once.
             # If a_policy_alpha is missing (older code path), wrap the 5-D scalar
             # policy on a singleton leading axis to keep the shape uniform.
+            on_device = self.jax_policies_on_device
+
             def _as_alpha_indexed(m, attr_alpha, attr_scalar):
                 arr = getattr(m, attr_alpha, None)
                 if arr is None:
                     arr = getattr(m, attr_scalar)[None, ...]
-                return np.asarray(arr)
+                return arr if on_device else np.asarray(arr)
 
-            a_policies = np.stack([_as_alpha_indexed(m, 'a_policy_alpha', 'a_policy') for m in model_list])
-            c_policies = np.stack([_as_alpha_indexed(m, 'c_policy_alpha', 'c_policy') for m in model_list])
-            l_policies = np.stack([_as_alpha_indexed(m, 'l_policy_alpha', 'l_policy') for m in model_list])
+            def _policy_stack(cohorts, attr_alpha, attr_scalar):
+                """Policies of the cohorts of one chunk, stacked where they live."""
+                arrs = [_as_alpha_indexed(model_list[ci], attr_alpha, attr_scalar)
+                        for ci in cohorts]
+                return jnp.stack(arrs) if on_device else np.stack(arrs)
             w_paths = jnp.stack([m.w_path for m in model_list])
             w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
             r_paths = jnp.stack([m.r_path for m in model_list])
@@ -734,7 +809,6 @@ class OLGTransition:
 
             # Per-cohort arrays indexed along axis 0 — group them for easy slicing.
             per_cohort_arrs = (
-                a_policies, c_policies, l_policies,
                 w_paths, w_at_rets,
                 tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
                 r_paths, pension_paths,
@@ -759,13 +833,16 @@ class OLGTransition:
                 for start in range(0, len(gidx), g_chunk):
                     sel = gidx[start:start + g_chunk]
                     chunk_actual = len(sel)
-                    idx = jnp.array(sel + [sel[-1]] * (g_chunk - chunk_actual))
+                    padded = sel + [sel[-1]] * (g_chunk - chunk_actual)
+                    idx = jnp.array(padded)
 
                     def s(arr):
                         return arr[idx]
 
-                    (ca_pol, cc_pol, cl_pol,
-                     cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
+                    ca_pol = _policy_stack(padded, 'a_policy_alpha', 'a_policy')
+                    cc_pol = _policy_stack(padded, 'c_policy_alpha', 'c_policy')
+                    cl_pol = _policy_stack(padded, 'l_policy_alpha', 'l_policy')
+                    (cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                      ckeys,
                      ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
                      calpha_idx, calpha_mult, csurv, cbeq) = (s(a) for a in per_cohort_arrs)
@@ -795,6 +872,15 @@ class OLGTransition:
                     )
 
                     # Store only actual (non-padded) cohorts
+                    if age_means:
+                        # (N_AGE_MEANS, chunk, T): one mean over households per
+                        # aggregated panel element, as _panel_to_age_means takes.
+                        chunk_means = np.asarray(jnp.stack(
+                            [jnp.mean(chunk_results[i], axis=2) for i in _PANEL_MEANS_IDX]))
+                        for ci_local, ci in enumerate(sel):
+                            panels[edu_type][int(birth_periods[ci])] = tuple(
+                                chunk_means[k, ci_local] for k in range(N_AGE_MEANS))
+                        continue
                     for ci_local, ci in enumerate(sel):
                         b = birth_periods[ci]
                         panel = tuple(np.asarray(arr[ci_local]) for arr in chunk_results)
@@ -804,6 +890,90 @@ class OLGTransition:
                         self._birth_sim_cache[cache_key] = panel
 
         return panels
+
+    def _exact_cohort_age_means(self, verbose=False):
+        """Per-cohort age means from the exact distribution over states.
+
+        Returns dict[edu_type][birth_period] -> 12-tuple of (T,) arrays, the
+        layout _panel_to_age_means gives for a simulated panel. Cohorts with
+        the same inputs and the same policy arrays have the same means and are
+        computed once.
+        """
+        panels = {edu_type: {} for edu_type in self.education_shares}
+        for edu_type in self.education_shares:
+            models = self.birth_cohort_solutions[edu_type]
+            computed_as, first_with = {}, {}
+            for b, m in models.items():
+                key = (self._solve_inputs_key(m), id(m.a_policy_alpha),
+                       id(m.c_policy_alpha), id(m.l_policy_alpha))
+                computed_as[b] = first_with.setdefault(key, b)
+            todo = {b: models[b] for b in models if computed_as[b] == b}
+            if verbose:
+                print(f"  Exact aggregation: {edu_type} ({len(models)} cohorts, "
+                      f"{len(todo)} distinct)")
+            if self.backend == 'jax':
+                means = self._exact_age_means_jax_batched(todo)
+            else:
+                means = {b: m.exact_age_means() for b, m in todo.items()}
+            for b in models:
+                full = means[computed_as[b]]
+                panels[edu_type][int(b)] = tuple(full[:, i] for i in _PANEL_MEANS_IDX)
+        return panels
+
+    def _exact_age_means_jax_batched(self, models):
+        """exact_age_means for the cohort models in `models` ({birth_period:
+        model}), one vmapped call per chunk of each retirement group.
+        Returns {birth_period: (T, 23) array}."""
+        import jax.numpy as jnp
+        from lifecycle_jax import _exact_age_means_jax_batched
+
+        out = {}
+        for group in self._retirement_groups(models):
+            ref = models[group[0]]
+            if (float(ref.transfer_floor) > 0.0
+                    and int(getattr(ref.config, 'schooling_years', 0) or 0) > 0):
+                raise NotImplementedError(
+                    "the recorded transfer replicates the solve's budget without "
+                    "child costs; a positive transfer_floor with schooling_years > 0 "
+                    "would record the wrong transfer")
+            initial_dist = jnp.array(ref._np_model._initial_distribution())
+            P_y_4d = ref.P_y_4d if ref.P_y_age_health else None
+            ones_surv = np.ones((ref.T, self.n_h))
+            chunk = min(self.jax_sim_chunk_size or len(group), len(group))
+            for start in range(0, len(group), chunk):
+                sel = group[start:start + chunk]
+                # Pad the last chunk to the chunk length (same compiled kernel).
+                padded = sel + [sel[-1]] * (chunk - len(sel))
+                ms = [models[b] for b in padded]
+                stack = lambda f: jnp.stack([jnp.asarray(f(m)) for m in ms])
+                res = _exact_age_means_jax_batched(
+                    stack(lambda m: m.a_policy_alpha), stack(lambda m: m.c_policy_alpha),
+                    stack(lambda m: m.l_policy_alpha),
+                    ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                    ref.P_y_2d, ref.P_h,
+                    stack(lambda m: m.w_path), jnp.array([m.w_at_retirement for m in ms]),
+                    stack(lambda m: m.tau_c_path), stack(lambda m: m.tau_l_path),
+                    stack(lambda m: m.tau_p_path), stack(lambda m: m.tau_k_path),
+                    stack(lambda m: m.r_path), stack(lambda m: m.pension_replacement_path),
+                    ref.ui_replacement_rate, ref.kappa,
+                    ref.retirement_age, ref.T, ref.current_age,
+                    initial_dist, ref.alpha_grid,
+                    ref.pension_min_floor, ref.tax_progressive,
+                    ref.tax_kappa_hsv, ref.tax_eta,
+                    ref.P_y_age_health, P_y_4d,
+                    stack(lambda m: m.survival_probs if m.survival_probs is not None
+                          else ones_surv),
+                    ref.wage_age_profile,
+                    ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
+                    ref.trend_growth,
+                    ref.transfer_floor,
+                    jnp.array([float(m.bequest_lumpsum) for m in ms]),
+                    False,
+                )
+                res = np.asarray(res)
+                for i, b in enumerate(sel):
+                    out[b] = res[i]
+        return out
 
     def _create_cohort_sizes(self):
         """Create demographic structure with different cohort sizes."""
@@ -1406,11 +1576,17 @@ class OLGTransition:
                         jax_arr  = getattr(jax_m, attr, None)
                         if base_arr is None or jax_arr is None:
                             continue
-                        arr = np.asarray(jax_arr).copy()
-                        if attr.endswith('_alpha'):
-                            arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                        if self.jax_policies_on_device:
+                            import jax.numpy as jnp
+                            ages = ((slice(None), slice(None, pre)) if attr.endswith('_alpha')
+                                    else (slice(None, pre),))
+                            arr = jnp.asarray(jax_arr).at[ages].set(jnp.asarray(base_arr)[ages])
                         else:
-                            arr[:pre] = np.asarray(base_arr)[:pre]
+                            arr = np.asarray(jax_arr).copy()
+                            if attr.endswith('_alpha'):
+                                arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                            else:
+                                arr[:pre] = np.asarray(base_arr)[:pre]
                         setattr(jax_m, attr, arr)
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
@@ -1472,13 +1648,14 @@ class OLGTransition:
             print(f"Precomputing cohort panels for birth_period in [{min_birth_period}, {max_birth_period}] "
                   f"(n_sim={n_sim}, seed_base={seed_base}) ...")
 
-        if self.backend == 'jax':
+        if self.aggregation == 'exact':
+            panels = self._exact_cohort_age_means(verbose)
+        elif self.backend == 'jax':
             agent_batch = self.sim_agent_batch_size
             n_agent_batches = max(1, (n_sim + agent_batch - 1) // agent_batch)
             if n_agent_batches == 1:
-                raw = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose)
-                panels = {edu: {b: _panel_to_age_means(p) for b, p in ep.items()}
-                          for edu, ep in raw.items()}
+                panels = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose,
+                                                            age_means=True)
             else:
                 edu_types_ab = list(self.education_shares.keys())
                 birth_periods_ab = list(range(min_birth_period, max_birth_period + 1))
@@ -1490,14 +1667,12 @@ class OLGTransition:
                     n_ab = min(agent_batch, n_sim - agents_done)
                     ab_seed = int((seed_base + ab_idx * 999983) & 0xFFFFFFFF)
                     raw_b = self._simulate_cohorts_jax_batched(
-                        n_ab, ab_seed, verbose=(verbose and ab_idx == 0))
+                        n_ab, ab_seed, verbose=(verbose and ab_idx == 0), age_means=True)
                     for edu in edu_types_ab:
-                        for b, panel in raw_b[edu].items():
-                            bm = _panel_to_age_means(panel)
+                        for b, bm in raw_b[edu].items():
                             for k in range(N_AGE_MEANS):
                                 sums[edu][b][k] += bm[k] * n_ab
-                    # Free per-batch raw panels and cached init conditions to bound memory
-                    self._birth_sim_cache = {}
+                    # Free cached init conditions to bound memory
                     if hasattr(self, '_sim_init_cache'):
                         self._sim_init_cache = {}
                     agents_done += n_ab
@@ -1972,6 +2147,41 @@ class OLGTransition:
                 result[t] = 0.0
         return result
 
+    def _household_inputs_key(self, paths, bequest_lumpsum_path,
+                              pre_transition_paths, n_sim):
+        """Digest of the inputs to the cohort solves and simulations of one
+        simulate_transition() call.
+
+        Covers the price and policy paths faced by households, the bequest
+        receipts, the baseline paths that govern pre-transition ages, the
+        lifecycle configuration (including the active transfer floor), n_sim
+        and the horizon. Government purchases are not inputs to the household
+        side. The demographic and survival tables and the cohort retirement
+        table are fixed at construction and are not part of the key.
+        """
+        h = hashlib.sha1()
+
+        def feed(x):
+            if x is None:
+                h.update(b'<None>')
+            elif isinstance(x, dict):
+                for k in sorted(x, key=str):
+                    h.update(str(k).encode())
+                    feed(x[k])
+            else:
+                a = np.ascontiguousarray(np.asarray(x, dtype=float))
+                h.update(str(a.shape).encode())
+                h.update(a.tobytes())
+
+        for path in paths:
+            feed(path)
+        feed(bequest_lumpsum_path)
+        feed(pre_transition_paths)
+        h.update(pickle.dumps(self.lifecycle_config))
+        h.update(repr((int(n_sim), int(self.T_transition), self.backend,
+                       int(self.sim_agent_batch_size), self.aggregation)).encode())
+        return h.hexdigest()
+
     def simulate_transition(self, r_path, w_path=None,
                            tau_c_path=None, tau_l_path=None,
                            tau_p_path=None, tau_k_path=None,
@@ -2201,20 +2411,49 @@ class OLGTransition:
         else:
             self._bequest_converged = True
             self._bequest_iter_count = 0
-            # Solve all cohort problems with perfect foresight of r and w
-            self.solve_cohort_problems(
-                r_path_full, w_path_full,
-                tau_c_path=tau_c_path_full,
-                tau_l_path=tau_l_path_full,
-                tau_p_path=tau_p_path_full,
-                tau_k_path=tau_k_path_full,
-                pension_replacement_path=pension_path_full,
-                bequest_lumpsum_path=bequest_lumpsum_path,
-                pre_transition_paths=pre_transition_paths,
-                verbose=verbose
-            )
-            # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
-            self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
+            # With household_cache_size > 0, a call whose household inputs equal
+            # those of an earlier call takes that call's per-cohort age means
+            # instead of solving and simulating again; the aggregates and the
+            # government budget below are then recomputed from them.
+            cache_key = cached_panels = None
+            if self.household_cache_size > 0:
+                cache_key = self._household_inputs_key(
+                    (r_path_full, w_path_full, tau_c_path_full, tau_l_path_full,
+                     tau_p_path_full, tau_k_path_full, pension_path_full),
+                    bequest_lumpsum_path, pre_transition_paths, n_sim)
+                cached_panels = self._household_cache.get(cache_key)
+            if cached_panels is not None:
+                self._household_cache.move_to_end(cache_key)
+                self._household_cache_hits += 1
+                self._policy_version = getattr(self, '_policy_version', 0) + 1
+                self._cohort_panel_cache = {
+                    (int(n_sim), 42, int(self._policy_version)): cached_panels}
+                # The cohort models of that call were not kept, so there are no
+                # policy functions to read after this one.
+                self.birth_cohort_solutions = None
+                if verbose:
+                    print("\nHousehold inputs unchanged from an earlier call: "
+                          "reusing its cohort age means.")
+            else:
+                # Solve all cohort problems with perfect foresight of r and w
+                self.solve_cohort_problems(
+                    r_path_full, w_path_full,
+                    tau_c_path=tau_c_path_full,
+                    tau_l_path=tau_l_path_full,
+                    tau_p_path=tau_p_path_full,
+                    tau_k_path=tau_k_path_full,
+                    pension_replacement_path=pension_path_full,
+                    bequest_lumpsum_path=bequest_lumpsum_path,
+                    pre_transition_paths=pre_transition_paths,
+                    verbose=verbose
+                )
+                # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
+                self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
+                if cache_key is not None:
+                    self._household_cache[cache_key] = self._cohort_panel_cache[
+                        (int(n_sim), 42, int(self._policy_version))]
+                    while len(self._household_cache) > self.household_cache_size:
+                        self._household_cache.popitem(last=False)
 
         # Feature #21: Build population weights from fertility + survival.
         # Population weights are births only: per-cohort means divide by n_sim with
@@ -2361,7 +2600,9 @@ class OLGTransition:
     
     def compute_government_budget_path(self, n_sim: Optional[int] = None, verbose=True):
         """Compute government budget for all transition periods."""
-        if self.birth_cohort_solutions is None:
+        # Y_path, not birth_cohort_solutions: a run served from the household
+        # cache has aggregates and age means but no cohort models.
+        if self.Y_path is None:
             raise ValueError("Must simulate transition first")
 
         if n_sim is None:

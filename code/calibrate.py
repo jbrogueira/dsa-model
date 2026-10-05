@@ -63,6 +63,10 @@ class SimPanel(NamedTuple):
     bequest_sim: np.ndarray     # (T, n_sim)
     alpha_idx_sim: np.ndarray   # (T, n_sim) int — Phase 8 permanent FE grid index (constant across t)
     transfer_sim: np.ndarray    # (T, n_sim) means-tested transfer received (consumption floor top-up)
+    # Exact cross-sections only (exact_panel_to_simpanel): a column is a state
+    # of the grid and weight_sim its mass of households. None: one household
+    # per column.
+    weight_sim: Optional[np.ndarray] = None
 
 
 def wrap_sim_output(tup):
@@ -79,6 +83,42 @@ def wrap_sim_output(tup):
     if len(tup) == 22:
         tup = tup + (np.zeros((T_sim, n_sim)),)
     return SimPanel(*tup)
+
+
+def exact_panel_to_simpanel(panel, mass):
+    """SimPanel from the (panel, mass) of exact_panel() / cross_section_exact().
+
+    One column per state of the grid, weighted by the mass of households on
+    it; alive_sim marks the states with positive mass. The moment functions
+    read weight_sim, so they take population moments from it where they take
+    sample moments from a simulated panel.
+    """
+    fields = list(panel)
+    mass = np.asarray(mass, dtype=float)
+    fields[SimPanel._fields.index('alive_sim')] = mass > 0.0
+    return SimPanel(*fields, weight_sim=mass)
+
+
+def _alive_mean(panel, field, t, alive_t):
+    """Mean of a panel field among the columns alive at age t."""
+    x = getattr(panel, field)[t, alive_t]
+    if panel.weight_sim is None:
+        return float(np.mean(x))
+    w = panel.weight_sim[t, alive_t]
+    return float(np.sum(w * x) / np.sum(w))
+
+
+def _quantile(values, q, weights=None):
+    """q-th quantile (q in [0, 1]). With weights, the smallest value whose
+    cumulative weight share reaches q: the population quantile of a discrete
+    distribution, which is what the sample quantile of a growing simulated
+    panel settles on."""
+    if weights is None:
+        return float(np.percentile(values, 100.0 * q))
+    order = np.argsort(values, kind='stable')
+    v, w = np.asarray(values)[order], np.asarray(weights, dtype=float)[order]
+    cum = np.cumsum(w) / np.sum(w)
+    return float(v[min(int(np.searchsorted(cum, q - 1e-12)), len(v) - 1)])
 
 
 # ---------------------------------------------------------------------------
@@ -124,11 +164,12 @@ def compute_gini(x, weights=None):
 
 
 def compute_earnings_variance_by_age(effective_y_sim, employed_sim, alive_sim,
-                                     retirement_age):
+                                     retirement_age, weights=None):
     """Variance of log earnings at each working age, excluding unemployed/dead.
 
     Returns array of shape (retirement_age,). Ages with fewer than 2 employed
-    alive agents get NaN.
+    alive agents get NaN. *weights* (T, n) gives the mass of each column
+    (exact cross-sections); None weights the columns equally.
     """
     T = effective_y_sim.shape[0]
     n_ages = min(retirement_age, T)
@@ -137,7 +178,12 @@ def compute_earnings_variance_by_age(effective_y_sim, employed_sim, alive_sim,
         mask = alive_sim[t] & employed_sim[t] & (effective_y_sim[t] > 0)
         if np.sum(mask) >= 2:
             log_earn = np.log(effective_y_sim[t, mask])
-            var_by_age[t] = np.var(log_earn)
+            if weights is None:
+                var_by_age[t] = np.var(log_earn)
+            else:
+                w = weights[t, mask] / np.sum(weights[t, mask])
+                mean = np.sum(w * log_earn)
+                var_by_age[t] = np.sum(w * (log_earn - mean) ** 2)
     return var_by_age
 
 
@@ -320,6 +366,9 @@ class CalibrationSpec:
     age_weights: Optional[np.ndarray] = None  # (T,) stationary age distribution
     cohort_survival: Optional[np.ndarray] = None  # (T, T) row j = cohort aged 25+j
     n_sim_cohorts: int = 2000   # agents per cohort when cohort_survival is set
+    # 'simulation': moments from simulated panels (n_sim / n_sim_cohorts draws);
+    # 'exact': from the distribution over states carried forward by age (no draws)
+    aggregation: str = 'simulation'
     # Retirement age and career-average pension weight of the cohort aged 25+j
     # in the base year, (T,) each; None keeps base_config's for every cohort.
     cohort_retirement_age: Optional[np.ndarray] = None
@@ -362,9 +411,30 @@ def _agent_weights(panel, spec, edu, mask=None):
     # weights at age t would sum to aw[t]*S_t instead of aw[t]. With a mask the
     # denominator stays the alive count, so a subgroup's weight is its share of
     # the living at that age -- which is what a cross-sectional average means.
-    n_alive = np.maximum(panel.alive_sim.astype(bool).sum(axis=1), 1)
-    w_grid = share * aw[:, None] / n_alive[:, None] * np.ones((1, n_sim))
+    if panel.weight_sim is None:
+        n_alive = np.maximum(panel.alive_sim.astype(bool).sum(axis=1), 1)
+        w_grid = share * aw[:, None] / n_alive[:, None] * np.ones((1, n_sim))
+    else:
+        # Exact cross-section: a column's weight among the living at its age
+        # is its share of their mass.
+        alive_mass = np.where(panel.alive_sim.astype(bool), panel.weight_sim, 0.0).sum(axis=1)
+        w_grid = share * aw[:, None] * panel.weight_sim / np.maximum(alive_mass, 1e-300)[:, None]
     return alive, w_grid[alive]
+
+
+def _column_mass(panel, mask):
+    """Mass of the masked columns for statistics that pool households without
+    age or education weights: None for a simulated panel (every household
+    counts once), the state masses for an exact cross-section."""
+    return None if panel.weight_sim is None else panel.weight_sim[mask]
+
+
+def _pooled(values, masses):
+    """Concatenate per-education values and their masses (None if unweighted)."""
+    vals = np.concatenate(values) if values else np.empty(0)
+    if any(m is None for m in masses):
+        return vals, None
+    return vals, np.concatenate(masses)
 
 
 def _pool_weighted(panels, spec, field, mask_fn=None):
@@ -407,7 +477,7 @@ def _moment_earnings_var_slope(panels, spec):
         share = spec.education_shares[edu]
         v = compute_earnings_variance_by_age(
             panel.effective_y_sim, panel.employed_sim,
-            panel.alive_sim, ret_age)
+            panel.alive_sim, ret_age, weights=panel.weight_sim)
         valid = ~np.isnan(v)
         pooled[valid] += share * v[valid]
         total_w += share
@@ -431,7 +501,7 @@ def _moment_earnings_var_mean(panels, spec):
         share = spec.education_shares[edu]
         v = compute_earnings_variance_by_age(
             panel.effective_y_sim, panel.employed_sim,
-            panel.alive_sim, ret_age)
+            panel.alive_sim, ret_age, weights=panel.weight_sim)
         valid = ~np.isnan(v)
         pooled[valid] += share * v[valid]
         total_w += share
@@ -526,15 +596,17 @@ def _moment_disposable_p90_p10(panels, spec):
     Same caveat as _moment_disposable_income_gini: the data counterpart
     (Eurostat ilc_di01) is equivalised household disposable income.
     """
-    all_inc = []
+    all_inc, all_w = [], []
     for edu, panel in panels.items():
         alive = panel.alive_sim.astype(bool)
         all_inc.append(_disposable_income(panel)[alive])
-    vals = np.concatenate(all_inc)
-    vals = vals[vals > 0]
+        all_w.append(_column_mass(panel, alive))
+    vals, mass = _pooled(all_inc, all_w)
+    keep = vals > 0
+    vals, mass = vals[keep], (mass[keep] if mass is not None else None)
     if len(vals) < 10:
         return 0.0
-    p90, p10 = np.percentile(vals, 90), np.percentile(vals, 10)
+    p90, p10 = _quantile(vals, 0.9, mass), _quantile(vals, 0.1, mass)
     return float(p90 / p10) if p10 > 0 else 0.0
 
 
@@ -567,7 +639,10 @@ def _moment_median_wealth_to_income(panels, spec):
     y_vals, _ = _pool_weighted(panels, spec, 'effective_y_sim', _employed_pos)
     if len(a_vals) == 0:
         return 0.0
-    return float(np.median(a_vals / y_vals))
+    _, mass = _pooled([], [_column_mass(p, _employed_pos(p)) for p in panels.values()])
+    if mass is None:
+        return float(np.median(a_vals / y_vals))
+    return _quantile(a_vals / y_vals, 0.5, mass)
 
 
 def _moment_p90_p10_income(panels, spec):
@@ -577,16 +652,18 @@ def _moment_p90_p10_income(panels, spec):
     simulation), so adding ui_sim again would double-count. Total income for
     the ratio is effective_y_sim + pension_sim.
     """
-    all_inc = []
+    all_inc, all_w = [], []
     for edu, panel in panels.items():
         alive = panel.alive_sim.astype(bool)
         income = panel.effective_y_sim[alive] + panel.pension_sim[alive]
         all_inc.append(income)
-    vals = np.concatenate(all_inc)
-    vals = vals[vals > 0]
+        all_w.append(_column_mass(panel, alive))
+    vals, mass = _pooled(all_inc, all_w)
+    keep = vals > 0
+    vals, mass = vals[keep], (mass[keep] if mass is not None else None)
     if len(vals) < 10:
         return 0.0
-    p90, p10 = np.percentile(vals, 90), np.percentile(vals, 10)
+    p90, p10 = _quantile(vals, 0.9, mass), _quantile(vals, 0.1, mass)
     return p90 / p10 if p10 > 0 else 0.0
 
 
@@ -621,22 +698,22 @@ def _compute_ss_aggregates(panels, spec):
             if not np.any(a_t):
                 continue
             wt = share * aw[t]
-            agg['labor_income'] += wt * float(np.mean(panel.effective_y_sim[t, a_t]))
-            agg['consumption']  += wt * float(np.mean(panel.c_sim[t, a_t]))
-            agg['assets']       += wt * float(np.mean(panel.a_sim[t, a_t]))
-            agg['pension']      += wt * float(np.mean(panel.pension_sim[t, a_t]))
-            agg['ui']           += wt * float(np.mean(panel.ui_sim[t, a_t]))
-            agg['oop_health']   += wt * float(np.mean(panel.oop_m_sim[t, a_t]))
-            agg['gov_health']   += wt * float(np.mean(panel.gov_m_sim[t, a_t]))
-            agg['tax_c']        += wt * float(np.mean(panel.tax_c_sim[t, a_t]))
-            agg['tax_l']        += wt * float(np.mean(panel.tax_l_sim[t, a_t]))
-            agg['tax_p']        += wt * float(np.mean(panel.tax_p_sim[t, a_t]))
-            agg['tax_k']        += wt * float(np.mean(panel.tax_k_sim[t, a_t]))
+            agg['labor_income'] += wt * _alive_mean(panel, 'effective_y_sim', t, a_t)
+            agg['consumption']  += wt * _alive_mean(panel, 'c_sim', t, a_t)
+            agg['assets']       += wt * _alive_mean(panel, 'a_sim', t, a_t)
+            agg['pension']      += wt * _alive_mean(panel, 'pension_sim', t, a_t)
+            agg['ui']           += wt * _alive_mean(panel, 'ui_sim', t, a_t)
+            agg['oop_health']   += wt * _alive_mean(panel, 'oop_m_sim', t, a_t)
+            agg['gov_health']   += wt * _alive_mean(panel, 'gov_m_sim', t, a_t)
+            agg['tax_c']        += wt * _alive_mean(panel, 'tax_c_sim', t, a_t)
+            agg['tax_l']        += wt * _alive_mean(panel, 'tax_l_sim', t, a_t)
+            agg['tax_p']        += wt * _alive_mean(panel, 'tax_p_sim', t, a_t)
+            agg['tax_k']        += wt * _alive_mean(panel, 'tax_k_sim', t, a_t)
             # Accidental bequests of those who die at age t, per person alive
             # at t (bequest_sim is nonzero only for the dying, who are alive
             # at the start of the period).
-            agg['bequest']      += wt * float(np.mean(panel.bequest_sim[t, a_t]))
-            agg['transfer']     += wt * float(np.mean(panel.transfer_sim[t, a_t]))
+            agg['bequest']      += wt * _alive_mean(panel, 'bequest_sim', t, a_t)
+            agg['transfer']     += wt * _alive_mean(panel, 'transfer_sim', t, a_t)
 
     prod = spec.production or {}
     alpha = prod.get('alpha', 0.33)
@@ -821,6 +898,7 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
     cls = (LifecycleModelJAX if (spec.backend == 'jax' and _JAX_AVAILABLE)
            else LifecycleModelPerfectForesight)
     seed = spec.seed if seed is None else seed
+    exact = spec.aggregation == 'exact'
 
     # Retirement age and pension weight of each cohort (the base config's when
     # the spec carries none).
@@ -849,19 +927,27 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
             groups = {}
             for j in range(T):
                 groups.setdefault(ret[j], []).append(j)
-            out = None
+            out = mass = None
             for js in groups.values():
                 surv_stack = np.stack([S if shared else S[j].reshape(T, config.n_h)
                                        for j in js])
                 model = cls(cohort_config(edu_type, surv_stack[0], js[0]), verbose=False)
-                seeds = [seed + j if seed_per_cohort else seed for j in js]
-                part = model.cross_section_batched(surv_stack, seeds, n_sim,
-                                                   chunk_size=chunk_size, rows=js)
+                if exact:
+                    part, part_mass = model.cross_section_exact(
+                        surv_stack, rows=js, chunk_size=chunk_size)
+                    if mass is None:
+                        mass = np.zeros((T, part_mass.shape[1]))
+                    mass[js] = part_mass
+                else:
+                    seeds = [seed + j if seed_per_cohort else seed for j in js]
+                    part = model.cross_section_batched(surv_stack, seeds, n_sim,
+                                                       chunk_size=chunk_size, rows=js)
                 if out is None:
-                    out = [np.zeros((T, n_sim), dtype=x.dtype) for x in part]
+                    out = [np.zeros((T, x.shape[1]), dtype=x.dtype) for x in part]
                 for o, x in zip(out, part):
                     o[js] = x
-            panels[edu_type] = wrap_sim_output(tuple(out))
+            panels[edu_type] = (exact_panel_to_simpanel(tuple(out), mass) if exact
+                                else wrap_sim_output(tuple(out)))
             if verbose:
                 print(f'    {edu_type}: {T} cohorts in {len(groups)} retirement '
                       f'groups (batched)', flush=True)
@@ -872,14 +958,22 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
             cfg_j = cohort_config(edu_type, surv_j, j)
             model = cls(cfg_j, verbose=False)
             model.solve(verbose=False)
-            panel = wrap_sim_output(model.simulate(
-                T_sim=j + 1, n_sim=n_sim,
-                seed=seed + j if seed_per_cohort else seed))
+            if exact:
+                # The cohort's cross-section over states at age j, as row j.
+                panel = exact_panel_to_simpanel(*model.exact_panel(rows=[j]))
+                at = 0
+            else:
+                panel = wrap_sim_output(model.simulate(
+                    T_sim=j + 1, n_sim=n_sim,
+                    seed=seed + j if seed_per_cohort else seed))
+                at = j
+            fields = [f for f in panel._fields if getattr(panel, f) is not None]
             if rows is None:
-                rows = {f: np.zeros((T, n_sim), dtype=np.asarray(getattr(panel, f)).dtype)
-                        for f in panel._fields}
-            for f in panel._fields:
-                rows[f][j] = np.asarray(getattr(panel, f))[j]
+                n_col = np.asarray(panel.a_sim).shape[1]
+                rows = {f: np.zeros((T, n_col), dtype=np.asarray(getattr(panel, f)).dtype)
+                        for f in fields}
+            for f in fields:
+                rows[f][j] = np.asarray(getattr(panel, f))[at]
             if verbose and (j + 1) % 10 == 0:
                 print(f'    {edu_type}: cohort {j + 1}/{T}', flush=True)
         panels[edu_type] = SimPanel(**rows)
@@ -918,8 +1012,11 @@ def run_model_moments(theta, spec, return_panels=False):
         cls = LifecycleModelJAX if (spec.backend == 'jax' and _JAX_AVAILABLE) else LifecycleModelPerfectForesight
         model = cls(cfg, verbose=False)
         model.solve(verbose=False)
-        raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
-        panels[edu_type] = wrap_sim_output(raw)
+        if spec.aggregation == 'exact':
+            panels[edu_type] = exact_panel_to_simpanel(*model.exact_panel())
+        else:
+            raw = model.simulate(n_sim=spec.n_sim, seed=spec.seed)
+            panels[edu_type] = wrap_sim_output(raw)
 
     # Compute each target moment
     m_model = np.empty(len(spec.moments))
@@ -1375,6 +1472,7 @@ def load_config(path):
         age_weights=age_weights,
         cohort_survival=cohort_survival,
         n_sim_cohorts=sim.get('n_sim_cohorts', 2000),
+        aggregation=sim.get('aggregation', 'simulation'),
         cohort_retirement_age=cohort_J_R,
         cohort_pension_avg_weight=cohort_lam,
         backend=sim.get('backend', 'numpy'),
@@ -1606,6 +1704,7 @@ def build_olg_transition(config_data, backend='numpy'):
         survival_table=survival_table,
         demography=demography,
         cohort_retirement=cohort_retirement_table(config_data),
+        aggregation=trans.get('aggregation', 'simulation'),
         education_shares=config_data.get('education_shares'),
         backend=backend,
         jax_sim_chunk_size=trans.get('jax_chunk_size', 10) if backend == 'jax' else None,
@@ -1694,19 +1793,19 @@ def compute_fiscal_ratios(panels, spec, config_data):
                 continue
             wt = share * aw[t]
             # Means at age t among alive
-            agg['labor_income'] += wt * np.mean(panel.effective_y_sim[t, a_t])
-            agg['consumption'] += wt * np.mean(panel.c_sim[t, a_t])
-            agg['assets'] += wt * np.mean(panel.a_sim[t, a_t])
-            agg['pension'] += wt * np.mean(panel.pension_sim[t, a_t])
-            agg['ui'] += wt * np.mean(panel.ui_sim[t, a_t])
-            agg['oop_health'] += wt * np.mean(panel.oop_m_sim[t, a_t])
-            agg['gov_health'] += wt * np.mean(panel.gov_m_sim[t, a_t])
-            agg['tax_c'] += wt * np.mean(panel.tax_c_sim[t, a_t])
-            agg['tax_l'] += wt * np.mean(panel.tax_l_sim[t, a_t])
-            agg['tax_p'] += wt * np.mean(panel.tax_p_sim[t, a_t])
-            agg['tax_k'] += wt * np.mean(panel.tax_k_sim[t, a_t])
-            agg['bequest'] += wt * np.mean(panel.bequest_sim[t, a_t])
-            agg['transfer'] += wt * np.mean(panel.transfer_sim[t, a_t])
+            agg['labor_income'] += wt * _alive_mean(panel, 'effective_y_sim', t, a_t)
+            agg['consumption'] += wt * _alive_mean(panel, 'c_sim', t, a_t)
+            agg['assets'] += wt * _alive_mean(panel, 'a_sim', t, a_t)
+            agg['pension'] += wt * _alive_mean(panel, 'pension_sim', t, a_t)
+            agg['ui'] += wt * _alive_mean(panel, 'ui_sim', t, a_t)
+            agg['oop_health'] += wt * _alive_mean(panel, 'oop_m_sim', t, a_t)
+            agg['gov_health'] += wt * _alive_mean(panel, 'gov_m_sim', t, a_t)
+            agg['tax_c'] += wt * _alive_mean(panel, 'tax_c_sim', t, a_t)
+            agg['tax_l'] += wt * _alive_mean(panel, 'tax_l_sim', t, a_t)
+            agg['tax_p'] += wt * _alive_mean(panel, 'tax_p_sim', t, a_t)
+            agg['tax_k'] += wt * _alive_mean(panel, 'tax_k_sim', t, a_t)
+            agg['bequest'] += wt * _alive_mean(panel, 'bequest_sim', t, a_t)
+            agg['transfer'] += wt * _alive_mean(panel, 'transfer_sim', t, a_t)
 
     # --- Production side ---
     prod = config_data.get('production', {})

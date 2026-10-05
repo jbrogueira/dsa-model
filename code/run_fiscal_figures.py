@@ -29,6 +29,7 @@ from lifecycle_perfect_foresight import LifecycleConfig  # noqa: E402
 from olg_transition import OLGTransition  # noqa: E402
 from fiscal_experiments import (  # noqa: E402
     FiscalScenario,
+    run_baseline,
     run_fiscal_scenario,
     compare_scenarios,
     debt_fan_chart,
@@ -61,6 +62,9 @@ if args.backend == 'jax':
 OUTPUT_DIR = args.output_dir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# Extra periods beyond T_transition to show post-target dynamics
+N_POST = 20
+
 # ---------------------------------------------------------------------------
 # 1. Build OLG model
 # ---------------------------------------------------------------------------
@@ -86,10 +90,8 @@ if args.config:
                  ['tau_c_path', 'tau_l_path', 'tau_p_path', 'tau_k_path',
                   'pension_replacement_path']}
 
-    # Warmup sim to get steady-state Y. The warmup I_g level delta_g*K_g is the
-    # stationary public-investment level (keeps K_g flat at K_g_initial), so with
-    # eta_g != 0 it doubles as the baseline I_g path; with eta_g=0 / K_g=0 it is
-    # zero and harmless. The spending paths below are sized off the resulting Y.
+    # The I_g level delta_g*K_g is the stationary public-investment level (keeps
+    # K_g flat at K_g_initial); with eta_g != 0 it is the baseline I_g path.
     prod = config_data.get('production', {})
     eta_g_cfg = prod.get('eta_g', 0.0)
     # Stationary public-investment level: (delta_g + Gamma_t - 1) * K_g holds
@@ -97,18 +99,6 @@ if args.config:
     # population is in transition, so the level does too.
     I_g_warmup = ((prod.get('delta_g', 0.05) + economy.growth_factors(T_TR) - 1.0)
                   * prod.get('K_g', 0.0))
-
-    print("Calibrating baseline fiscal paths …")
-    # At the full N_SIM, not a 50-agent draw: B_initial = B_over_Y * Y0 and the
-    # I_g shock level 0.02 * Y0 are read off this run, and with the same seeds
-    # the scenarios' baseline reproduces it exactly, so B/Y(0) equals B_over_Y
-    # to the digit. With n_sim=50 the two differed by the warm-up's sampling
-    # error (1.633 against 1.64 in the July run).
-    _calib = economy.simulate_transition(
-        r_path=r_path, I_g_path=I_g_warmup, n_sim=N_SIM, verbose=False, **tax_paths
-    )
-    Y_path = np.asarray(_calib['Y'])
-    Y0 = float(Y_path[0])
 
     # Government spending lines are fixed shares of Y(t): pass the SS-calibrated
     # ratios and let the budget multiply by each run's realized Y_path, so levels
@@ -123,20 +113,6 @@ if args.config:
     G_path = I_g_path = defense_path = other_path = None  # ratio mode → no levels
     if eta_g_cfg != 0.0:
         I_g_path = I_g_warmup      # level mode for I_g only
-
-    B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
-    B_initial = B_over_Y * Y0          # initial debt level pins B/Y at t=0
-    target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
-    print(f"  Y(0) = {Y0:.4f}  (baseline run, n_sim={N_SIM})")
-    if eta_g_cfg != 0.0:
-        print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
-              f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
-        print(f"  I_g = {I_g_path[0]:.4f} (level = (delta_g + G - 1)*K_g, K_g flat at "
-              f"{prod.get('K_g', 0.0)})")
-    else:
-        print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
-              f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
-    print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
 
 else:
     # Hardcoded fast-test parameters (backward compatible)
@@ -215,12 +191,38 @@ else:
     if other_path is not None:
         base_paths['other_net_spending_path'] = other_path
 
+# Runs whose household inputs equal those of an earlier run reuse its cohort
+# age means: the G shock under debt financing, the first step of each tax
+# search, and the steps the two searches of a shock have in common.
+economy.household_cache_size = 16
+
+# One baseline run for all scenarios, at the full N_SIM and horizon.
+print("Running the baseline …")
+base_paths = run_baseline(economy, base_paths, n_post=N_POST, n_sim=N_SIM)
+
+if args.config:
+    # B_initial = B_over_Y * Y0 and the I_g shock level 0.02 * Y0 are read off
+    # the baseline the scenarios are compared with, so B/Y(0) equals B_over_Y
+    # to the digit. Y(0) does not depend on the horizon of the run.
+    Y_path = np.asarray(base_paths['base_macro']['Y'])[:T_TR]
+    Y0 = float(Y_path[0])
+    B_over_Y = config_data.get('fiscal', {}).get('B_over_Y', 0.0)
+    B_initial = B_over_Y * Y0          # initial debt level pins B/Y at t=0
+    target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
+    print(f"  Y(0) = {Y0:.4f}  (baseline run, n_sim={N_SIM})")
+    if eta_g_cfg != 0.0:
+        print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
+              f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
+        print(f"  I_g = {I_g_path[0]:.4f} (level = (delta_g + G - 1)*K_g, K_g flat at "
+              f"{prod.get('K_g', 0.0)})")
+    else:
+        print(f"  G/Y = {G_over_Y}, I_g/Y = {I_g_over_Y}, defense/Y = {defense_over_Y}, "
+              f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
+    print(f"  B/Y = {B_over_Y},  B_initial = {B_initial:.4f}")
+
 # ---------------------------------------------------------------------------
 # 3. Define scenarios
 # ---------------------------------------------------------------------------
-
-# Extra periods beyond T_transition to show post-target dynamics
-N_POST = 20
 
 # --- Scenario A: pure baseline (no shock, debt residual) ---
 scn_base = FiscalScenario(
@@ -347,9 +349,14 @@ def run_experiment_set(shock_type):
     print(f"[3/4] {shock_type} shock — labour-tax-financed (debt-ratio target) …")
     res_taul = run_fiscal_scenario(economy, scn_taul, base_paths, n_sim=N_SIM,
                                    verbose=False, bisect_tol=1e-3)
+    print(f"      {res_taul.n_iterations} evaluations")
     print(f"[4/4] {shock_type} shock — labour-tax-financed (terminal NFA target) …")
+    # Start at the tax change that meets the debt target of the same shock.
     res_nfa = run_fiscal_scenario(economy, scn_nfa, base_paths, n_sim=N_SIM,
-                                  verbose=False, bisect_tol=1e-3)
+                                  verbose=False, bisect_tol=1e-3,
+                                  bisect_init=(res_taul.adjustment_scalar
+                                               if res_taul.converged else 0.0))
+    print(f"      {res_nfa.n_iterations} evaluations")
     return res_base, res_debt, res_taul, res_nfa, labels
 
 
@@ -492,6 +499,8 @@ def _result_to_dict(res):
         'T_balance': res.T_balance,
         'n_post': res.scenario.n_post,
         'adjustment_scalar': float(res.adjustment_scalar) if res.adjustment_scalar else None,
+        'n_iterations': int(res.n_iterations),
+        'residual_history': [float(x) for x in res.residual_history],
         'B_gdp_path': [float(x) for x in res.B_gdp_path],
     }
     for label, macro in [('baseline', res.base_macro), ('counterfactual', res.cf_macro)]:
@@ -593,3 +602,4 @@ print(f"Numerical results saved to {results_path}")
 _elapsed = time.perf_counter() - _t_start
 print(f"Total run time: {_elapsed:.1f}s ({_elapsed / 60:.1f} min)  "
       f"[backend={args.backend}, shock={args.shock}, n_sim={N_SIM}]")
+print(f"Household solves reused from an earlier run: {economy._household_cache_hits}")

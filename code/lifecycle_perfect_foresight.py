@@ -1311,6 +1311,197 @@ class LifecycleModelPerfectForesight:
                 pension_sim, retired_sim, l_sim, alive_sim, bequest_sim, alpha_idx_panel,
                 transfer_sim)
     
+    def _initial_distribution(self):
+        """Mass over (alpha, a, y, h, y_last) at the first simulated age.
+
+        The population counterpart of the draws that open _simulate_sequential:
+        alpha from alpha_probs, y from the stationary distribution of P_y (or
+        uniform over the employed states when the group has no unemployment),
+        y_last = y, h = 0, and assets at node 0, at the node nearest
+        initial_assets, or spread as the histogram of initial_asset_distribution
+        over its nearest nodes. Shape (n_alpha, n_a, n_y, n_h, n_y), sums to one.
+        """
+        edu_unemployment_rate = self.config.edu_params[self.config.education_type]['unemployment_rate']
+        if edu_unemployment_rate < 1e-10:
+            p_y = np.zeros(self.n_y)
+            p_y[1:] = 1.0 / (self.n_y - 1)
+        else:
+            P_y_2d = self.P_y if self.P_y.ndim == 2 else self.P_y[0, 0]
+            eigenvalues, eigenvectors = eig(P_y_2d.T)
+            stationary_idx = np.argmax(eigenvalues.real)
+            p_y = eigenvectors[:, stationary_idx].real
+            p_y = p_y / p_y.sum()
+
+        p_a = np.zeros(self.n_a)
+        if self.config.initial_asset_distribution is not None:
+            dist = np.asarray(self.config.initial_asset_distribution)
+            for v in dist:
+                p_a[np.argmin(np.abs(self.a_grid - v))] += 1.0 / len(dist)
+        elif self.config.initial_assets is not None:
+            p_a[np.argmin(np.abs(self.a_grid - self.config.initial_assets))] = 1.0
+        else:
+            p_a[0] = 1.0
+
+        p_alpha = np.asarray(self.alpha_probs, dtype=float) if self.n_alpha > 1 else np.ones(1)
+
+        mu = np.zeros((self.n_alpha, self.n_a, self.n_y, self.n_h, self.n_y))
+        for i_y in range(self.n_y):
+            mu[:, :, i_y, 0, i_y] = np.outer(p_alpha, p_a) * p_y[i_y]
+        return mu
+
+    def _exact_columns(self, lifecycle_age, mu):
+        """The 23 panel elements at every state of (alpha, a, y, h, y_last) at
+        lifecycle_age (None where not a function of the state), with the
+        decision rule and the survival probability that move the mass mu.
+
+        The formulas are those of _simulate_sequential, evaluated on the grid.
+        """
+        shape = (self.n_alpha, self.n_a, self.n_y, self.n_h, self.n_y)
+        K, A, Y, H, YL = np.meshgrid(*(np.arange(n) for n in shape), indexing='ij')
+        a_val, h_val, y_last_val = self.a_grid[A], self.h_grid[H], self.y_grid[YL]
+        a_mult = np.exp(self.alpha_grid)[K]
+        zeros = np.zeros(shape)
+        is_retired = (lifecycle_age >= self.retirement_age)
+
+        a_next_idx = self.a_policy_alpha[:, lifecycle_age]
+        c = self.c_policy_alpha[:, lifecycle_age]
+        w_t = self.w_path[lifecycle_age]
+        kappa_t = self.wage_age_profile[lifecycle_age]
+
+        if is_retired:
+            lam = self.pension_avg_weight
+            pension_base = (lam * self.wage_age_profile[self.retirement_age - 1] * y_last_val
+                            + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
+            pension = np.maximum(
+                self.pension_replacement_path[lifecycle_age] * self.w_at_retirement
+                * pension_base * a_mult, self.pension_min_floor)
+            y_val, employed, ui, l = zeros, np.zeros(shape, dtype=bool), zeros, zeros
+        else:
+            pension = zeros
+            y_val = self.y_grid[Y]
+            employed = Y > 0
+            ui = np.where(Y == 0, self.ui_replacement_rate * w_t * kappa_t * y_last_val * a_mult, 0.0)
+            l = np.where(employed, self.l_policy_alpha[:, lifecycle_age], 0.0)
+
+        wage_income = w_t * kappa_t * y_val * h_val * l * a_mult
+        effective_y = wage_income + ui
+        m = self.m_grid[lifecycle_age][H]
+        tax_c = self.tau_c_path[lifecycle_age] * c
+        tax_p = self.tau_p_path[lifecycle_age] * wage_income
+        taxable = pension if is_retired else effective_y - tax_p
+        if self.tax_progressive:
+            tax_l = np.maximum(
+                taxable - self.tax_kappa * np.maximum(taxable, 1e-10) ** (1 - self.tax_eta), 0.0)
+        else:
+            tax_l = self.tau_l_path[lifecycle_age] * taxable
+        tax_k = self.tau_k_path[lifecycle_age] * self.r_path[lifecycle_age] * a_val
+
+        # Means-tested transfer: the solve's own budget function at each
+        # state, as the simulation calls it (the retired enter with y = 0).
+        transfer = np.zeros(shape)
+        if self.transfer_floor > 0.0:
+            for idx in np.argwhere(mu > 0.0):
+                k, i_a, i_y, i_h, i_yl = (int(v) for v in idx)
+                if is_retired:
+                    i_y = 0
+                self._alpha_mult = float(np.exp(self.alpha_grid[k]))
+                transfer[tuple(idx)] = self._compute_budget(
+                    is_retired, lifecycle_age,
+                    self.r_path[lifecycle_age], w_t,
+                    self.tau_l_path[lifecycle_age], self.tau_p_path[lifecycle_age],
+                    self.tau_k_path[lifecycle_age],
+                    self.a_grid[i_a], self.y_grid[i_y], self.h_grid[i_h],
+                    i_y, i_yl, i_h)[4]
+            self._alpha_mult = 1.0
+
+        if self.config.survival_probs is not None:
+            surv = self.survival_probs[lifecycle_age][H]
+        else:
+            surv = np.ones(shape)
+        bequest = (1.0 - surv) * (1.0 + self.trend_growth) * self.a_grid[a_next_idx]
+
+        columns = (a_val, c, y_val, h_val, H, effective_y, employed, ui,
+                   m, (1 - self.kappa) * m, self.kappa * m,
+                   tax_c, tax_l, tax_p, tax_k, None, pension,
+                   np.full(shape, is_retired), l, np.ones(shape), bequest, None, transfer)
+        return columns, a_next_idx, surv
+
+    def exact_age_means(self, T_sim=None, return_dist=False):
+        """Per-age population means of the panel variables, without simulation.
+
+        The distribution of households over (alpha, a, y, h, y_last) is carried
+        forward from _initial_distribution(): the decision rule moves mass
+        between asset nodes, P_y and P_h move it between income and health
+        states, and survival scales it. Returns means, (T_sim, 23): column i is
+        the mean over households of element i of the simulate() panel, the dead
+        counting as zero. Column 15 (average past earnings) is NaN: it depends
+        on the household's history, not on its state. With return_dist also
+        returns the mass at the start of each age, (T_sim, n_alpha, n_a, n_y,
+        n_h, n_y).
+        """
+        if T_sim is None:
+            T_sim = self.T - self.current_age
+        shape = (self.n_alpha, self.n_a, self.n_y, self.n_h, self.n_y)
+        K, A, Y, H, YL = np.meshgrid(*(np.arange(n) for n in shape), indexing='ij')
+
+        mu = self._initial_distribution()
+        mean_alpha_idx = float(np.sum(mu * K))
+        means = np.full((T_sim, 23), np.nan)
+        dists = np.zeros((T_sim,) + shape) if return_dist else None
+
+        for t_sim in range(T_sim):
+            lifecycle_age = self.current_age + t_sim
+            is_retired = (lifecycle_age >= self.retirement_age)
+            if return_dist:
+                dists[t_sim] = mu
+
+            columns, a_next_idx, surv = self._exact_columns(lifecycle_age, mu)
+            for i, x in enumerate(columns):
+                if x is not None:
+                    means[t_sim, i] = np.sum(mu * x)
+            means[t_sim, 21] = mean_alpha_idx
+
+            # Next age: survivors move to their chosen asset node, then
+            #   working: y' ~ P_y(age, h)[y, .], y_last' = y
+            #   retired: y' = 0,                 y_last' = y_last
+            # and h' ~ P_h(age)[h, .].
+            moved = np.zeros(shape)
+            np.add.at(moved, (K, a_next_idx, Y, H, YL), mu * surv)
+            P_h_age = self.P_h[lifecycle_age]
+            if is_retired:
+                mu = np.zeros(shape)
+                mu[:, :, 0, :, :] = np.einsum('kayhl,hg->kagl', moved, P_h_age)
+            else:
+                P_y_age = (self.P_y[lifecycle_age] if self.P_y_age_health
+                           else np.broadcast_to(self.P_y, (self.n_h, self.n_y, self.n_y)))
+                mu = np.einsum('kayh,hyz,hg->kazgy', moved.sum(axis=4), P_y_age, P_h_age)
+
+        return (means, dists) if return_dist else means
+
+    def exact_panel(self, rows=None):
+        """State-level cross-sections at the ages in *rows* (default: all).
+
+        Returns (panel, mass): panel is the 23-tuple layout of simulate() with
+        one column per state of the grid, each element (len(rows), n_states);
+        mass is the mass of households on each state at that age. A column
+        with zero mass is a state nobody is in. The bequest element is its
+        expected value, (1 - survival) * (1+g) * a'.
+        """
+        T_sim = self.T - self.current_age
+        rows = np.arange(T_sim) if rows is None else np.asarray(rows, dtype=int)
+        _, dists = self.exact_age_means(return_dist=True)
+        shape = dists.shape[1:]
+        K = np.meshgrid(*(np.arange(n) for n in shape), indexing='ij')[0]
+        fields = [[] for _ in range(23)]
+        for r in rows:
+            columns, _, _ = self._exact_columns(self.current_age + int(r), dists[r])
+            for i, x in enumerate(columns):
+                if x is None:
+                    x = np.full(shape, np.nan) if i == 15 else K.astype(np.int32)
+                fields[i].append(np.asarray(x).reshape(-1))
+        panel = tuple(np.stack(f) for f in fields)
+        return panel, dists[rows].reshape(len(rows), -1)
+
     def simulate(self, T_sim=None, n_sim=10000, seed=42, parallel=False, n_jobs=None):
         """
         Simulate lifecycle paths with earnings history tracking and retirement.
