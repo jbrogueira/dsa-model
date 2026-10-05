@@ -1340,6 +1340,11 @@ def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
             for bp, model in models_dict.items():
                 if bp < 0:
                     olg._mit_baseline_cache[(edu_type, bp)] = model
+        # The later-retiring parts of split cohorts, keyed as solve_cohort_problems keys them.
+        for edu_type, models_dict in (getattr(olg, 'birth_cohort_later', None) or {}).items():
+            for bp, model in models_dict.items():
+                if bp < 0:
+                    olg._mit_baseline_cache[(edu_type, bp, 'later')] = model
         # Set the pre_tp id so the cache is not invalidated
         olg._mit_pre_tp_id = id(pre_tp)
 

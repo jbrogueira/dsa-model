@@ -146,9 +146,10 @@ class OLGTransition:
                  # period tables along its calendar diagonal, clamped to [years[0], years[-1]].
                  survival_table=None,
                  demography=None,
-                 # Cohort-specific retirement: {entry_year: (retirement_age, pension_avg_weight)}
-                 # for the cohort entering at model age 0 in entry_year. None keeps
-                 # lifecycle_config.retirement_age for every cohort.
+                 # Cohort-specific retirement: {entry_year: ((retirement_age,
+                 # pension_avg_weight, share), ...)} for the cohort entering at model
+                 # age 0 in entry_year, one entry or two when the cohort is split
+                 # between consecutive ages. None keeps lifecycle_config.retirement_age.
                  cohort_retirement=None,
                  # Backend selection
                  backend='numpy',
@@ -274,6 +275,8 @@ class OLGTransition:
         self.K_domestic_path = None   # Domestic physical capital from firm's FOC (SOE only)
         self.S_pens_path = None  # Pension trust fund balance (Feature #18)
         self.birth_cohort_solutions = None
+        self.birth_cohort_later = {}
+        self.later_share = {}
         self._active_I_g_path = None           # effective I_g used in last simulate_transition
         self._active_govt_spending_path = None  # effective G used in last simulate_transition
         self._active_defense_spending_path = None    # effective defense used in last simulate_transition
@@ -399,11 +402,13 @@ class OLGTransition:
                 stc * inv, stl * inv, stp * inv, stk * inv,
                 sui * inv, spen * inv, sg * inv)
 
-    def _simulate_birth_cohort_cached(self, edu_type, birth_period, n_sim, seed):
+    def _simulate_birth_cohort_cached(self, edu_type, birth_period, n_sim, seed,
+                                      later=False):
         """Simulate a birth cohort in agent batches and cache per-age means.
 
         Returns an 11-tuple of (T,) arrays (per-age means), not the raw panel.
-        Batching keeps peak RAM at O(batch_size) regardless of n_sim.
+        Batching keeps peak RAM at O(batch_size) regardless of n_sim. *later*
+        simulates the later-retiring part of a split cohort, with the same seed.
         """
         if not hasattr(self, "_birth_sim_cache"):
             self._birth_sim_cache = {}
@@ -414,11 +419,12 @@ class OLGTransition:
         # is served the previous policy's panels, so iteration 2 reports a
         # bit-exact zero change and the loop "converges" after one step.
         key = (edu_type, int(birth_period), n_sim, seed,
-               getattr(self, '_policy_version', 0))
+               getattr(self, '_policy_version', 0)) + (('later',) if later else ())
         if key in self._birth_sim_cache:
             return self._birth_sim_cache[key]
 
-        model = self.birth_cohort_solutions[edu_type][int(birth_period)]
+        source = self.birth_cohort_later if later else self.birth_cohort_solutions
+        model = source[edu_type][int(birth_period)]
         T_sim = self.T
         batch = self.sim_agent_batch_size
 
@@ -627,7 +633,7 @@ class OLGTransition:
         return b'|'.join(np.asarray(x, dtype=float).tobytes() for x in parts)
 
     def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False,
-                                      age_means=False):
+                                      age_means=False, solutions=None):
         """Batched simulation of all cohorts in one vmapped XLA call per education type.
 
         Returns dict[edu_type][birth_period] -> the 23-tuple panel of (T, n_sim)
@@ -635,6 +641,10 @@ class OLGTransition:
         _panel_to_age_means. The means are taken on the device, so the panels
         (18.6 MB per cohort at n_sim = 2000) are not copied to the host and not
         kept in _birth_sim_cache.
+
+        *solutions* ({edu_type: {birth_period: model}}) simulates those models
+        instead of birth_cohort_solutions, with the same seeds per birth period;
+        the later-retiring parts of split cohorts are simulated this way.
         """
         import jax
         import jax.numpy as jnp
@@ -644,8 +654,7 @@ class OLGTransition:
         education_types = list(self.education_shares.keys())
         min_birth_period = -(self.T - 1)
         max_birth_period = self.T_transition - 1
-        birth_periods = list(range(min_birth_period, max_birth_period + 1))
-        n_cohorts = len(birth_periods)
+        source = self.birth_cohort_solutions if solutions is None else solutions
 
         if not hasattr(self, "_birth_sim_cache"):
             self._birth_sim_cache = {}
@@ -653,7 +662,12 @@ class OLGTransition:
         panels = {edu_type: {} for edu_type in education_types}
 
         for edu_idx, edu_type in enumerate(education_types):
-            model_list = [self.birth_cohort_solutions[edu_type][b] for b in birth_periods]
+            birth_periods = (list(range(min_birth_period, max_birth_period + 1))
+                             if solutions is None else sorted(solutions.get(edu_type, {})))
+            n_cohorts = len(birth_periods)
+            if n_cohorts == 0:
+                continue
+            model_list = [source[edu_type][b] for b in birth_periods]
             ref = model_list[0]
             n_y = ref.n_y
 
@@ -702,11 +716,11 @@ class OLGTransition:
 
             # Pre-compute per-cohort initial conditions and PRNG keys
             # (replicates LifecycleModelJAX.simulate() setup per cohort)
-            # Cache: keyed by (edu_type, n_sim, seed_base, n_cohorts). Independent of the
+            # Cache: keyed by (edu_type, n_sim, seed_base, birth periods). Independent of the
         # policies, but it does depend on the config's initial assets and earnings.
             if not hasattr(self, '_sim_init_cache'):
                 self._sim_init_cache = {}
-            _init_key = (edu_type, int(n_sim), int(seed_base), n_cohorts)
+            _init_key = (edu_type, int(n_sim), int(seed_base), tuple(birth_periods))
             if _init_key in self._sim_init_cache:
                 (_, batch_i_a, batch_i_y, batch_i_h,
                  batch_i_y_last, batch_avg_earn, batch_n_years,
@@ -887,21 +901,26 @@ class OLGTransition:
                         panels[edu_type][int(b)] = panel
                         cache_key = (edu_type, int(b), n_sim, all_seeds_u32[ci],
                                      getattr(self, '_policy_version', 0))
-                        self._birth_sim_cache[cache_key] = panel
+                        if solutions is None:
+                            self._birth_sim_cache[cache_key] = panel
 
         return panels
 
-    def _exact_cohort_age_means(self, verbose=False):
+    def _exact_cohort_age_means(self, verbose=False, solutions=None):
         """Per-cohort age means from the exact distribution over states.
 
         Returns dict[edu_type][birth_period] -> 12-tuple of (T,) arrays, the
         layout _panel_to_age_means gives for a simulated panel. Cohorts with
         the same inputs and the same policy arrays have the same means and are
-        computed once.
+        computed once. *solutions* replaces birth_cohort_solutions (the
+        later-retiring parts of split cohorts).
         """
+        source = self.birth_cohort_solutions if solutions is None else solutions
         panels = {edu_type: {} for edu_type in self.education_shares}
         for edu_type in self.education_shares:
-            models = self.birth_cohort_solutions[edu_type]
+            models = source.get(edu_type, {})
+            if not models:
+                continue
             computed_as, first_with = {}, {}
             for b, m in models.items():
                 key = (self._solve_inputs_key(m), id(m.a_policy_alpha),
@@ -1285,22 +1304,25 @@ class OLGTransition:
                 sched[j, :] = 1.0
         return sched
 
-    def _cohort_retirement_kwargs(self, birth_period):
-        """Config overrides fixing the retirement age of one birth cohort.
+    def _cohort_retirement_parts(self, birth_period):
+        """[(config overrides, share), ...] fixing the retirement of one birth cohort.
 
-        The cohort with birth period b enters in year current_year + b. Entry
-        years outside the table take its nearest end, where the statutory age
-        is constant.
+        One part, or two when the cohort is split between consecutive retirement
+        ages; the shares sum to one. The cohort with birth period b enters in
+        year current_year + b. Entry years outside the table take its nearest
+        end, where the retirement age is constant.
         """
         if not self.cohort_retirement:
-            return {}
+            return [({}, 1.0)]
         years = sorted(self.cohort_retirement)
         k = int(np.clip(int(self.current_year) + int(birth_period), years[0], years[-1]))
-        J_R, lam = self.cohort_retirement[k]
-        out = {'retirement_age': int(J_R)}
-        if lam is not None:
-            out['pension_avg_weight'] = float(lam)
-        return out
+        parts = []
+        for J_R, lam, share in self.cohort_retirement[k]:
+            kw = {'retirement_age': int(J_R)}
+            if lam is not None:
+                kw['pension_avg_weight'] = float(lam)
+            parts.append((kw, float(share)))
+        return parts
 
     def solve_cohort_problems(self, r_path, w_path,
                           tau_c_path=None, tau_l_path=None,
@@ -1354,7 +1376,10 @@ class OLGTransition:
 
         # --- SOLVE FOR UNIQUE BIRTH COHORTS ---
         birth_cohort_solutions = {}
+        birth_cohort_later = {}      # {edu_type: {bp: model}} — the later-retiring part
+        later_share = {}             # {bp: share of the cohort retiring a year later}
         _mit_baseline_to_solve = {}  # {edu_type: {bp: model}} — JAX batch-solve deferred
+        _mit_later_to_solve = {}     # the same for the later-retiring parts
 
         if verbose:
             print("\n  Solving for unique birth cohorts...")
@@ -1393,6 +1418,7 @@ class OLGTransition:
 
         for edu_type in self.education_shares.keys():
             birth_cohort_solutions[edu_type] = {}
+            birth_cohort_later[edu_type] = {}
 
             for birth_period in range(min_birth_period, max_birth_period + 1):
                 if verbose and birth_period % 10 == 0:
@@ -1410,186 +1436,205 @@ class OLGTransition:
                 cohort_tau_k = _extract_cohort_path(tau_k_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_k_path'))
                 cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4, pre_value=_pv('pension_replacement_path'))
 
-                # Create and solve the model for this birth cohort
-                cohort_feature_kwargs = dict(_feature_kwargs)
-                cohort_feature_kwargs.update(self._cohort_retirement_kwargs(birth_period))
-                if _use_per_cohort_survival:
-                    cohort_surv = self._cohort_survival_schedule(birth_period)
-                    cohort_feature_kwargs['survival_probs'] = cohort_surv
-                bequest_ls = (
-                    float(bequest_lumpsum_path[birth_period])
-                    if bequest_lumpsum_path is not None and birth_period in bequest_lumpsum_path
-                    else 0.0
-                )
-                # Cohort config: _replace preserves all fields on lifecycle_config
-                # (edu_params, n_alpha, wage_age_profile, kappa, m_good, ...);
-                # cohort_feature_kwargs only carries fields possibly overridden by
-                # per-cohort survival (transfer_floor mutation, etc.).
-                config = self.lifecycle_config._replace(
-                    education_type=edu_type, current_age=0,
-                    r_path=cohort_r, w_path=cohort_w,
-                    tau_c_path=cohort_tau_c, tau_l_path=cohort_tau_l,
-                    tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
-                    pension_replacement_path=cohort_pension,
-                    bequest_lumpsum=bequest_ls,
-                    **cohort_feature_kwargs,
-                )
+                # A cohort split between two retirement ages solves both problems;
+                # part 0 retires first, part 1 a year later with share `share`.
+                for part, (ret_kw, share) in enumerate(
+                        self._cohort_retirement_parts(birth_period)):
+                    # Create and solve the model for this birth cohort
+                    cohort_feature_kwargs = dict(_feature_kwargs)
+                    cohort_feature_kwargs.update(ret_kw)
+                    if _use_per_cohort_survival:
+                        cohort_surv = self._cohort_survival_schedule(birth_period)
+                        cohort_feature_kwargs['survival_probs'] = cohort_surv
+                    bequest_ls = (
+                        float(bequest_lumpsum_path[birth_period])
+                        if bequest_lumpsum_path is not None and birth_period in bequest_lumpsum_path
+                        else 0.0
+                    )
+                    # Cohort config: _replace preserves all fields on lifecycle_config
+                    # (edu_params, n_alpha, wage_age_profile, kappa, m_good, ...);
+                    # cohort_feature_kwargs only carries fields possibly overridden by
+                    # per-cohort survival (transfer_floor mutation, etc.).
+                    config = self.lifecycle_config._replace(
+                        education_type=edu_type, current_age=0,
+                        r_path=cohort_r, w_path=cohort_w,
+                        tau_c_path=cohort_tau_c, tau_l_path=cohort_tau_l,
+                        tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
+                        pension_replacement_path=cohort_pension,
+                        bequest_lumpsum=bequest_ls,
+                        **cohort_feature_kwargs,
+                    )
                 
-                model = self._lifecycle_model_class(config, verbose=False)
-                if self.backend != 'jax':
-                    model.solve(verbose=False)
+                    model = self._lifecycle_model_class(config, verbose=False)
+                    if self.backend != 'jax':
+                        model.solve(verbose=False)
 
-                # MIT shock stitching: pre-transition policy functions must equal baseline.
-                # Even with baseline-padded paths, backward induction propagates the
-                # post-t=0 counterfactual tax into ages 0…pre-1.  Fix: solve a pure
-                # baseline lifecycle model (NumPy, cached) and copy its policy functions
-                # for ages 0…pre-1 so that simulated assets at t=0 equal the baseline.
-                if pre_transition_paths is not None and birth_period < 0:
-                    pre = -birth_period
-                    bcs_key = (edu_type, birth_period)
-                    if bcs_key not in self._mit_baseline_cache:
-                        base_cohort_tau_c = _extract_cohort_path(
-                            _base_tau_c_ext, birth_period, self.T, default=0.0)
-                        base_cohort_tau_l = _extract_cohort_path(
-                            _base_tau_l_ext, birth_period, self.T, default=0.0)
-                        base_cohort_tau_p = _extract_cohort_path(
-                            _base_tau_p_ext, birth_period, self.T, default=0.0)
-                        base_cohort_tau_k = _extract_cohort_path(
-                            _base_tau_k_ext, birth_period, self.T, default=0.0)
-                        base_cohort_pension = _extract_cohort_path(
-                            _base_pension_ext, birth_period, self.T, default=0.4)
-                        base_cohort_r = _extract_cohort_path(
-                            _base_r_ext if _base_r_ext is not None else r_path,
-                            birth_period, self.T)
-                        base_cohort_w = _extract_cohort_path(
-                            _base_w_ext if _base_w_ext is not None else w_path,
-                            birth_period, self.T)
-                        # MIT baseline must use baseline feature values, not the
-                        # (possibly mutated) counterfactual ones.  Currently only
-                        # transfer_floor can be mutated on lifecycle_config by
-                        # simulate_transition(); restore it from pre_transition_paths.
-                        base_feature_kwargs = dict(cohort_feature_kwargs)
-                        _base_tf = pre_transition_paths.get('transfer_floor')
-                        if _base_tf is not None:
-                            base_feature_kwargs['transfer_floor'] = float(_base_tf)
-                        # MIT baseline config: _replace also preserves edu_params,
-                        # n_alpha, etc. base_feature_kwargs carries the
-                        # transfer_floor override for the MIT baseline case.
-                        base_config = self.lifecycle_config._replace(
-                            education_type=edu_type, current_age=0,
-                            r_path=base_cohort_r, w_path=base_cohort_w,
-                            tau_c_path=base_cohort_tau_c, tau_l_path=base_cohort_tau_l,
-                            tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,
-                            pension_replacement_path=base_cohort_pension,
-                            bequest_lumpsum=bequest_ls,
-                            **base_feature_kwargs,
-                        )
-                        if self.backend == 'jax':
-                            # Defer to JAX batch-solve (collected, solved after the loop)
-                            base_model = self._lifecycle_model_class(base_config, verbose=False)
-                            _mit_baseline_to_solve.setdefault(edu_type, {})[birth_period] = base_model
-                        else:
-                            base_model = LifecycleModelPerfectForesight(base_config, verbose=False)
-                            base_model.solve(verbose=False)
-                            self._mit_baseline_cache[bcs_key] = base_model
-                    # Stitch: overwrite pre-transition ages with baseline policy arrays.
-                    # (JAX stitching happens post batch-solve at lines below;
-                    #  NumPy stitching happens here immediately.)
-                    if self.backend != 'jax' and bcs_key in self._mit_baseline_cache:
-                        base_model = self._mit_baseline_cache[bcs_key]
-                        # Stitch the per-alpha arrays too: both simulate paths
-                        # read *_policy_alpha (the scalar arrays alias alpha=0
-                        # only), so stitching the scalars alone never reaches
-                        # the simulation.
-                        for attr in ('a_policy', 'c_policy', 'l_policy',
-                                     'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
-                            base_arr = getattr(base_model, attr, None)
-                            cf_arr   = getattr(model, attr, None)
-                            if base_arr is None or cf_arr is None:
-                                continue
-                            arr = np.asarray(cf_arr).copy()
-                            if attr.endswith('_alpha'):
-                                arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                    # MIT shock stitching: pre-transition policy functions must equal baseline.
+                    # Even with baseline-padded paths, backward induction propagates the
+                    # post-t=0 counterfactual tax into ages 0…pre-1.  Fix: solve a pure
+                    # baseline lifecycle model (NumPy, cached) and copy its policy functions
+                    # for ages 0…pre-1 so that simulated assets at t=0 equal the baseline.
+                    if pre_transition_paths is not None and birth_period < 0:
+                        pre = -birth_period
+                        bcs_key = ((edu_type, birth_period) if part == 0
+                                   else (edu_type, birth_period, 'later'))
+                        if bcs_key not in self._mit_baseline_cache:
+                            base_cohort_tau_c = _extract_cohort_path(
+                                _base_tau_c_ext, birth_period, self.T, default=0.0)
+                            base_cohort_tau_l = _extract_cohort_path(
+                                _base_tau_l_ext, birth_period, self.T, default=0.0)
+                            base_cohort_tau_p = _extract_cohort_path(
+                                _base_tau_p_ext, birth_period, self.T, default=0.0)
+                            base_cohort_tau_k = _extract_cohort_path(
+                                _base_tau_k_ext, birth_period, self.T, default=0.0)
+                            base_cohort_pension = _extract_cohort_path(
+                                _base_pension_ext, birth_period, self.T, default=0.4)
+                            base_cohort_r = _extract_cohort_path(
+                                _base_r_ext if _base_r_ext is not None else r_path,
+                                birth_period, self.T)
+                            base_cohort_w = _extract_cohort_path(
+                                _base_w_ext if _base_w_ext is not None else w_path,
+                                birth_period, self.T)
+                            # MIT baseline must use baseline feature values, not the
+                            # (possibly mutated) counterfactual ones.  Currently only
+                            # transfer_floor can be mutated on lifecycle_config by
+                            # simulate_transition(); restore it from pre_transition_paths.
+                            base_feature_kwargs = dict(cohort_feature_kwargs)
+                            _base_tf = pre_transition_paths.get('transfer_floor')
+                            if _base_tf is not None:
+                                base_feature_kwargs['transfer_floor'] = float(_base_tf)
+                            # MIT baseline config: _replace also preserves edu_params,
+                            # n_alpha, etc. base_feature_kwargs carries the
+                            # transfer_floor override for the MIT baseline case.
+                            base_config = self.lifecycle_config._replace(
+                                education_type=edu_type, current_age=0,
+                                r_path=base_cohort_r, w_path=base_cohort_w,
+                                tau_c_path=base_cohort_tau_c, tau_l_path=base_cohort_tau_l,
+                                tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,
+                                pension_replacement_path=base_cohort_pension,
+                                bequest_lumpsum=bequest_ls,
+                                **base_feature_kwargs,
+                            )
+                            if self.backend == 'jax':
+                                # Defer to JAX batch-solve (collected, solved after the loop)
+                                base_model = self._lifecycle_model_class(base_config, verbose=False)
+                                (_mit_baseline_to_solve if part == 0 else _mit_later_to_solve) \
+                                    .setdefault(edu_type, {})[birth_period] = base_model
                             else:
-                                arr[:pre] = np.asarray(base_arr)[:pre]
-                            setattr(model, attr, arr)
+                                base_model = LifecycleModelPerfectForesight(base_config, verbose=False)
+                                base_model.solve(verbose=False)
+                                self._mit_baseline_cache[bcs_key] = base_model
+                        # Stitch: overwrite pre-transition ages with baseline policy arrays.
+                        # (JAX stitching happens post batch-solve at lines below;
+                        #  NumPy stitching happens here immediately.)
+                        if self.backend != 'jax' and bcs_key in self._mit_baseline_cache:
+                            base_model = self._mit_baseline_cache[bcs_key]
+                            # Stitch the per-alpha arrays too: both simulate paths
+                            # read *_policy_alpha (the scalar arrays alias alpha=0
+                            # only), so stitching the scalars alone never reaches
+                            # the simulation.
+                            for attr in ('a_policy', 'c_policy', 'l_policy',
+                                         'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
+                                base_arr = getattr(base_model, attr, None)
+                                cf_arr   = getattr(model, attr, None)
+                                if base_arr is None or cf_arr is None:
+                                    continue
+                                arr = np.asarray(cf_arr).copy()
+                                if attr.endswith('_alpha'):
+                                    arr[:, :pre] = np.asarray(base_arr)[:, :pre]
+                                else:
+                                    arr[:pre] = np.asarray(base_arr)[:pre]
+                                setattr(model, attr, arr)
 
-                # DEBUG: Print asset policy for cohorts born during transition
-                # (skipped for JAX batched mode — policies not yet available)
-                if self.backend != 'jax' and verbose and birth_period >= 0 and birth_period < 5:
-                    print(f"\n    → Cohort born at t={birth_period} ({edu_type}):")
-                    print(f"       Price paths: r={cohort_r[:3]} ... {cohort_r[-2:]}")
-                    print(f"                    w={cohort_w[:3]} ... {cohort_w[-2:]}")
+                    # DEBUG: Print asset policy for cohorts born during transition
+                    # (skipped for JAX batched mode — policies not yet available)
+                    if self.backend != 'jax' and verbose and birth_period >= 0 and birth_period < 5:
+                        print(f"\n    → Cohort born at t={birth_period} ({edu_type}):")
+                        print(f"       Price paths: r={cohort_r[:3]} ... {cohort_r[-2:]}")
+                        print(f"                    w={cohort_w[:3]} ... {cohort_w[-2:]}")
 
-                    # Show asset policy at age 0 (newborn)
-                    age = 0
-                    # a_policy shape: (T, n_a, n_y, n_h, n_e)
-                    # Show policy for median asset state, first income/health state
-                    mid_a = model.config.n_a // 2
-                    a_next_idx = model.a_policy[age, mid_a, 0, 0, 0]
-                    a_next_level = model.a_grid[a_next_idx]
-                    print(f"       Asset policy at age {age}: a'={a_next_level:.6f} (idx={a_next_idx}, from a={model.a_grid[mid_a]:.6f})")
+                        # Show asset policy at age 0 (newborn)
+                        age = 0
+                        # a_policy shape: (T, n_a, n_y, n_h, n_e)
+                        # Show policy for median asset state, first income/health state
+                        mid_a = model.config.n_a // 2
+                        a_next_idx = model.a_policy[age, mid_a, 0, 0, 0]
+                        a_next_level = model.a_grid[a_next_idx]
+                        print(f"       Asset policy at age {age}: a'={a_next_level:.6f} (idx={a_next_idx}, from a={model.a_grid[mid_a]:.6f})")
 
-                    # Show mean asset policy across all states
-                    mean_a_policy = np.mean(model.a_policy[age, :, :, :, :])
-                    max_a_policy = np.max(model.a_policy[age, :, :, :, :])
-                    print(f"       Mean a' at age {age}: {mean_a_policy:.6f}, Max a': {max_a_policy:.6f}")
+                        # Show mean asset policy across all states
+                        mean_a_policy = np.mean(model.a_policy[age, :, :, :, :])
+                        max_a_policy = np.max(model.a_policy[age, :, :, :, :])
+                        print(f"       Mean a' at age {age}: {mean_a_policy:.6f}, Max a': {max_a_policy:.6f}")
 
-                    # Check if saving is happening
-                    if mean_a_policy < 0.01:
-                        print("       ⚠️  WARNING: Near-zero savings for this cohort!")
+                        # Check if saving is happening
+                        if mean_a_policy < 0.01:
+                            print("       ⚠️  WARNING: Near-zero savings for this cohort!")
 
-                birth_cohort_solutions[edu_type][birth_period] = model
+                    if part == 0:
+                        birth_cohort_solutions[edu_type][birth_period] = model
+                    else:
+                        birth_cohort_later[edu_type][birth_period] = model
+                        later_share[birth_period] = share
 
         # JAX batched solve: MIT baseline models (deferred from the loop above)
-        if self.backend == 'jax' and _mit_baseline_to_solve:
-            if verbose:
-                _n_mit = sum(len(d) for d in _mit_baseline_to_solve.values())
-                print(f"  JAX batched solve: {_n_mit} MIT baseline models...")
-            self._solve_cohorts_jax_batched(_mit_baseline_to_solve, verbose=False)
-            for edu_mit, models_mit in _mit_baseline_to_solve.items():
-                for bp_mit, model_mit in models_mit.items():
-                    self._mit_baseline_cache[(edu_mit, bp_mit)] = model_mit
+        if self.backend == 'jax':
+            for todo, tag in ((_mit_baseline_to_solve, ()), (_mit_later_to_solve, ('later',))):
+                if not todo:
+                    continue
+                if verbose:
+                    print(f"  JAX batched solve: {sum(len(d) for d in todo.values())} "
+                          f"MIT baseline models{' (later-retiring parts)' if tag else ''}...")
+                self._solve_cohorts_jax_batched(todo, verbose=False)
+                for edu_mit, models_mit in todo.items():
+                    for bp_mit, model_mit in models_mit.items():
+                        self._mit_baseline_cache[(edu_mit, bp_mit) + tag] = model_mit
 
-        # JAX batched solve: all cohorts in one vmapped XLA call per education type
+        # JAX batched solve: all cohorts in one vmapped XLA call per education
+        # type and retirement group, then the later-retiring parts
         if self.backend == 'jax':
             self._solve_cohorts_jax_batched(birth_cohort_solutions, verbose)
+            if any(birth_cohort_later.values()):
+                self._solve_cohorts_jax_batched(birth_cohort_later, verbose)
 
         # MIT shock stitching for JAX backend (post batch-solve).
         # Baseline models were built during the loop above; on the JAX backend they
         # are LifecycleModelJAX instances deferred to _solve_cohorts_jax_batched.
         if self.backend == 'jax' and pre_transition_paths is not None:
-            for edu_type_jax in self.education_shares.keys():
-                for bp in range(min_birth_period, 0):
-                    bcs_key = (edu_type_jax, bp)
-                    if bcs_key not in self._mit_baseline_cache:
+            stitch = [((e, bp), birth_cohort_solutions[e][bp])
+                      for e in self.education_shares for bp in range(min_birth_period, 0)]
+            stitch += [((e, bp, 'later'), m) for e in self.education_shares
+                       for bp, m in birth_cohort_later[e].items() if bp < 0]
+            for bcs_key, jax_m in stitch:
+                if bcs_key not in self._mit_baseline_cache:
+                    continue
+                base_m = self._mit_baseline_cache[bcs_key]
+                pre = -bcs_key[1]
+                # Stitch the per-alpha arrays too: the batched simulate
+                # reads *_policy_alpha, so stitching the scalar arrays
+                # alone never reaches the simulation.
+                for attr in ('a_policy', 'c_policy', 'l_policy',
+                             'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
+                    base_arr = getattr(base_m, attr, None)
+                    jax_arr  = getattr(jax_m, attr, None)
+                    if base_arr is None or jax_arr is None:
                         continue
-                    base_m = self._mit_baseline_cache[bcs_key]
-                    jax_m  = birth_cohort_solutions[edu_type_jax][bp]
-                    pre    = -bp
-                    # Stitch the per-alpha arrays too: the batched simulate
-                    # reads *_policy_alpha, so stitching the scalar arrays
-                    # alone never reaches the simulation.
-                    for attr in ('a_policy', 'c_policy', 'l_policy',
-                                 'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
-                        base_arr = getattr(base_m, attr, None)
-                        jax_arr  = getattr(jax_m, attr, None)
-                        if base_arr is None or jax_arr is None:
-                            continue
-                        if self.jax_policies_on_device:
-                            import jax.numpy as jnp
-                            ages = ((slice(None), slice(None, pre)) if attr.endswith('_alpha')
-                                    else (slice(None, pre),))
-                            arr = jnp.asarray(jax_arr).at[ages].set(jnp.asarray(base_arr)[ages])
+                    if self.jax_policies_on_device:
+                        import jax.numpy as jnp
+                        ages = ((slice(None), slice(None, pre)) if attr.endswith('_alpha')
+                                else (slice(None, pre),))
+                        arr = jnp.asarray(jax_arr).at[ages].set(jnp.asarray(base_arr)[ages])
+                    else:
+                        arr = np.asarray(jax_arr).copy()
+                        if attr.endswith('_alpha'):
+                            arr[:, :pre] = np.asarray(base_arr)[:, :pre]
                         else:
-                            arr = np.asarray(jax_arr).copy()
-                            if attr.endswith('_alpha'):
-                                arr[:, :pre] = np.asarray(base_arr)[:, :pre]
-                            else:
-                                arr[:pre] = np.asarray(base_arr)[:pre]
-                        setattr(jax_m, attr, arr)
+                            arr[:pre] = np.asarray(base_arr)[:pre]
+                    setattr(jax_m, attr, arr)
         # Store birth cohort solutions for later cohort-level simulation/slicing
         self.birth_cohort_solutions = birth_cohort_solutions
+        self.birth_cohort_later = birth_cohort_later
+        self.later_share = later_share
 
         # --- INITIAL CONDITIONS FOR OLD COHORTS ---
         # Old cohorts (birth_period < 0) simulate from age 0 with a=0 and avg_earnings=0,
@@ -1614,6 +1659,66 @@ class OLGTransition:
         """
         raw = int(base) + 10_000 * int(birth_period) + 1_000_000 * int(edu_idx)
         return self._seed_u32(raw)
+
+    def _cohort_age_means(self, n_sim, seed_base, verbose=False, solutions=None):
+        """{edu_type: {birth_period: N_AGE_MEANS-tuple of (T,) age means}} for
+        the cohort models in *solutions* (default birth_cohort_solutions), by
+        exact aggregation or by simulation on the configured backend."""
+        education_types = list(self.education_shares.keys())
+        min_birth_period = -(self.T - 1)
+        max_birth_period = self.T_transition - 1
+        if self.aggregation == 'exact':
+            panels = self._exact_cohort_age_means(verbose, solutions=solutions)
+        elif self.backend == 'jax':
+            agent_batch = self.sim_agent_batch_size
+            n_agent_batches = max(1, (n_sim + agent_batch - 1) // agent_batch)
+            if n_agent_batches == 1:
+                panels = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose,
+                                                            age_means=True, solutions=solutions)
+            else:
+                edu_types_ab = list(self.education_shares.keys())
+                birth_periods_ab = (list(range(min_birth_period, max_birth_period + 1))
+                                    if solutions is None else
+                                    sorted({b for d in solutions.values() for b in d}))
+                sums = {edu: {b: [np.zeros(self.T) for _ in range(N_AGE_MEANS)]
+                              for b in birth_periods_ab}
+                        for edu in edu_types_ab}
+                agents_done = 0
+                for ab_idx in range(n_agent_batches):
+                    n_ab = min(agent_batch, n_sim - agents_done)
+                    ab_seed = int((seed_base + ab_idx * 999983) & 0xFFFFFFFF)
+                    raw_b = self._simulate_cohorts_jax_batched(
+                        n_ab, ab_seed, verbose=(verbose and ab_idx == 0), age_means=True,
+                        solutions=solutions)
+                    for edu in edu_types_ab:
+                        for b, bm in raw_b.get(edu, {}).items():
+                            for k in range(N_AGE_MEANS):
+                                sums[edu][b][k] += bm[k] * n_ab
+                    # Free cached init conditions to bound memory
+                    if hasattr(self, '_sim_init_cache'):
+                        self._sim_init_cache = {}
+                    agents_done += n_ab
+                panels = {edu: {b: tuple(sums[edu][b][k] / n_sim for k in range(N_AGE_MEANS))
+                                for b in birth_periods_ab
+                                if solutions is None or b in solutions.get(edu, {})}
+                          for edu in edu_types_ab}
+        else:
+            panels = {edu_type: {} for edu_type in education_types}
+
+            for edu_idx, edu_type in enumerate(education_types):
+                bps = (range(min_birth_period, max_birth_period + 1) if solutions is None
+                       else sorted(solutions.get(edu_type, {})))
+                for b in bps:
+                    seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
+                    panels[edu_type][int(b)] = self._simulate_birth_cohort_cached(
+                        edu_type=edu_type,
+                        birth_period=int(b),
+                        n_sim=int(n_sim),
+                        seed=int(seed),
+                        later=solutions is not None,
+                    )
+
+        return panels
 
     def _ensure_cohort_panel_cache(self, n_sim: Optional[int] = None, seed_base: int = 42, verbose: bool = False):
         """
@@ -1648,49 +1753,17 @@ class OLGTransition:
             print(f"Precomputing cohort panels for birth_period in [{min_birth_period}, {max_birth_period}] "
                   f"(n_sim={n_sim}, seed_base={seed_base}) ...")
 
-        if self.aggregation == 'exact':
-            panels = self._exact_cohort_age_means(verbose)
-        elif self.backend == 'jax':
-            agent_batch = self.sim_agent_batch_size
-            n_agent_batches = max(1, (n_sim + agent_batch - 1) // agent_batch)
-            if n_agent_batches == 1:
-                panels = self._simulate_cohorts_jax_batched(int(n_sim), int(seed_base), verbose,
-                                                            age_means=True)
-            else:
-                edu_types_ab = list(self.education_shares.keys())
-                birth_periods_ab = list(range(min_birth_period, max_birth_period + 1))
-                sums = {edu: {b: [np.zeros(self.T) for _ in range(N_AGE_MEANS)]
-                              for b in birth_periods_ab}
-                        for edu in edu_types_ab}
-                agents_done = 0
-                for ab_idx in range(n_agent_batches):
-                    n_ab = min(agent_batch, n_sim - agents_done)
-                    ab_seed = int((seed_base + ab_idx * 999983) & 0xFFFFFFFF)
-                    raw_b = self._simulate_cohorts_jax_batched(
-                        n_ab, ab_seed, verbose=(verbose and ab_idx == 0), age_means=True)
-                    for edu in edu_types_ab:
-                        for b, bm in raw_b[edu].items():
-                            for k in range(N_AGE_MEANS):
-                                sums[edu][b][k] += bm[k] * n_ab
-                    # Free cached init conditions to bound memory
-                    if hasattr(self, '_sim_init_cache'):
-                        self._sim_init_cache = {}
-                    agents_done += n_ab
-                panels = {edu: {b: tuple(sums[edu][b][k] / n_sim for k in range(N_AGE_MEANS))
-                                for b in birth_periods_ab}
-                          for edu in edu_types_ab}
-        else:
-            panels = {edu_type: {} for edu_type in education_types}
-
-            for edu_idx, edu_type in enumerate(education_types):
-                for b in range(min_birth_period, max_birth_period + 1):
-                    seed = self._crn_seed(edu_idx=edu_idx, birth_period=int(b), base=int(seed_base))
-                    panels[edu_type][int(b)] = self._simulate_birth_cohort_cached(
-                        edu_type=edu_type,
-                        birth_period=int(b),
-                        n_sim=int(n_sim),
-                        seed=int(seed),
-                    )
+        panels = self._cohort_age_means(n_sim, seed_base, verbose)
+        # A cohort split between two retirement ages: its age means are the
+        # mixture of its two parts' means, weighted by their shares.
+        later = getattr(self, 'birth_cohort_later', None) or {}
+        if any(later.values()):
+            later_means = self._cohort_age_means(n_sim, seed_base, verbose, solutions=later)
+            for edu, by_bp in later_means.items():
+                for b, q in by_bp.items():
+                    w = float(self.later_share[b])
+                    panels[edu][b] = tuple((1.0 - w) * np.asarray(p_) + w * np.asarray(q_)
+                                           for p_, q_ in zip(panels[edu][b], q))
 
         self._cohort_panel_cache[cache_key] = panels
         # Evict entries with a different policy_version to bound memory use
@@ -2431,6 +2504,7 @@ class OLGTransition:
                 # The cohort models of that call were not kept, so there are no
                 # policy functions to read after this one.
                 self.birth_cohort_solutions = None
+                self.birth_cohort_later = {}
                 if verbose:
                     print("\nHousehold inputs unchanged from an earlier call: "
                           "reusing its cohort age means.")

@@ -63,6 +63,20 @@ SMM_LABELS = {
 }
 
 
+def _retirement_row(cfg, mod):
+    """Parameter-table row for the retirement age: the base-year average
+    effective age from the retirement file when one is configured (it then
+    rises with life expectancy at 65), else the model's single age."""
+    rel = cfg.get('transition', {}).get('retirement_age_file')
+    path = None if not rel else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', rel)
+    if path and os.path.exists(path):
+        base_age = float(np.load(path)['base_age'])
+        return ('$R_{2023}$', 'average effective retirement age, 2023', base_age,
+                '2024 Ageing Report; rises with life expectancy at 65')
+    return ('$J_R$', f"retirement age (real age {25 + int(mod.get('retirement_age'))})",
+            mod.get('retirement_age'), '')
+
+
 def params_table(cfg, n0=None, n_inf=None):
     """n0 is the realised population growth of the base year from the
     demographic path and n_inf the terminal rate; the configuration's
@@ -102,10 +116,7 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
          'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
         ('$T$', 'model ages (real ages 25--84)', mod.get('T'), ''),
-        ('$J_R$', f"retirement age in 2023 (real age {25 + int(mod.get('retirement_age'))})",
-         mod.get('retirement_age'),
-         'rises with life expectancy at 65' if cfg.get('transition', {}).get('retirement_age_file')
-         else ''),
+        _retirement_row(cfg, mod),
     ]
     # One row per parameter the configuration lists for the SMM; a parameter
     # the last fit did not cover shows no value rather than its initial.

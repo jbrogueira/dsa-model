@@ -371,8 +371,7 @@ class CalibrationSpec:
     aggregation: str = 'simulation'
     # Retirement age and career-average pension weight of the cohort aged 25+j
     # in the base year, (T,) each; None keeps base_config's for every cohort.
-    cohort_retirement_age: Optional[np.ndarray] = None
-    cohort_pension_avg_weight: Optional[np.ndarray] = None
+    cohort_retirement: Optional[list] = None   # per cohort: ((J_R, lambda, share), ...)
     backend: str = 'numpy'  # 'numpy' or 'jax'
     production: dict = field(default_factory=lambda: {
         'alpha': 0.33, 'delta': 0.07, 'A_tfp': 1.0,
@@ -900,83 +899,114 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
     seed = spec.seed if seed is None else seed
     exact = spec.aggregation == 'exact'
 
-    # Retirement age and pension weight of each cohort (the base config's when
-    # the spec carries none).
-    if spec.cohort_retirement_age is not None:
-        ret = [(int(J), float(lam)) for J, lam in zip(spec.cohort_retirement_age,
-                                                      spec.cohort_pension_avg_weight)]
+    # Retirement entries ((J_R, pension weight, share), ...) of each cohort: one
+    # entry, or two when the cohort is split between consecutive retirement
+    # ages (the base config's age when the spec carries none).
+    if spec.cohort_retirement is not None:
+        ret = [tuple((int(J), float(lam), float(w)) for J, lam, w in e)
+               for e in spec.cohort_retirement]
     else:
-        ret = [(int(config.retirement_age), float(config.pension_avg_weight))] * T
+        ret = [((int(config.retirement_age), float(config.pension_avg_weight), 1.0),)] * T
+    any_split = any(len(e) > 1 for e in ret)
 
-    def cohort_config(edu_type, surv, j):
+    def cohort_config(edu_type, surv, J, lam):
         return config._replace(
             education_type=edu_type,
             survival_probs=surv,
             r_path=np.full(T, spec.r),
             w_path=np.full(T, spec.w),
-            retirement_age=ret[j][0],
-            pension_avg_weight=ret[j][1],
+            retirement_age=J,
+            pension_avg_weight=lam,
         )
+
+    def combine(j, parts):
+        """The row of cohort j from its parts {(J, lam): (fields, mass)}.
+
+        Simulated: the cohort's agents are spliced, the first share from the
+        first retirement age and the rest from the second; every part draws the
+        same shocks, so each agent is the same agent under its own age. Exact:
+        the parts' state columns side by side with masses scaled by the shares,
+        two blocks per row whenever any cohort is split so rows keep one width.
+        """
+        e = ret[j]
+        if exact:
+            blocks, masses = [], []
+            for J, lam, w in e:
+                f, m = parts[(J, lam)]
+                blocks.append(f)
+                masses.append(m * w)
+            if any_split and len(e) == 1:
+                blocks.append(blocks[0])
+                masses.append(np.zeros_like(masses[0]))
+            return ([np.concatenate([b[i] for b in blocks]) for i in range(len(blocks[0]))],
+                    np.concatenate(masses))
+        if len(e) == 1:
+            return parts[e[0][:2]][0], None
+        n_first = int(round(e[0][2] * n_sim))
+        f0, f1 = parts[e[0][:2]][0], parts[e[1][:2]][0]
+        return [np.concatenate([a[:n_first], b[n_first:]]) for a, b in zip(f0, f1)], None
+
+    def assemble(rows_by_j):
+        """(fields, mass) of the cross-section, row j from rows_by_j[j]."""
+        fields = [np.stack([rows_by_j[j][0][i] for j in range(T)])
+                  for i in range(len(rows_by_j[0][0]))]
+        mass = np.stack([rows_by_j[j][1] for j in range(T)]) if exact else None
+        return fields, mass
 
     panels = {}
     for edu_type in spec.education_shares:
         if batched and cls is LifecycleModelJAX:
-            # One batched call per retirement group: the retirement age is a
-            # static argument of the JAX solve and the pension weight a scalar
-            # shared by the batch.
+            # One batched call per retirement age: the age is a static argument
+            # of the JAX solve and the pension weight a scalar shared by the batch.
             groups = {}
             for j in range(T):
-                groups.setdefault(ret[j], []).append(j)
-            out = mass = None
-            for js in groups.values():
+                for J, lam, _ in ret[j]:
+                    groups.setdefault((J, lam), []).append(j)
+            parts = {j: {} for j in range(T)}
+            for (J, lam), js in groups.items():
                 surv_stack = np.stack([S if shared else S[j].reshape(T, config.n_h)
                                        for j in js])
-                model = cls(cohort_config(edu_type, surv_stack[0], js[0]), verbose=False)
+                model = cls(cohort_config(edu_type, surv_stack[0], J, lam), verbose=False)
                 if exact:
                     part, part_mass = model.cross_section_exact(
                         surv_stack, rows=js, chunk_size=chunk_size)
-                    if mass is None:
-                        mass = np.zeros((T, part_mass.shape[1]))
-                    mass[js] = part_mass
                 else:
                     seeds = [seed + j if seed_per_cohort else seed for j in js]
                     part = model.cross_section_batched(surv_stack, seeds, n_sim,
                                                        chunk_size=chunk_size, rows=js)
-                if out is None:
-                    out = [np.zeros((T, x.shape[1]), dtype=x.dtype) for x in part]
-                for o, x in zip(out, part):
-                    o[js] = x
-            panels[edu_type] = (exact_panel_to_simpanel(tuple(out), mass) if exact
-                                else wrap_sim_output(tuple(out)))
+                    part_mass = None
+                for i, j in enumerate(js):
+                    parts[j][(J, lam)] = ([np.asarray(x)[i] for x in part],
+                                          None if part_mass is None else part_mass[i])
+            rows_by_j = {j: combine(j, parts[j]) for j in range(T)}
+            fields, mass = assemble(rows_by_j)
+            panels[edu_type] = (exact_panel_to_simpanel(tuple(fields), mass) if exact
+                                else wrap_sim_output(tuple(fields)))
             if verbose:
                 print(f'    {edu_type}: {T} cohorts in {len(groups)} retirement '
                       f'groups (batched)', flush=True)
             continue
-        rows = None
+        rows_by_j = {}
         for j in range(T):
             surv_j = S if shared else S[j].reshape(T, config.n_h)
-            cfg_j = cohort_config(edu_type, surv_j, j)
-            model = cls(cfg_j, verbose=False)
-            model.solve(verbose=False)
-            if exact:
-                # The cohort's cross-section over states at age j, as row j.
-                panel = exact_panel_to_simpanel(*model.exact_panel(rows=[j]))
-                at = 0
-            else:
-                panel = wrap_sim_output(model.simulate(
-                    T_sim=j + 1, n_sim=n_sim,
-                    seed=seed + j if seed_per_cohort else seed))
-                at = j
-            fields = [f for f in panel._fields if getattr(panel, f) is not None]
-            if rows is None:
-                n_col = np.asarray(panel.a_sim).shape[1]
-                rows = {f: np.zeros((T, n_col), dtype=np.asarray(getattr(panel, f)).dtype)
-                        for f in fields}
-            for f in fields:
-                rows[f][j] = np.asarray(getattr(panel, f))[at]
+            parts = {}
+            for J, lam, _ in ret[j]:
+                model = cls(cohort_config(edu_type, surv_j, J, lam), verbose=False)
+                model.solve(verbose=False)
+                if exact:
+                    # The cohort's cross-section over states at age j.
+                    raw, mass = model.exact_panel(rows=[j])
+                    parts[(J, lam)] = ([np.asarray(x)[0] for x in raw], np.asarray(mass)[0])
+                else:
+                    raw = model.simulate(T_sim=j + 1, n_sim=n_sim,
+                                         seed=seed + j if seed_per_cohort else seed)
+                    parts[(J, lam)] = ([np.asarray(x)[j] for x in raw], None)
+            rows_by_j[j] = combine(j, parts)
             if verbose and (j + 1) % 10 == 0:
                 print(f'    {edu_type}: cohort {j + 1}/{T}', flush=True)
-        panels[edu_type] = SimPanel(**rows)
+        fields, mass = assemble(rows_by_j)
+        panels[edu_type] = (exact_panel_to_simpanel(tuple(fields), mass) if exact
+                            else wrap_sim_output(tuple(fields)))
     return panels
 
 
@@ -1442,9 +1472,9 @@ def load_config(path):
                 'calibration.base_year_cohorts is set but the cohort survival '
                 'schedules are unavailable; check transition.demography_file')
 
-    cohort_J_R = cohort_lam = None
+    cohort_retirement = None
     if cohort_survival is not None:
-        cohort_J_R, cohort_lam = base_year_cohort_retirement(raw, T)
+        cohort_retirement = base_year_cohort_retirement(raw, T)
 
     # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]
@@ -1473,8 +1503,7 @@ def load_config(path):
         cohort_survival=cohort_survival,
         n_sim_cohorts=sim.get('n_sim_cohorts', 2000),
         aggregation=sim.get('aggregation', 'simulation'),
-        cohort_retirement_age=cohort_J_R,
-        cohort_pension_avg_weight=cohort_lam,
+        cohort_retirement=cohort_retirement,
         backend=sim.get('backend', 'numpy'),
         production=production,
     )
@@ -1594,12 +1623,15 @@ def _sidecar_path(raw, key):
 
 
 def cohort_retirement_table(raw):
-    """{entry_year: (J_R, pension_avg_weight)} from transition.retirement_age_file.
+    """{entry_year: ((J_R, pension_avg_weight, share), ...)} from
+    transition.retirement_age_file.
 
-    entry_year is the year the cohort enters at model age 0 (real age 25); J_R
-    is its first period of retirement (build_retirement_age_GR.py). None when
-    the file is not configured, in which case model.retirement_age applies to
-    every cohort.
+    entry_year is the year the cohort enters at model age 0 (real age 25). A
+    cohort whose average retirement age is fractional is split: a share retires
+    at index J_R and the rest at J_R + 1, each with the career-average pension
+    weight of its own career length (build_retirement_age_GR.py). Shares sum to
+    one; a share of zero is dropped. None when the file is not configured, in
+    which case model.retirement_age applies to every cohort.
     """
     path = _sidecar_path(raw, 'retirement_age_file')
     if path is None:
@@ -1607,36 +1639,38 @@ def cohort_retirement_table(raw):
     d = np.load(path)
     T = raw['model']['T']
     table = {}
-    for k, J in zip(d['entry_years'].tolist(), d['J_R'].tolist()):
-        if not 0 < J < T:
-            raise ValueError(f'retirement index {J} for entry year {k} outside 1..{T - 1}')
-        table[int(k)] = (int(J), pension_avg_weight_for(raw, int(J)))
+    for k, J, s_late in zip(d['entry_years'].tolist(), d['J_R'].tolist(),
+                            d['share_later'].tolist()):
+        if not 0 < J < T - 1:
+            raise ValueError(f'retirement index {J} for entry year {k} outside 1..{T - 2}')
+        parts = ((int(J), pension_avg_weight_for(raw, int(J)), 1.0 - s_late),
+                 (int(J) + 1, pension_avg_weight_for(raw, int(J) + 1), s_late))
+        table[int(k)] = tuple(p for p in parts if p[2] > 0.0)
     base = int(raw.get('transition', {}).get('current_year', 2023))
     J_model = raw['model'].get('retirement_age')
-    # The cohort that turns 25 + J_model in the base year retires in it; its
-    # retirement age is the base-year statutory age, which model.retirement_age
-    # must equal for the base-year moments that read base_config.retirement_age.
-    k_base = base - J_model
-    if J_model is not None and k_base in table and table[k_base][0] != J_model:
-        raise ValueError(f'model.retirement_age = {J_model} but the cohort retiring in '
-                         f'{base} retires at index {table[k_base][0]} in the table')
+    # model.retirement_age is the index most of the cohort retiring in the base
+    # year retires at; the base-year statistics that need one retirement age
+    # (the pension at retirement over the last wage) read it.
+    if J_model is not None:
+        k_base = base - J_model
+        if k_base in table:
+            J_major = max(table[k_base], key=lambda p: p[2])[0]
+            if J_major != J_model:
+                raise ValueError(f'model.retirement_age = {J_model} but most of the cohort '
+                                 f'retiring in {base} retires at index {J_major}')
     return table
 
 
 def base_year_cohort_retirement(raw, T):
-    """(J_R, pension_avg_weight) arrays, (T,) each, for the cohort aged 25+j
-    in the base year, or (None, None) without a retirement table."""
+    """Retirement entries ((J_R, pension_avg_weight, share), ...) of the cohort
+    aged 25+j in the base year, as a list of T tuples, or None without a
+    retirement table."""
     table = cohort_retirement_table(raw)
     if table is None:
-        return None, None
+        return None
     base = int(raw.get('transition', {}).get('current_year', 2023))
     years = sorted(table)
-    J, lam = [], []
-    for j in range(T):
-        k = int(np.clip(base - j, years[0], years[-1]))
-        J.append(table[k][0])
-        lam.append(table[k][1])
-    return np.array(J, dtype=int), np.array(lam, dtype=float)
+    return [table[int(np.clip(base - j, years[0], years[-1]))] for j in range(T)]
 
 
 def build_olg_transition(config_data, backend='numpy'):

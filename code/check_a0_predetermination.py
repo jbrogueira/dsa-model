@@ -8,9 +8,10 @@ stitched from a pure-baseline solve, so simulated assets entering t=0 are
 identical between baseline and counterfactual. Exercises the *_policy_alpha
 stitching (both simulate paths read the per-alpha arrays).
 
-The '+ret' cases give cohorts three different retirement ages, so the
-batched JAX solve and simulation run one group per age and the MIT baseline
-models must inherit each cohort's age.
+The '+ret' cases give cohorts three different retirement ages and split some
+cohorts between two, so the batched JAX solve and simulation run one group per
+age and the MIT baseline models, the later-retiring parts' included, must
+inherit each cohort's ages.
 The Ig case exercises the K_g→w channel: an I_g (level) shock with eta_g != 0
 moves K_g and hence the wage path, so the MIT baseline model must be built
 from pure-baseline wages. A[0] must still be exactly baseline.
@@ -44,9 +45,14 @@ def run_backend(backend, shock, cohort_retirement=False):
     if cohort_retirement:
         # Entry years current_year + birth period (2020 - 19 ... 2020 + 9).
         lam = lambda J: (1 - 0.95 ** J) / (J * (1 - 0.95))
-        J_of = lambda k: 12 if k < 2010 else 13 if k < 2022 else 14
-        olg_kwargs['cohort_retirement'] = {k: (J_of(k), lam(J_of(k)))
-                                           for k in range(2001, 2030)}
+        # Three ages, and cohorts entering 2010-2015 split 70/30 between 12
+        # and 13, so the later-retiring parts are solved and stitched too.
+        def parts(k):
+            if 2010 <= k <= 2015:
+                return ((12, lam(12), 0.7), (13, lam(13), 0.3))
+            J = 12 if k < 2010 else 13 if k < 2022 else 14
+            return ((J, lam(J), 1.0),)
+        olg_kwargs['cohort_retirement'] = {k: parts(k) for k in range(2001, 2030)}
     olg = OLGTransition(**olg_kwargs)
     bp = dict(
         r_path=np.full(T_TR, 0.04),

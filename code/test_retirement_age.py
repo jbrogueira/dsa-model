@@ -1,4 +1,5 @@
-"""The statutory retirement age path built by build_retirement_age_GR.py."""
+"""The retirement age path built by build_retirement_age_GR.py."""
+import json
 import os
 
 import numpy as np
@@ -6,7 +7,6 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NPZ = os.path.join(HERE, '..', 'data', 'retirement_age_GR.npz')
-RAW = os.path.join(HERE, '..', 'data', 'europop2023_raw')
 
 
 @pytest.fixture(scope='module')
@@ -25,27 +25,30 @@ def test_e65_reproduces_the_ageing_report(d):
         assert round(float(d['e65_women'][y.index(yr)]), 1) == women
 
 
-def test_statutory_age_is_67_in_2023_and_moves_one_for_one_at_reviews(d):
-    years, S = list(d['years']), d['statutory_age']
+def test_effective_age_is_63_8_in_2023_and_moves_one_for_one_at_reviews(d):
+    years, R = list(d['years']), d['retirement_age_path']
     e = dict(zip(d['e65_years'].tolist(), d['e65'].tolist()))
-    assert S[years.index(2023)] == 67.0
-    assert all(S[years.index(y)] == 67.0 for y in range(1939, 2024))
+    assert all(R[years.index(y)] == pytest.approx(63.8) for y in range(1939, 2024))
     for r in (2024, 2027, 2030, 2060, 2099):
-        assert S[years.index(r)] == pytest.approx(67 + e[r] - e[2023])
-        assert S[years.index(r + 1)] == S[years.index(r)]   # constant between reviews
-    assert np.all(np.diff(S) >= -1e-12)
+        assert R[years.index(r)] == pytest.approx(63.8 + e[r] - e[2023])
+        assert R[years.index(r + 1)] == R[years.index(r)]   # constant between reviews
+    assert np.all(np.diff(R) >= -1e-12)
 
 
-def test_each_cohort_retires_at_the_rounded_age_in_force(d):
-    S = dict(zip(d['years'].tolist(), d['statutory_age'].tolist()))
-    for k, a in zip(d['entry_years'].tolist(), d['retirement_real_age'].tolist()):
-        assert a == int(np.floor(S[k + a - 25] + 0.5)), k
-    assert np.array_equal(d['J_R'], d['retirement_real_age'] - 25)
+def test_each_cohort_is_split_around_the_age_in_force(d):
+    R = dict(zip(d['years'].tolist(), d['retirement_age_path'].tolist()))
+    for k, A, J, s in zip(d['entry_years'].tolist(), d['retirement_real_age'].tolist(),
+                          d['J_R'].tolist(), d['share_later'].tolist()):
+        assert A == pytest.approx(R[k + int(round(A)) - 25]), k
+        assert J == int(np.floor(A)) - 25, k
+        assert (J + 25) * (1 - s) + (J + 26) * s == pytest.approx(A), k
+        assert 0.0 <= s < 1.0, k
 
 
-def test_config_base_age_matches_the_table(d):
-    import json
+def test_config_base_age_is_where_most_of_the_2023_retirees_retire(d):
     cfg = json.load(open(os.path.join(HERE, 'calibration_input_GR.json')))
     J = cfg['model']['retirement_age']
-    k = cfg['transition']['current_year'] - J      # turns 25 + J in the base year
-    assert d['J_R'][list(d['entry_years']).index(k)] == J == 42
+    k = cfg['transition']['current_year'] - J
+    i = list(d['entry_years']).index(k)
+    major = d['J_R'][i] + (1 if d['share_later'][i] > 0.5 else 0)
+    assert major == J == 39

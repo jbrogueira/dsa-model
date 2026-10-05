@@ -1,24 +1,28 @@
 """
-Build the statutory retirement age path for Greece → data/retirement_age_GR.npz.
+Build the retirement age path for Greece → data/retirement_age_GR.npz.
 
-Law 4336/2015 links the minimum and statutory retirement ages to the change in
-life expectancy at 65 of the whole population, re-examined every three years
-from 2021 (European Commission, 2024 Ageing Report, Country Fiche EL, December
-2023, p. 6 item (x) and p. 9 section 1.1.5). The model has a single retirement
-age, taken to be the statutory one:
+The model's retirement age is the average effective retirement age, the age at
+which people start receiving an old-age, early or disability pension: 63.8 in
+2022 (European Commission, 2024 Ageing Report, Country Fiche EL, December 2023,
+p. 23), against a statutory age of 67. Law 4336/2015 links the minimum and
+statutory ages to the change in life expectancy at 65, re-examined every three
+years from 2021 (p. 6 item (x), p. 9 section 1.1.5). The effective age is moved
+by the same rule:
 
-  S_y = 67 + e65(r(y)) - e65(2023),    r(y) = last review year <= y,
+  R_y = 63.8 + e65(r(y)) - e65(2023),    r(y) = last review year <= y,
 
 with reviews in 2024, 2027, ... (the three-year cycle that started in 2021),
-S_y = 67 for y <= 2023, and e65 the unisex period life expectancy at 65 (the
+R_y = 63.8 for y <= 2023, and e65 the unisex period life expectancy at 65 (the
 mean of men and women) from the EUROPOP2023 baseline mortality assumptions,
 ages 65 to 100+. The projection ends in 2100; the model's mortality is held at
-the 2100 schedule after that, so e65 and S are held there too.
+the 2100 schedule after that, so e65 and R are held there too.
 
-The model is annual and ages are whole years. A cohort entering at real age
-25 in year k retires at the whole age a that solves a = round(S_{k + a - 25}):
-the statutory age in force in the year it reaches it, rounded to the nearest
-year. Its model retirement index is J_R = a - 25, the first period of
+A cohort entering at real age 25 in year k retires on average at the age A_k
+that solves A_k = R_{k + round(A_k) - 25}: the age in force in the year it
+reaches it. The model is annual, so the cohort is split: a share
+1 - frac(A_k) retires at floor(A_k), the rest one year later. Aggregates then
+move continuously with R instead of in one-year steps. The model retirement
+index of the first part is J_R = floor(A_k) - 25, its first period of
 retirement.
 
 e65 reproduces the fiche's projections (men 18.7 in 2022 and 23.9 in 2070,
@@ -38,7 +42,7 @@ OUT = os.path.join(DATA, 'retirement_age_GR.npz')
 
 ENTRY_AGE = 25
 BASE_YEAR = 2023
-BASE_AGE = 67                   # statutory age in 2023
+BASE_AGE = 63.8                 # average effective retirement age, 2022 (fiche p. 23)
 FIRST_REVIEW = 2024             # three-year cycle from 2021: 2021, 2024, 2027, ...
 REVIEW_EVERY = 3
 PROJ_END = 2100                 # last year of EUROPOP2023
@@ -89,7 +93,7 @@ def e65_path():
 
 
 def statutory_age(years, e_years, e65):
-    """S_y for each year in `years` under the review rule."""
+    """R_y for each year in `years` under the review rule."""
     e = dict(zip(e_years.tolist(), e65.tolist()))
     e_last = e[PROJ_END]
     out = np.empty(len(years))
@@ -102,40 +106,43 @@ def statutory_age(years, e_years, e65):
     return out
 
 
-def cohort_retirement_age(entry_year, S):
-    """Whole retirement age a = round(S_{entry + a - 25}) for one cohort.
+def cohort_retirement_age(entry_year, R):
+    """Average retirement age A = R_{entry + round(A) - 25} of one cohort.
 
-    S is non-decreasing, so iterating from the base age converges upward; the
+    R is non-decreasing, so iterating from the base age converges upward; the
     loop guards against a two-cycle by keeping the larger age.
     """
-    a = BASE_AGE
+    A = float(BASE_AGE)
     seen = set()
-    while a not in seen:
-        seen.add(a)
-        y = entry_year + a - ENTRY_AGE
-        a_new = int(np.floor(S(y) + 0.5))
-        if a_new == a:
-            return a
-        a = a_new
-    return max(seen)
+    while round(A) not in seen:
+        seen.add(round(A))
+        A_new = float(R(entry_year + int(round(A)) - ENTRY_AGE))
+        if round(A_new) == round(A):
+            return A_new
+        A = A_new
+    return float(R(entry_year + max(seen) - ENTRY_AGE))
 
 
 def main():
     e_years, eM, eF, e65 = e65_path()
     years = np.arange(FIRST_ENTRY, LAST_ENTRY + 100)
-    S = statutory_age(years, e_years, e65)
-    S_of = dict(zip(years.tolist(), S.tolist()))
+    R = statutory_age(years, e_years, e65)
+    R_of = dict(zip(years.tolist(), R.tolist()))
     entry = np.arange(FIRST_ENTRY, LAST_ENTRY + 1)
-    age = np.array([cohort_retirement_age(int(k), S_of.__getitem__) for k in entry])
+    A = np.array([cohort_retirement_age(int(k), R_of.__getitem__) for k in entry])
+    low = np.floor(A).astype(int)
+    share_high = A - low
     np.savez(OUT, e65_years=e_years, e65_men=eM, e65_women=eF, e65=e65,
-             years=years, statutory_age=S, entry_years=entry,
-             retirement_real_age=age, J_R=age - ENTRY_AGE,
+             years=years, retirement_age_path=R, entry_years=entry,
+             retirement_real_age=A, J_R=low - ENTRY_AGE, share_later=share_high,
              base_year=BASE_YEAR, base_age=BASE_AGE, entry_age=ENTRY_AGE)
     for y in (2023, 2024, 2030, 2040, 2050, 2070, 2100):
         print(f'  {y}: e65 {e65[list(e_years).index(min(y, PROJ_END))]:.2f}  '
-              f'statutory age {S_of[y]:.2f}')
-    for k in (1939, 1981, 1990, 2000, 2023, 2050, 2100, 2210):
-        print(f'  cohort entering {k} (aged 25): retires at {age[k - FIRST_ENTRY]}')
+              f'retirement age {R_of[y]:.2f}')
+    for k in (1939, 1960, 1990, 2000, 2023, 2050, 2100, 2210):
+        i = k - FIRST_ENTRY
+        print(f'  cohort entering {k} (aged 25): average age {A[i]:.2f} = '
+              f'{1 - share_high[i]:.2f} at {low[i]}, {share_high[i]:.2f} at {low[i] + 1}')
     print(f'wrote {OUT}')
 
 
