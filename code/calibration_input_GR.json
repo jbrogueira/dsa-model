@@ -389,7 +389,8 @@
   "simulation": {
     "n_sim": 10000,
     "seed": 42,
-    "n_sim_cohorts": 2000
+    "n_sim_cohorts": 2000,
+    "aggregation": "exact"
   },
   "transition": {
     "T_transition": 180,
@@ -401,6 +402,7 @@
     "n_sim": 2000,
     "survival_data_file": "../data/survival_GR.npz",
     "demography_file": "../data/demography_GR.npz",
-    "retirement_age_file": "../data/retirement_age_GR.npz"
+    "retirement_age_file": "../data/retirement_age_GR.npz",
+    "aggregation": "exact"
   }
 }

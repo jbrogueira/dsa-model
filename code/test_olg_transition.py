@@ -2799,7 +2799,10 @@ class TestBaseYearCrossSection:
                                    base_config=b._replace(**kw),
                                    education_shares={'medium': 1.0},
                                    cohort_survival=None,
-                                   cohort_retirement=None)
+                                   cohort_retirement=None,
+                                   # The country config selects exact aggregation;
+                                   # these tests compare simulated panels.
+                                   aggregation='simulation')
         from calibrate import theta_from_config
         theta = theta_from_config(L['config_data'], spec, verbose=False)
         return L['config_data'], spec, theta
@@ -3217,7 +3220,10 @@ class TestCrossRoutineLevels:
                                    base_config=cfg,
                                    education_shares={'medium': 1.0},
                                    cohort_survival=None,
-                                   cohort_retirement=None)
+                                   cohort_retirement=None,
+                                   # The country config selects exact aggregation;
+                                   # these tests compare simulated panels.
+                                   aggregation='simulation')
         return L['config_data'], cfg, spec
 
     def test_output_and_ratios_agree_at_the_base_year(self):
