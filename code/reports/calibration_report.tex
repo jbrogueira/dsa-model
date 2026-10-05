@@ -56,12 +56,16 @@ the debt stock, averaged over 2012--24. $b_{min}$ is the Greek national pension,
 25--84: \EUR{224.7}bn of GDP (Eurostat) over 7{,}559{,}564 people, or
 \EUR{29{,}722} each. The pension amount comes from the legislation and the
 2024 Ageing Report country fiche, since Eurostat reports only aggregate pension
-spending. The statutory retirement age is 67 in 2023. Under Law 4336/2015 it
-moves one for one with life expectancy at 65, reviewed every three years; the
-model applies the reviews from 2024, with life expectancy the mean of men and
-women in the EUROPOP2023 baseline projection. Each cohort retires at the
-statutory age in force when it reaches it, rounded to a whole year: cohorts
-entering in 2023 retire at 72, and those entering from 2050 on at 74.
+spending. The retirement age is the average effective retirement age, the age
+at which people start an old-age, early or disability pension: 63.8 in 2022,
+against a statutory 67 (2024 Ageing Report country fiche). Law 4336/2015 moves
+the statutory and minimum ages one for one with life expectancy at 65, reviewed
+every three years; the model moves the effective age by the same rule from the
+2024 review, with life expectancy the mean of men and women in the EUROPOP2023
+baseline projection. A cohort retires on average at the age in force when it
+reaches it, 68.4 for cohorts entering in 2023 and 70.9 for those entering in
+2050. Since the model is annual, each cohort is split between the two whole
+ages around that average, in the proportions that reproduce it.
 
 \vspace{0.1cm}
 \begin{table}[!htbp]\centering\footnotesize
@@ -78,7 +82,7 @@ not listed because they are set in the calibration. The untargeted rows
 compare income inequality. Eurostat measures equivalised \emph{household}
 disposable income; the model has individuals, not households, and its figure
 is individual income net of income tax and contributions. Taxes lower the
-model Gini from 0.385 to 0.373 and the p90/p10 ratio from 5.26 to 4.74.
+model Gini from 0.397 to 0.378 and the p90/p10 ratio from 5.78 to 5.04.
 Pooling income within households and equivalisation would lower both further,
 so the model figures are upper bounds on the comparable statistics.}
 \end{table}
@@ -91,10 +95,8 @@ so the model figures are upper bounds on the comparable statistics.}
 \noindent\footnotesize
 $\tau^p$ and $\rho^{pens}$ also have direct counterparts in the data. They
 differ because the model applies $\tau^p$ to the whole wage bill, with no
-contribution ceiling, and $\rho^{pens}$ to career-average earnings capacity
-rather than the final wage. That base excludes hours worked, so with average
-hours of 0.31 in the last working year the first pension exceeds the final
-wage.
+contribution ceiling, and $\rho^{pens}$ to career-average earnings capacity,
+which excludes hours worked, rather than the final wage.
 
 \section*{Demographics}
 \vspace{-0.1cm}
@@ -137,8 +139,7 @@ $I_t=\Gamma_t K^{dom}_{t+1}-(1-\delta)K^{dom}_t$, shown as a 5-year centred
 moving average because, as the change in a stock about 15 times larger, it
 carries about 20 times the stock's simulation noise. Household wealth is
 $A=K^{dom}+NFA$. All movement comes from the age structure and the rising
-retirement age; the steps fall in the years when successive cohorts' retirement
-age rises by one year.}
+retirement age.}
 \end{figure}
 
 \begin{figure}[htbp]\centering
@@ -151,8 +152,8 @@ pensions, health spending and the tax bases move with the age structure. The
 primary deficit excludes interest. Debt follows
 $B_{t+1}=[(1+r_B)B_t+PD_t]/\Gamma_t$ from its 2023 ratio. Since it is held
 abroad and no tax responds, it does not affect households. The debt ratio
-peaks at 3.3 in 2065 and then falls: as the retirement age rises, pensions
-fall to 11\% of output and the primary balance turns to a surplus of 5.4\% of
+peaks at 3.3 in 2067 and then falls: as the retirement age rises, pensions
+fall to 11\% of output and the primary balance turns to a surplus of 5\% of
 output.}
 \end{figure}
 
