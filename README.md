@@ -11,7 +11,7 @@ One file solves the household problem. Everything else decides what each househo
 | `code/lifecycle_perfect_foresight.py` | **the solver.** One household's whole life: consumption, saving, hours, retirement. NumPy/numba |
 | `code/lifecycle_jax.py` | the same solver, rewritten in JAX. Cross-checked against the first to 1e-14 |
 | `code/calibrate.py` | calls the solver **180 times** — one household per education group per 2023 cohort, each on its own survival schedule (the cohort-by-cohort construction; 3 on the single-lifecycle one). Simulates, averages, compares to data, adjusts six parameters, repeats |
-| `code/olg_transition.py` | calls the solver **717 times** — one household per education group per birth year (239 cohorts over a 180-year horizon). Simulates each, adds them up year by year |
+| `code/olg_transition.py` | poses one household problem per education group per birth year (239 cohorts over a 180-year horizon; two for a cohort split between two retirement ages) and solves the distinct ones. Simulates each, or carries its distribution over states forward exactly, and adds them up year by year |
 | `code/fiscal_experiments.py` | calls the transition twice, baseline and counterfactual, and hunts for the tax rate that hits a debt target |
 | `code/reports/fill_report.py` | calls nothing new; reads the above into the two-page calibration report |
 
@@ -24,7 +24,89 @@ So there are two independent routes to "the 2023 cross-section", and a mistake i
 
 ---
 
-## Current status (2026-10-03: recalibrated, baseline solved)
+## Current status (handoff 2026-10-05: solver refactor merged)
+
+The solution method was audited for wall time and refactored. The refactor is merged into `trend-growth` (`5b80e96`). Nothing has been timed on a GPU.
+
+A second session worked in the same tree in parallel: the retirement age by cohort (`1f9c6f6`), the recalibration at the statutory ages on an A100 (`d1f2f1d`), the refreshed report (`3f5da5e`) and, after the merge, the effective retirement age with cohorts split between two ages (`2f0f532`). Its commit message states that the parameters are still those fitted at the statutory age and that a recalibration is pending. That work is not described here; the 2026-10-03 section below predates all four commits.
+
+### The audit (2026-10-03)
+
+Three context-free agents read the source: the household problem and its simulation; the transition, budget closure and calibration loops; and the Fortran replication package of Díaz-Saavedra, Marimon and Brogueira de Sousa (JEEA; `jvad021_supplemental_files/`, untracked).
+
+- On the laptop CPU one household solve (one cohort, one education group, one permanent-productivity node) took 6.3 s and the simulation of its 2,000 histories 0.008 s. The solve was dominated by the hours first-order condition, solved by 18 fixed iterations at each of the 100 candidate a′ at every state, including retired and unemployed states where the result was discarded.
+- A transition evaluation solved 3,585 household problems. A G + I_g fiscal set re-solved the unchanged baseline 12 times, and each tax search started from Δτ_l = ±0.5.
+- The Fortran code has no simulation. It carries the distribution over the grid, splitting mass between neighbouring nodes, and finds savings and hours by one-dimensional optimisation (Brent) on an interpolated value function. It took 4–7 microseconds per state and age on this laptop against 42 for the Python solve before the refactor. Its transition loop re-solves every household at each pass, as the Python one did.
+
+### What changed (`1183f00`, `9607d79`, `cbe66ee`, `e68b06b`, `e0a96c3`, `6c7d2f6`)
+
+| change | where | effect on numbers |
+|---|---|---|
+| hours solved on the y_last = 0 slice; with γ = 1 from ν·l^φ·(z + l) = 1, z = c_guess·(1+τ_c)/MW − 1 | `lifecycle_jax.solve_period_jax`, `solve_labor_log_jax` | a′ policy identical in all 750,000 states of each education group; V, c, l equal to 1e-13 |
+| cohorts with identical inputs solved once | `olg_transition._solve_jax_group` | none |
+| exact aggregation: the distribution over (α, a, y, h, y_last) carried forward by age, no draws | `exact_age_means`, `exact_panel` on both model classes; `OLGTransition(aggregation='exact')`; `transition.aggregation` and `simulation.aggregation` in the config | an option, default `simulation`; it replaces sampling error by zero |
+| one baseline per fiscal set; household results reused when the household's inputs are unchanged; tax search from Δ = 0 | `fiscal_experiments.run_baseline`, `OLGTransition(household_cache_size=)`, `run_tax_financed(Delta_init=, Delta_step=)`, `run_fiscal_figures.py` | baseline and debt-financed paths unchanged; Δτ_l within the search tolerance |
+| per-age means of simulated panels taken on the device; option to keep policy functions on the device | `_simulate_cohorts_jax_batched(age_means=True)`, `OLGTransition(jax_policies_on_device=True)` | none |
+| JAX tests run on the Mac | `code/conftest.py` | — |
+
+### Measurements
+
+Laptop CPU, JAX, taken at `5b80e96` or earlier, that is, before `2f0f532` changed the retirement ages and added a second model for each split cohort. No GPU measurement of the merged code exists; the only GPU figure is the old solver's 25 s per calibration evaluation on an A100 (`code/output/a100_2026-10-04/stage1.log`).
+
+| run, production configuration | before | after |
+|---|---|---|
+| household solve, one education group (5 α nodes) | 34.9 s | 0.66 s |
+| one calibration evaluation | ≈ 95 min (900 solves × 6.3 s, extrapolated) | 131 s simulated, 127 s exact |
+| baseline transition, 180 periods | ≈ 6.3 h (extrapolated) | 834 s simulated, 730 s exact, other jobs running; peak memory 5.7–6.5 GB |
+| fiscal driver, built-in test economy, G and I_g | 1,574 s | 46–59 s |
+
+Calibration moments at the parameters of `d1f2f1d`, on the merge commit `5b80e96` (statutory retirement ages):
+
+| moment | target | simulated, 2,000 per cohort | exact |
+|---|---|---|---|
+| average hours | 0.41 | 0.409991 | 0.409302 |
+| A/Y | 4.0 | 3.998721 | 4.003609 |
+| payroll tax / Y | 0.13 | 0.130000 | 0.130000 |
+| pensions / Y | 0.16 | 0.160018 | 0.159771 |
+| government health / Y | 0.054 | 0.054080 | 0.053937 |
+| UI / Y | 0.006 | 0.006001 | 0.005848 |
+
+Other checks:
+
+- Fiscal test economy, old driver against new: baseline and debt-financed paths equal to 5e-15; Δτ_l 0.028644 against 0.028647 (G, debt target) and −0.046228 against −0.046232 (I_g), with a search tolerance of 1e-3 on B/Y. The searches took 4 and 3 evaluations.
+- Baseline transition at the 2026-10-03 parameters: simulated aggregates within 0.41% of the exact ones over 180 periods. Exact A/Y at t = 0 was 3.7748 in the transition and 3.77478 in the calibration cross-section.
+- A[0] predetermination: 0.000e+00 in all eight cases of `check_a0_predetermination.py` at `5b80e96`, and under exact aggregation with log utility, hours, the consumption floor and survival risk.
+- Tests: 250 passed, 5 skipped on `6c7d2f6`; 73 selected tests at `5b80e96`. At `2f0f532`, 99 selected tests pass (hours solve, identical cohorts, exact aggregation in the transition and in the calibration, on-device option, fiscal, retirement) and A[0] is 0.000e+00 in all eight cases. The full suite was not rerun after the merge.
+
+### Open question
+
+The wall time of the merged code on a GPU is unknown, and so is whether the default route or `jax_policies_on_device=True` is the faster one there. Exact aggregation is implemented but not adopted: at the parameters of `d1f2f1d` exact UI/Y was 2.5% below its target, so adopting it changes what the calibration fits to. A recalibration is pending in any case after `2f0f532`.
+
+### Candidate next steps
+
+1. **GPU timing** (no code): one calibration evaluation and one baseline transition, simulated and exact, with and without `jax_policies_on_device`. Done when the four timings and the peak device memory are recorded.
+2. **Adopt exact aggregation** (two config lines, then the pending `run_scale_loop.sh`): done when the scale loop converges and the base year and the transition's t = 0 agree without sampling error.
+3. **First fiscal run on the current code**: `run_fiscal_figures.py --config calibration_input_GR.json --shock both --backend jax`, then `eval_fiscal_results.py`. By the count of the test economy it needs 13 household solves. On the Mac that extrapolated to 4–5 hours before `2f0f532`; split cohorts add models, and memory for the I_g evaluations, which have no identical cohorts, is untested on 24 GB.
+4. **Not done from the audit**: the duplicate states inside the solve (150,000 computed, 45,600 distinct; ≈ 80 lines in `solve_period_jax`); a continuous savings choice from the Euler equation with an upper-envelope step for the consumption floor (a new solver, several hundred lines, changes every number); in the calibration, τ_p from the identity τ_p(1−α) = 0.13 and a joint solve of (θ, A_tfp).
+5. **Asset grid**: 100 nodes on [0, 200]. The audit measured the life-cycle sum of assets rising 22% from 100 to 180 nodes (medium education, middle α node). Not reproduced and not addressed.
+
+### Code state
+
+Branch `trend-growth`: the merge is `5b80e96`, followed by the other session's `3f5da5e` and `2f0f532`. Defaults are unchanged except in the fiscal driver: `aggregation='simulation'`, `household_cache_size=0` (`run_fiscal_figures.py` sets 16), `jax_policies_on_device=False`. `run_fiscal_figures.py` now runs one shared baseline, reads Y(0) from it, starts each tax search at Δ = 0 and writes `n_iterations` and `residual_history` to `fiscal_results.json`. The branch `solver-refactor` was deleted after the merge. `code/docs/solver_architecture.md`, `dsa_implementation.md` and `FISCAL_EXPERIMENTS_STATUS.md` describe the call structure before the refactor.
+
+Two panel conventions seen while testing, left as they are: the NumPy panel keeps `l_sim = 1` for the dead, and records `y_sim = 0` for the retired where the JAX panel records the last drawn state.
+
+### Documentation
+
+| what | where |
+|---|---|
+| refactor: hours solve, identical cohorts, exact aggregation, household cache, tax search, on-device option | `code/CLAUDE.md` (JAX Backend, Exact aggregation, Reuse of household results) |
+| retirement age by cohort, the 2026-10-04 recalibration, the effective age and split cohorts | commit messages of `1f9c6f6`, `d1f2f1d`, `3f5da5e`, `2f0f532`; `code/CLAUDE.md` (Model Features); `code/output/a100_2026-10-04/` |
+| Fortran replication package compared in the audit | `jvad021_supplemental_files/` (untracked) |
+
+---
+
+## Prior status (2026-10-03: recalibrated, baseline solved)
 
 `run_step0_baseline.sh` ran to completion on an A100 (2026-10-02 20:48 – 2026-10-03 02:53 UTC). The config now holds the calibration of the fixed code.
 
