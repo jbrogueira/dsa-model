@@ -50,7 +50,11 @@ PY
     || { echo "SCALE LOOP FAILED: SMM round $r did not converge (no theta write-back)"; exit 1; }
 
   echo "=== round $r: A_tfp normalization ==="
-  python3 -u normalize_A_tfp.py --backend jax --write --config "$CFG" \
+  # NORM_EXTRA passes through normalize_A_tfp.py flags, e.g. --tol. Y_ss is
+  # not continuous in A_tfp at the 1e-4 scale: a change of 1e-6 in A_tfp can
+  # move discrete asset choices on the grid and shift Y_ss by ~2e-4 (seen on
+  # 2026-10-05), in which case no root lies within the default tolerance.
+  python3 -u normalize_A_tfp.py --backend jax --write --config "$CFG" ${NORM_EXTRA:-} \
     | tee /tmp/norm_round.log
   grep -q "^CONVERGED" /tmp/norm_round.log \
     || { echo "SCALE LOOP FAILED: normalize round $r"; exit 1; }
