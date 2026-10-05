@@ -8,6 +8,9 @@ stitched from a pure-baseline solve, so simulated assets entering t=0 are
 identical between baseline and counterfactual. Exercises the *_policy_alpha
 stitching (both simulate paths read the per-alpha arrays).
 
+The '+ret' cases give cohorts three different retirement ages, so the
+batched JAX solve and simulation run one group per age and the MIT baseline
+models must inherit each cohort's age.
 The Ig case exercises the K_g→w channel: an I_g (level) shock with eta_g != 0
 moves K_g and hence the wage path, so the MIT baseline model must be built
 from pure-baseline wages. A[0] must still be exactly baseline.
@@ -28,7 +31,7 @@ T_TR = 10
 N_SIM = 50
 TREND_GROWTH = 0.017   # balanced-growth rate under test; 0.0 recovers the old harness
 
-def run_backend(backend, shock):
+def run_backend(backend, shock, cohort_retirement=False):
     cfg = LifecycleConfig(T=20, n_a=30, n_y=3, n_alpha=3, retirement_age=12,
                           trend_growth=TREND_GROWTH)
     ep = dict(cfg.edu_params)
@@ -38,6 +41,12 @@ def run_backend(backend, shock):
                       education_shares={'medium': 1.0})
     if shock == 'Ig':
         olg_kwargs.update(eta_g=0.05, K_g_initial=0.745, delta_g=0.05)
+    if cohort_retirement:
+        # Entry years current_year + birth period (2020 - 19 ... 2020 + 9).
+        lam = lambda J: (1 - 0.95 ** J) / (J * (1 - 0.95))
+        J_of = lambda k: 12 if k < 2010 else 13 if k < 2022 else 14
+        olg_kwargs['cohort_retirement'] = {k: (J_of(k), lam(J_of(k)))
+                                           for k in range(2001, 2030)}
     olg = OLGTransition(**olg_kwargs)
     bp = dict(
         r_path=np.full(T_TR, 0.04),
@@ -70,11 +79,12 @@ def run_backend(backend, shock):
     A0_cf = float(np.asarray(res.cf_macro['A'])[0])
     return A0_base, A0_cf
 
-for shock in ('tau_l', 'Ig'):
+for shock, ret in (('tau_l', False), ('Ig', False), ('tau_l', True), ('Ig', True)):
     for backend in ('numpy', 'jax'):
-        A0_base, A0_cf = run_backend(backend, shock)
+        A0_base, A0_cf = run_backend(backend, shock, cohort_retirement=ret)
         diff = abs(A0_cf - A0_base)
         status = "OK" if diff == 0.0 else "FAIL"
-        print(f"{shock:5s} {backend:6s}: A[0] base = {A0_base:.10f}, "
+        label = shock + ('+ret' if ret else '')
+        print(f"{label:9s} {backend:6s}: A[0] base = {A0_base:.10f}, "
               f"cf = {A0_cf:.10f}, |diff| = {diff:.3e}  {status}")
 print("DONE")
