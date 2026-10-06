@@ -1351,6 +1351,7 @@ class OLGTransition:
         _lc = self.lifecycle_config
         _feature_kwargs = dict(
             pension_min_floor=_lc.pension_min_floor,
+            pension_floor_indexed=_lc.pension_floor_indexed,
             tax_progressive=_lc.tax_progressive,
             tax_kappa=_lc.tax_kappa,
             tax_eta=_lc.tax_eta,

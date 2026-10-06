@@ -3,8 +3,11 @@
 Draws the main aggregates and the government accounts of the no-policy-change
 baseline from ``baseline_paths.npz`` (written by ``fill_report.py
 --run-baseline``), so no transition is solved here. The debt ratio is not in
-the saved paths: taxes and spending are fixed in the baseline and the debt is
-external, so it follows from the saved primary deficit by the recursion the
+the saved paths. With a debt projection configured
+(``fiscal.dsa_projection_file``) other net spending, the primary balance and
+debt come from ``baseline_closure.closure_from_run``, and a third figure sets
+the baseline against the projection. Without one, taxes and spending shares
+are fixed and debt follows from the saved primary deficit by the recursion the
 fiscal experiments use (``fiscal_experiments.compute_debt_path``), from the
 config's B/Y in the base year at the config's r_B.
 
@@ -21,6 +24,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from fiscal_experiments import compute_debt_path  # noqa: E402
+from baseline_closure import closure_from_run, load_dsa_projection  # noqa: E402
 
 # Categorical slots in fixed order (dataviz reference palette, light surface).
 SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300',
@@ -46,8 +50,10 @@ def load(npz, config):
     r_B = float(cfg['prices']['r_B'])
     B = compute_debt_path(b('primary_deficit'), np.full(T, r_B),
                           B_initial=B_over_Y0 * Y[0], growth_factor=G)
+    dsa = load_dsa_projection(cfg)
+    closure = closure_from_run({k: d[k] for k in d.files}, cfg, dsa=dsa)
     return dict(d=d, Y=Y, T=T, years=years, b=b, inv=inv, B=B[:T],
-                B_over_Y0=B_over_Y0, r_B=r_B, G=G)
+                B_over_Y0=B_over_Y0, r_B=r_B, G=G, dsa=dsa, closure=closure, cfg=cfg)
 
 
 def _style(ax, title):
@@ -127,20 +133,72 @@ def fiscal_figure(p, out_pdf, plt):
            ('bequest tax', b('bequest_tax'))]
     _lines(ax[0, 0], x, [(lab, v / Y) for lab, v in rev], ncol=3)
     _style(ax[0, 0], 'Revenue / output')
+    c = p['closure']
+    other = b('other_net_spending') if c is None else c['other_net_over_Y'] * Y
     spend = [('pensions', b('pension')), ('public health', b('gov_health')),
              ('UI and minimum income', b('ui') + b('transfers')),
              ('$G$ and defence', b('govt_spending') + b('defense_spending')),
              ('public investment', b('public_investment')),
-             ('other net spending $O$', b('other_net_spending'))]
+             ('other net spending $O$', other)]
     _lines(ax[0, 1], x, [(lab, v / Y) for lab, v in spend], ncol=3)
     ax[0, 1].axhline(0.0, color=INK2, lw=0.6, zorder=1)
     _style(ax[0, 1], 'Spending / output')
-    _lines(ax[1, 0], x, [('', b('primary_deficit') / Y)])
-    ax[1, 0].axhline(0.0, color=INK2, lw=0.6, zorder=1)
-    _style(ax[1, 0], 'Primary deficit / output')
-    _lines(ax[1, 1], x, [('', p['B'] / Y)])
-    _style(ax[1, 1], f"Debt / output ($B/Y$ = {p['B_over_Y0']:.2f} in 2023, "
-                     f"$r_B$ = {p['r_B']:.3f})")
+    if c is None:
+        _lines(ax[1, 0], x, [('', b('primary_deficit') / Y)])
+        ax[1, 0].axhline(0.0, color=INK2, lw=0.6, zorder=1)
+        _style(ax[1, 0], 'Primary deficit / output')
+        _lines(ax[1, 1], x, [('', p['B'] / Y)])
+        _style(ax[1, 1], f"Debt / output ($B/Y$ = {p['B_over_Y0']:.2f} in 2023, "
+                         f"$r_B$ = {p['r_B']:.3f})")
+    else:
+        _lines(ax[1, 0], x, [('primary balance', c['primary_balance']),
+                             ('before other net spending',
+                              c['primary_balance_ex_other'])], ncol=2)
+        ax[1, 0].axhline(0.0, color=INK2, lw=0.6, zorder=1)
+        _style(ax[1, 0], 'Primary balance / output')
+        _lines(ax[1, 1], x, [('', c['debt'])])
+        _style(ax[1, 1], f"Debt / output, end of year ({c['debt'][0]:.2f} in 2023, "
+                         f"$r_B$ = {p['r_B']:.4f})")
+    fig.tight_layout(h_pad=1.2)
+    fig.savefig(out_pdf)
+    plt.close(fig)
+    print(f'  wrote {os.path.basename(out_pdf)}')
+
+
+# Public pension spending over GDP and the average effective retirement age,
+# 2024 Ageing Report, Country Fiche EL (December 2023), Tables 6 and 4.
+FICHE_YEARS = (2022, 2030, 2040, 2050, 2060, 2070)
+FICHE_PENSIONS = (0.145, 0.127, 0.137, 0.140, 0.127, 0.120)
+
+
+def projection_figure(p, out_pdf, plt, last_year=2070):
+    """The baseline against the Commission's debt projection."""
+    c, dsa, Y, x = p['closure'], p['dsa'], p['Y'], p['years']
+    n = int(np.searchsorted(x, last_year)) + 1
+    b = p['b']
+    fig, ax = plt.subplots(2, 2, figsize=(10, 5.6))
+
+    def two(a, model, proj_x, proj_y, title, labels=('baseline', 'projection')):
+        a.plot(x[:n], model[:n], color=SERIES[0], lw=1.5, label=labels[0])
+        a.plot(proj_x, proj_y, color=SERIES[1], lw=1.5, ls='--', label=labels[1])
+        a.legend(frameon=False, fontsize=7.5, labelcolor=INK, handlelength=1.8)
+        _style(a, title)
+
+    two(ax[0, 0], c['debt'], dsa['years'], dsa['debt'], 'Debt / output, end of year')
+    ax[0, 1].plot(x[:n], c['primary_balance'][:n], color=SERIES[0], lw=1.5,
+                  label='primary balance')
+    ax[0, 1].plot(x[:n], c['other_net_over_Y'][:n], color=SERIES[2], lw=1.5,
+                  label='other net spending $O$')
+    ax[0, 1].plot(dsa['years'], dsa['primary_balance'], color=SERIES[1], lw=1.5, ls='--',
+                  label='primary balance, projection')
+    ax[0, 1].axhline(0.0, color=INK2, lw=0.6, zorder=1)
+    ax[0, 1].legend(frameon=False, fontsize=7.5, labelcolor=INK, handlelength=1.8)
+    _style(ax[0, 1], 'Primary balance and other net spending / output')
+    two(ax[1, 0], b('pension') / Y, FICHE_YEARS, FICHE_PENSIONS,
+        'Public pensions / output', labels=('baseline', '2024 Ageing Report'))
+    growth = centred_mean(np.nan_to_num(c['growth'], nan=c['growth'][1]), 5)
+    two(ax[1, 1], growth, dsa['years'], dsa['real_growth'],
+        'Real output growth (baseline: 5-year centred mean)')
     fig.tight_layout(h_pad=1.2)
     fig.savefig(out_pdf)
     plt.close(fig)
@@ -159,6 +217,8 @@ def main():
     p = load(os.path.join(args.outdir, 'baseline_paths.npz'), args.config)
     aggregates_figure(p, os.path.join(args.outdir, 'baseline_aggregates.pdf'), plt)
     fiscal_figure(p, os.path.join(args.outdir, 'baseline_fiscal.pdf'), plt)
+    if p['closure'] is not None:
+        projection_figure(p, os.path.join(args.outdir, 'baseline_projection.pdf'), plt)
 
 
 if __name__ == '__main__':

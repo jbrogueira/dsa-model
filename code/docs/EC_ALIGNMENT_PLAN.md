@@ -1,10 +1,19 @@
 # Aligning the baseline with the Commission's debt projection for Greece
 
-Written 2026-10-05. Status: plan. Implemented so far: the 2023 unemployment
-rates and education shares in the config (item 5), with no recalibration yet. All model numbers
-are from the baseline transition of 2026-10-05 (effective retirement age,
-`960d20e`, `output/calibration_growth/baseline_paths.npz`), which uses the
-previous rates.
+Written 2026-10-05. Status on 2026-10-06:
+
+- Implemented: items 1 (real sovereign rate), 2 (pension per pensioner),
+  3 (minimum pension), 4 (effective retirement age), the levels of item 5
+  (2023 unemployment rates and education shares), and items 7 and 8 as a
+  calculation on the baseline's saved paths (`baseline_closure.py`).
+- Not implemented: the declining unemployment path of item 5, item 6 (health
+  care unit costs), item 9, and the use of the O/Y path and the stock-flow
+  term in the fiscal experiments (`run_fiscal_figures.py` still passes the
+  scalar O/Y and `compute_debt_path` has no adjustment term).
+
+The model numbers in this document are from the baseline transition of
+2026-10-05 (effective retirement age, `960d20e`), before any of these changes.
+The calibration report has the numbers of the run that includes them.
 
 ## Object
 
@@ -210,6 +219,9 @@ budget. Its source was not examined here.
 Needs: config and text only. No recalibration and no household re-solve for
 the baseline.
 
+Done 2026-10-06: `prices.r_B = 0.0105`; the report's parameter table and
+sources paragraph describe it as a real rate.
+
 ### 2. Pension per pensioner
 
 - Commission: falls to 0.84 of its 2022 value in 2030, 0.75 in 2040, 0.65 in
@@ -228,6 +240,14 @@ the baseline.
   a constant. `base_year_cross_section` takes survival and retirement by
   cohort and no replacement-rate path.
 - Effect (mechanical): pensions in 2050 fall from 23.2% to 15.2% of output.
+- Done 2026-10-06. `build_pension_index_GR.py` writes
+  `data/pension_index_GR.npz` (fiche Tables 6 and 10, linear between decades,
+  one in 2023, constant after 2070: 0.853 in 2030, 0.766 in 2040, 0.668 in
+  2050, 0.616 in 2060, 0.624 from 2070). `transition.pension_index_file`
+  names it. `build_olg_transition` multiplies the replacement-rate path by it,
+  and the calibration's base-year cross-section gives each cohort the path on
+  its own calendar diagonal (`CalibrationSpec.cohort_pension_index`,
+  `pension_stack` in the JAX cross-sections). Tests: `test_pension_index.py`.
 
 ### 3. Minimum pension
 
@@ -236,7 +256,13 @@ the baseline.
   with g.
 - Change: a path in line with item 2. Otherwise the floor binds on more
   retirees as the replacement rate falls.
-- Needs: code. The batched solve shares one scalar across cohorts.
+- Done 2026-10-06: `external_params.pension_floor_indexed`. The floor equals
+  `pension_min_floor` where the replacement rate equals the calibrated rate
+  and moves in proportion to the rate, so it follows the pension index. The
+  solvers receive it as minus the ratio of the floor to the calibrated rate
+  (`encoded_pension_floor`), which needed no new argument in the batched
+  solve. A policy experiment that changes the replacement rate moves the
+  floor with it.
 
 ### 4. Effective retirement age
 
@@ -246,6 +272,10 @@ the baseline.
 - Change: use the Table 4 path in `build_retirement_age_GR.py`, interpolated
   between decades, and the current rule after 2070.
 - Needs: the data file, then a recalibration.
+- Done 2026-10-06: `build_retirement_age_GR.py` uses the fiche path from 2022
+  (64.0 in 2023) and the review rule's increments after 2070 (70.4 in 2100).
+  A cohort entering in 2023 retires on average at 67.7 and one entering in
+  2050 at 69.9. The previous path is kept in the file as `rule_path`.
 - Effect (retiree count): retirees per non-retired person are 1.04, 1.25,
   1.51 times the 2023 value in 2030, 2040, 2050. The fiche has 1.05, 1.26,
   1.48 for pensioners per employed person.
@@ -314,6 +344,13 @@ the baseline.
   excludes.
 - Effect on debt in 2060: about -30 pp from the stock and +9 pp from the
   adjustments after 2025.
+- Done 2026-10-06 for the baseline: `build_dsa_projection_GR.py` writes
+  `data/dsa_projection_GR.npz` (`fiscal.dsa_projection_file`) and
+  `baseline_closure.closure_paths` carries the adjustment. Debt is the stock
+  at the end of the year over the same year's output, 164.28% in 2023 as in
+  the data. The adjustment is -6.1% of output in 2024 and -4.3% in 2025 on
+  the earlier baseline; these residuals include the effect of inflation on
+  the ratio in those years.
 
 ### 8. Other net spending set to the Commission's primary balance
 
@@ -371,6 +408,9 @@ adjustments (item 7) and r_B = 1.05%:
   re-solve.
 - Where: `simulate_transition` accepts O/Y as a path. The config and
   `pin_baseline_closure.py` hold a scalar, which stays as the 2023 value.
+- Done 2026-10-06 for the baseline: `baseline_closure.closure_from_run`
+  computes the path from the saved budget lines, `fill_report.py` writes it
+  to `baseline_closure.npz`, and `baseline_figures.py` draws it.
 
 **Other rules after 2060.** None of these gives a constant debt ratio:
 

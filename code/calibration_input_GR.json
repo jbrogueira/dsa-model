@@ -19,26 +19,26 @@
   },
   "_derived": {
     "theta": {
-      "nu": 12.291053766677862,
-      "beta": 1.0063205054204327,
-      "tau_p": 0.1940301690124951,
-      "pension_replacement_default": 0.2295221444478372,
-      "m_good": 0.08994837431241093,
-      "ui_replacement_rate": 0.05321006294412339
+      "nu": 12.388292947699059,
+      "beta": 1.0039029886634092,
+      "tau_p": 0.19402985074626855,
+      "pension_replacement_default": 0.2350537376931145,
+      "m_good": 0.08989197502710963,
+      "ui_replacement_rate": 0.07551731978885462
     },
     "theta_metadata": {
-      "calibration_date": "2026-10-05T08:14:28",
-      "source_report": "output/calibration/calibration_GR_20261005_081428.md"
+      "calibration_date": "2026-10-06T07:00:08",
+      "source_report": "output/calibration/calibration_GR_20261006_070008.md"
     }
   },
   "prices": {
     "r": 0.04,
-    "r_B": 0.019
+    "r_B": 0.0105
   },
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.46525817,
+    "A_tfp": 1.43387824,
     "K_g": 0.703,
     "eta_g": 0.05,
     "delta_g": 0.04281
@@ -50,6 +50,7 @@
     "tau_k": 0.2236,
     "pension_replacement_default": 0.18,
     "pension_min_floor": 0.1671,
+    "pension_floor_indexed": true,
     "ui_replacement_rate": 0.0945,
     "transfer_floor": 0.0807,
     "tau_beq": 1.0,
@@ -287,7 +288,8 @@
     "tax_revenue_over_Y": 0.4,
     "interest_over_Y": 0.0339,
     "primary_balance_target_over_Y": 0.0195,
-    "other_net_spending_over_Y": -0.082948
+    "dsa_projection_file": "../data/dsa_projection_GR.npz",
+    "other_net_spending_over_Y": -0.090608
   },
   "calibration": {
     "params": [
@@ -296,42 +298,42 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 12.291053766677862
+        "initial": 12.304767222784758
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 1.0063205054204327
+        "initial": 1.0034994678231774
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.1940301690124951
+        "initial": 0.19402985074626872
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.2295221444478372
+        "initial": 0.23505541778185773
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.08994837431241093
+        "initial": 0.09308917890122383
       },
       {
         "name": "ui_replacement_rate",
         "path": "ui_replacement_rate",
         "lower": 0.01,
         "upper": 0.3,
-        "initial": 0.05321006294412339
+        "initial": 0.07550947941077953
       }
     ],
     "targets": [
@@ -403,6 +405,7 @@
     "survival_data_file": "../data/survival_GR.npz",
     "demography_file": "../data/demography_GR.npz",
     "retirement_age_file": "../data/retirement_age_GR.npz",
+    "pension_index_file": "../data/pension_index_GR.npz",
     "aggregation": "exact"
   }
 }

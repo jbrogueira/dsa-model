@@ -372,6 +372,9 @@ class CalibrationSpec:
     # Retirement age and career-average pension weight of the cohort aged 25+j
     # in the base year, (T,) each; None keeps base_config's for every cohort.
     cohort_retirement: Optional[list] = None   # per cohort: ((J_R, lambda, share), ...)
+    # Pension-per-pensioner index faced at each age by the cohort aged 25+j in
+    # the base year, (T, T); None keeps the replacement rate constant.
+    cohort_pension_index: Optional[np.ndarray] = None
     backend: str = 'numpy'  # 'numpy' or 'jax'
     production: dict = field(default_factory=lambda: {
         'alpha': 0.33, 'delta': 0.07, 'A_tfp': 1.0,
@@ -909,7 +912,21 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
         ret = [((int(config.retirement_age), float(config.pension_avg_weight), 1.0),)] * T
     any_split = any(len(e) > 1 for e in ret)
 
-    def cohort_config(edu_type, surv, J, lam):
+    # Replacement rate by age of each cohort: the calibrated rate times the
+    # cohort's pension index, when the spec carries one.
+    pen_idx = spec.cohort_pension_index
+    if pen_idx is not None and np.asarray(pen_idx).shape != (T, T):
+        raise ValueError(f'cohort_pension_index has shape {np.asarray(pen_idx).shape}, '
+                         f'expected {(T, T)}')
+
+    def pension_path(j):
+        return (None if pen_idx is None
+                else config.pension_replacement_default * np.asarray(pen_idx[j], dtype=float))
+
+    def cohort_config(edu_type, surv, J, lam, j=None):
+        extra = {}
+        if pen_idx is not None and j is not None:
+            extra['pension_replacement_path'] = pension_path(j)
         return config._replace(
             education_type=edu_type,
             survival_probs=surv,
@@ -917,6 +934,7 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
             w_path=np.full(T, spec.w),
             retirement_age=J,
             pension_avg_weight=lam,
+            **extra,
         )
 
     def combine(j, parts):
@@ -967,13 +985,17 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
                 surv_stack = np.stack([S if shared else S[j].reshape(T, config.n_h)
                                        for j in js])
                 model = cls(cohort_config(edu_type, surv_stack[0], J, lam), verbose=False)
+                pen_stack = (None if pen_idx is None
+                             else np.stack([pension_path(j) for j in js]))
                 if exact:
                     part, part_mass = model.cross_section_exact(
-                        surv_stack, rows=js, chunk_size=chunk_size)
+                        surv_stack, rows=js, chunk_size=chunk_size,
+                        pension_stack=pen_stack)
                 else:
                     seeds = [seed + j if seed_per_cohort else seed for j in js]
                     part = model.cross_section_batched(surv_stack, seeds, n_sim,
-                                                       chunk_size=chunk_size, rows=js)
+                                                       chunk_size=chunk_size, rows=js,
+                                                       pension_stack=pen_stack)
                     part_mass = None
                 for i, j in enumerate(js):
                     parts[j][(J, lam)] = ([np.asarray(x)[i] for x in part],
@@ -991,7 +1013,7 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
             surv_j = S if shared else S[j].reshape(T, config.n_h)
             parts = {}
             for J, lam, _ in ret[j]:
-                model = cls(cohort_config(edu_type, surv_j, J, lam), verbose=False)
+                model = cls(cohort_config(edu_type, surv_j, J, lam, j=j), verbose=False)
                 model.solve(verbose=False)
                 if exact:
                     # The cohort's cross-section over states at age j.
@@ -1473,8 +1495,10 @@ def load_config(path):
                 'schedules are unavailable; check transition.demography_file')
 
     cohort_retirement = None
+    cohort_pension_index = None
     if cohort_survival is not None:
         cohort_retirement = base_year_cohort_retirement(raw, T)
+        cohort_pension_index = base_year_cohort_pension_index(raw, T)
 
     # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]
@@ -1504,6 +1528,7 @@ def load_config(path):
         n_sim_cohorts=sim.get('n_sim_cohorts', 2000),
         aggregation=sim.get('aggregation', 'exact'),
         cohort_retirement=cohort_retirement,
+        cohort_pension_index=cohort_pension_index,
         backend=sim.get('backend', 'numpy'),
         production=production,
     )
@@ -1620,6 +1645,30 @@ def _sidecar_path(raw, key):
         print(f"  [load_config] {key} not found: {path}")
         return None
     return path
+
+
+def pension_index_path(raw, years):
+    """Pension-per-pensioner index for the calendar years `years`, from
+    transition.pension_index_file (build_pension_index_GR.py).
+
+    The replacement rate of year y is the calibrated rate times the index. The
+    index is one up to the base year and stays at the file's last value after
+    its last year. None when the file is not configured, in which case the
+    replacement rate is constant.
+    """
+    path = _sidecar_path(raw, 'pension_index_file')
+    if path is None:
+        return None
+    d = np.load(path)
+    return np.interp(np.asarray(years, dtype=float), d['years'].astype(float), d['index'])
+
+
+def base_year_cohort_pension_index(raw, T):
+    """(T, T) index, row j for the cohort aged 25+j in the base year: its age
+    a falls in year base + a - j. None when no index is configured."""
+    base = int(raw.get('transition', {}).get('current_year', 2023))
+    rows = [pension_index_path(raw, base + np.arange(T) - j) for j in range(T)]
+    return None if rows[0] is None else np.stack(rows)
 
 
 def cohort_retirement_table(raw):
@@ -1768,6 +1817,12 @@ def build_olg_transition(config_data, backend='numpy'):
         'tau_k_path': np.full(T_tr, _tax('tau_k', 0.20)),
         'pension_replacement_path': np.full(T_tr, _tax('pension_replacement_default', 0.50)),
     }
+    # Pension per pensioner: the replacement rate follows the configured index
+    # by calendar year (one in the base year).
+    pen_index = pension_index_path(config_data,
+                                   int(trans.get('current_year', 2020)) + np.arange(T_tr))
+    if pen_index is not None:
+        paths['pension_replacement_path'] = paths['pension_replacement_path'] * pen_index
 
     # G and I_g paths (constant at data ratios × steady-state Y, will be rescaled after first sim)
     fiscal = config_data.get('fiscal', {})

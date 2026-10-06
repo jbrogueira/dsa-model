@@ -2,20 +2,25 @@
 Build the retirement age path for Greece → data/retirement_age_GR.npz.
 
 The model's retirement age is the average effective retirement age, the age at
-which people start receiving an old-age, early or disability pension: 63.8 in
-2022 (European Commission, 2024 Ageing Report, Country Fiche EL, December 2023,
-p. 23), against a statutory age of 67. Law 4336/2015 links the minimum and
-statutory ages to the change in life expectancy at 65, re-examined every three
-years from 2021 (p. 6 item (x), p. 9 section 1.1.5). The effective age is moved
-by the same rule:
+which people start receiving an old-age, early or disability pension. Its path
+to 2070 is the projection of the 2024 Ageing Report (European Commission,
+Country Fiche EL, December 2023, Table 4, p. 23): 63.8 in 2022, 65.5 in 2030,
+66.4 in 2040, 66.6 in 2050, 67.4 in 2060 and 67.9 in 2070, interpolated
+linearly between those years and equal to 63.8 before 2022. The statutory age
+is 67 in 2022.
 
-  R_y = 63.8 + e65(r(y)) - e65(2023),    r(y) = last review year <= y,
+After 2070 the path moves with the rule of Law 4336/2015, which links the
+minimum and statutory ages to the change in life expectancy at 65, re-examined
+every three years from 2021 (fiche p. 6 item (x), p. 9 section 1.1.5):
 
-with reviews in 2024, 2027, ... (the three-year cycle that started in 2021),
-R_y = 63.8 for y <= 2023, and e65 the unisex period life expectancy at 65 (the
-mean of men and women) from the EUROPOP2023 baseline mortality assumptions,
-ages 65 to 100+. The projection ends in 2100; the model's mortality is held at
-the 2100 schedule after that, so e65 and R are held there too.
+  R_y = 67.9 + e65(r(y)) - e65(r(2070)),    r(y) = last review year <= y,
+
+with reviews in 2024, 2027, ... and e65 the unisex period life expectancy at
+65 (the mean of men and women) from the EUROPOP2023 baseline mortality
+assumptions, ages 65 to 100+. The projection ends in 2100; the model's
+mortality is held at the 2100 schedule after that, so e65 and R are held there
+too. `rule_path` in the output is the same rule applied from 2024 on a base
+of 63.8, the path used before the Ageing Report's projection was adopted.
 
 A cohort entering at real age 25 in year k retires on average at the age A_k
 that solves A_k = R_{k + round(A_k) - 25}: the age in force in the year it
@@ -43,6 +48,9 @@ OUT = os.path.join(DATA, 'retirement_age_GR.npz')
 ENTRY_AGE = 25
 BASE_YEAR = 2023
 BASE_AGE = 63.8                 # average effective retirement age, 2022 (fiche p. 23)
+# Average effective retirement age, fiche Table 4 (p. 23).
+FICHE_YEARS = (2022, 2030, 2040, 2050, 2060, 2070)
+FICHE_AGES = (63.8, 65.5, 66.4, 66.6, 67.4, 67.9)
 FIRST_REVIEW = 2024             # three-year cycle from 2021: 2021, 2024, 2027, ...
 REVIEW_EVERY = 3
 PROJ_END = 2100                 # last year of EUROPOP2023
@@ -106,6 +114,18 @@ def statutory_age(years, e_years, e65):
     return out
 
 
+def effective_age(years, e_years, e65):
+    """R_y for each year in `years`: the fiche's path to 2070, then the review
+    rule's increments."""
+    years = np.asarray(years)
+    rule = statutory_age(years, e_years, e65)
+    rule_last = float(statutory_age(np.array([FICHE_YEARS[-1]]), e_years, e65)[0])
+    out = np.interp(years, FICHE_YEARS, FICHE_AGES)      # flat outside the range
+    late = years > FICHE_YEARS[-1]
+    out[late] = FICHE_AGES[-1] + rule[late] - rule_last
+    return out
+
+
 def cohort_retirement_age(entry_year, R):
     """Average retirement age A = R_{entry + round(A) - 25} of one cohort.
 
@@ -126,14 +146,15 @@ def cohort_retirement_age(entry_year, R):
 def main():
     e_years, eM, eF, e65 = e65_path()
     years = np.arange(FIRST_ENTRY, LAST_ENTRY + 100)
-    R = statutory_age(years, e_years, e65)
+    R = effective_age(years, e_years, e65)
+    rule = statutory_age(years, e_years, e65)
     R_of = dict(zip(years.tolist(), R.tolist()))
     entry = np.arange(FIRST_ENTRY, LAST_ENTRY + 1)
     A = np.array([cohort_retirement_age(int(k), R_of.__getitem__) for k in entry])
     low = np.floor(A).astype(int)
     share_high = A - low
     np.savez(OUT, e65_years=e_years, e65_men=eM, e65_women=eF, e65=e65,
-             years=years, retirement_age_path=R, entry_years=entry,
+             years=years, retirement_age_path=R, rule_path=rule, entry_years=entry,
              retirement_real_age=A, J_R=low - ENTRY_AGE, share_later=share_high,
              base_year=BASE_YEAR, base_age=BASE_AGE, entry_age=ENTRY_AGE)
     for y in (2023, 2024, 2030, 2040, 2050, 2070, 2100):

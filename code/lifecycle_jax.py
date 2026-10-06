@@ -22,7 +22,8 @@ import numpy as np
 from functools import partial
 from scipy.linalg import eig
 
-from lifecycle_perfect_foresight import LifecycleConfig, LifecycleModelPerfectForesight
+from lifecycle_perfect_foresight import (LifecycleConfig, LifecycleModelPerfectForesight,
+                                         encoded_pension_floor)
 
 # Enable float64 for numerical equivalence with NumPy reference
 jax.config.update("jax_enable_x64", True)
@@ -153,6 +154,13 @@ def labor_disutility_jax(l, nu, phi):
     return nu * l ** (1 + phi) / (1 + phi)
 
 
+def _pension_floor_jax(floor, replacement):
+    """Floor in a period with the given replacement rate: `floor` itself when
+    non-negative, -floor times the rate when negative (the indexed floor, see
+    lifecycle_perfect_foresight.encoded_pension_floor)."""
+    return jnp.where(floor < 0.0, -floor * replacement, floor)
+
+
 def compute_budget_jax(
     a_grid, y_grid, h_grid, m_grid,
     P_y, P_h_t,
@@ -206,7 +214,7 @@ def compute_budget_jax(
     pension_base = lam * kappa_ret * y_last + (1 - lam) * mean_kappa_working * mean_y_employed
     pension = pension_replacement_t * w_at_retirement * pension_base * alpha_mult  # (1,1,1,n_y)
     # Feature #11: minimum pension floor (flat amount, not scaled by alpha)
-    pension = jnp.maximum(pension, pension_min_floor)
+    pension = jnp.maximum(pension, _pension_floor_jax(pension_min_floor, pension_replacement_t))
     # Feature #14: progressive or flat tax
     retired_income_tax = jnp.where(
         tax_progressive,
@@ -786,7 +794,8 @@ def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
     pension_base = (pension_avg_weight * kappa_wage_ret * y_last_val
                     + (1 - pension_avg_weight) * mean_kappa_working * mean_y_employed)
     pension_raw = pension_replacement * w_at_retirement * pension_base * alpha_mult
-    pension_with_floor = jnp.maximum(pension_raw, pension_min_floor)
+    pension_with_floor = jnp.maximum(
+        pension_raw, _pension_floor_jax(pension_min_floor, pension_replacement))
     pension = jnp.where(is_retired, pension_with_floor, 0.0)
 
     # UI (scales with permanent FE)
@@ -1411,7 +1420,8 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
     state-level panel row rows[c] of cohort c with the mass on each state.
     """
     C = surv.shape[0]
-    bc = lambda x: jnp.broadcast_to(x, (C,) + jnp.shape(x))
+    # A (T,) path is shared by the cohorts; a (C, T) one has a row per cohort.
+    bc = lambda x: x if jnp.ndim(x) == 2 else jnp.broadcast_to(x, (C,) + jnp.shape(x))
     r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c = (bc(x) for x in paths)
     w_ret_c = bc(jnp.asarray(w_at_retirement, dtype=jnp.float64))
 
@@ -1552,7 +1562,8 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
     simulate() call, vmapped over cohorts.
     """
     C = surv.shape[0]
-    bc = lambda x: jnp.broadcast_to(x, (C,) + jnp.shape(x))
+    # A (T,) path is shared by the cohorts; a (C, T) one has a row per cohort.
+    bc = lambda x: x if jnp.ndim(x) == 2 else jnp.broadcast_to(x, (C,) + jnp.shape(x))
     r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c = (bc(x) for x in paths)
     w_ret_c = bc(jnp.asarray(w_at_retirement, dtype=jnp.float64))
 
@@ -1681,7 +1692,7 @@ class LifecycleModelJAX:
         self.trend_growth = float(config.trend_growth)
 
         # New feature parameters
-        self.pension_min_floor = float(config.pension_min_floor)
+        self.pension_min_floor = float(encoded_pension_floor(config))
         self.tax_progressive = bool(config.tax_progressive)
         self.tax_kappa_hsv = float(config.tax_kappa)
         self.tax_eta = float(config.tax_eta)
@@ -2068,9 +2079,21 @@ class LifecycleModelJAX:
         )
         return _exact_panel_to_numpy(panel, mass)
 
-    def cross_section_exact(self, survival_stack, rows=None, chunk_size=None):
+    def _pension_stack(self, pension_stack, C):
+        """Replacement-rate paths of the C cohorts of a cross-section: this
+        model's path for all of them, or one (T,) row per cohort."""
+        if pension_stack is None:
+            return self.pension_replacement_path
+        pen = jnp.asarray(pension_stack, dtype=jnp.float64)
+        if pen.shape != (C, int(self.T)):
+            raise ValueError(f'pension_stack has shape {pen.shape}, expected {(C, int(self.T))}')
+        return pen
+
+    def cross_section_exact(self, survival_stack, rows=None, chunk_size=None,
+                            pension_stack=None):
         """One state-level panel row per cohort, for cohorts that differ only
-        in survival: the exact counterpart of cross_section_batched().
+        in survival and, with pension_stack, in their replacement-rate path:
+        the exact counterpart of cross_section_batched().
 
         Cohort c solves this model's lifecycle problem under survival_stack[c]
         and contributes its cross-section over states at age index rows[c]
@@ -2098,7 +2121,7 @@ class LifecycleModelJAX:
             self.P_y_2d, self.P_h, self.P_y_4d if self.P_y_age_health else None,
             self.w_at_retirement,
             (self.r_path, self.w_path, self.tau_c_path, self.tau_l_path,
-             self.tau_p_path, self.tau_k_path, self.pension_replacement_path),
+             self.tau_p_path, self.tau_k_path, self._pension_stack(pension_stack, C)),
             self.ui_replacement_rate, self.kappa, self.beta, self.gamma,
             self.pension_min_floor, self.tax_kappa_hsv, self.tax_eta,
             self.transfer_floor, self.education_subsidy_rate,
@@ -2117,8 +2140,9 @@ class LifecycleModelJAX:
         return _exact_panel_to_numpy(panel, mass)
 
     def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None,
-                              rows=None):
-        """One panel row per cohort, for cohorts that differ only in survival.
+                              rows=None, pension_stack=None):
+        """One panel row per cohort, for cohorts that differ only in survival
+        and, with pension_stack, in their replacement-rate path.
 
         Cohort c solves this model's lifecycle problem under survival_stack[c]
         (T, n_h), simulates n_sim agents from seeds[c] and contributes row
@@ -2154,7 +2178,7 @@ class LifecycleModelJAX:
             self.P_y_2d, self.P_h, self.P_y_4d if self.P_y_age_health else None,
             self.w_at_retirement,
             (self.r_path, self.w_path, self.tau_c_path, self.tau_l_path,
-             self.tau_p_path, self.tau_k_path, self.pension_replacement_path),
+             self.tau_p_path, self.tau_k_path, self._pension_stack(pension_stack, C)),
             self.ui_replacement_rate, self.kappa, self.beta, self.gamma,
             self.pension_min_floor, self.tax_kappa_hsv, self.tax_eta,
             self.transfer_floor, self.education_subsidy_rate,

@@ -14,28 +14,34 @@ $\eta_g$ & public capital elasticity & 0.0500 &  \\
 $K_g/Y$ & public capital ratio & 0.7030 & IMF ICSD \\
 $\delta_g$ & public capital depreciation & 0.0428 & $I_g/K_g-(\Gamma-1)$ \\
 $r$ & world return on capital & 0.0400 &  \\
-$r_B$ & sovereign rate & 0.0190 & implicit rate 2012--24 \\
+$r_B$ & real sovereign rate & 0.0105 & mean real effective rate, debt projection 2026--60 \\
 $\tau_c$ & consumption tax rate & 0.1818 & effective rate \\
 $\tau_l$ & labour income tax rate & 0.1000 & effective rate \\
 $\tau_k$ & capital income tax rate & 0.2236 & effective rate \\
-$b_{min}$ & minimum pension & 0.1671 & national pension, L.4387/2016 \\
+$b_{min}$ & minimum pension, 2023 & 0.1671 & national pension, L.4387/2016; follows the pension index \\
 $\underline{c}$ & consumption floor (means-tested) & 0.0807 & guaranteed minimum income \\
 $\tau^{beq}$ & tax on accidental bequests & 1.0000 &  \\
 $f$ & job-finding probability & 0.4400 & Eurostat \texttt{une\_ltu\_a} \\
 $\kappa$ & public share of medical spending & 0.6620 & Eurostat \texttt{hlth\_sha11\_hf} \\
 $T$ & model ages (real ages 25--84) & {60} &  \\
-$R_{2023}$ & average effective retirement age, 2023 & 63.8000 & 2024 Ageing Report; rises with life expectancy at 65 \\
+$R_{2022}$ & average effective retirement age, 2022 & 63.8000 & 2024 Ageing Report; its projection to 2070 \\
+$u_{low}$ & unemployment rate, low education & 0.1230 & Eurostat \texttt{lfsa\_urgaed}, 2023, ages 25--64 \\
+$u_{medium}$ & unemployment rate, medium education & 0.1160 &  \\
+$u_{high}$ & unemployment rate, high education & 0.0770 &  \\
+$\omega_{low}$ & population share, low education & 0.2914 & survey 2023 (ages 25--74), 2021 census (75--84) \\
+$\omega_{medium}$ & population share, medium education & 0.4117 &  \\
+$\omega_{high}$ & population share, high education & 0.2969 &  \\
 \midrule
 \multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
-$\nu$ & labour disutility weight & 12.2911 & average hours \\
-$\beta$ & discount factor & 1.0063 & $A/Y$ \\
+$\nu$ & labour disutility weight & 12.3883 & average hours \\
+$\beta$ & discount factor & 1.0039 & $A/Y$ \\
 $\tau_p$ & payroll tax rate & 0.1940 & payroll revenue$/Y$ \\
-$\rho^{pens}$ & pension replacement rate & 0.2295 & pensions$/Y$ \\
+$\rho^{pens}$ & pension replacement rate & 0.2351 & pensions$/Y$ \\
 $m^{good}$ & medical cost scale & 0.0899 & public health$/Y$ \\
-$\rho^{ui}$ & UI replacement rate & 0.0532 & UI$/Y$ \\
+$\rho^{ui}$ & UI replacement rate & 0.0755 & UI$/Y$ \\
 \midrule
 \multicolumn{4}{l}{\itshape Set outside the SMM}\\
-$A$ & total factor productivity & 1.4653 & normalisation, $\hat y=1$ \\
-$O/Y$ & other net spending & -0.0829 & primary balance in the data \\
+$A$ & total factor productivity & 1.4339 & normalisation, $\hat y=1$ \\
+$O/Y$ & other net spending & -0.0906 & primary balance in the data \\
 \bottomrule
 \end{tabular}

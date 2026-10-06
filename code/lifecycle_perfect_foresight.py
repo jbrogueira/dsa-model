@@ -10,6 +10,32 @@ from functools import partial
 from scipy.linalg import eig
 
 
+def encoded_pension_floor(config):
+    """The pension floor in the form the solvers and simulations receive.
+
+    A non-negative value is a floor in detrended units. With
+    pension_floor_indexed the floor follows the replacement-rate path: it is
+    pension_min_floor in a period whose replacement rate equals
+    pension_replacement_default and moves in proportion to the rate. That case
+    is passed as minus the ratio pension_min_floor / pension_replacement_default,
+    and pension_floor_at() multiplies it by the period's rate.
+    """
+    floor = float(config.pension_min_floor)
+    if not getattr(config, 'pension_floor_indexed', False) or floor <= 0.0:
+        return floor
+    ref = float(config.pension_replacement_default)
+    if ref <= 0.0:
+        raise ValueError('pension_floor_indexed needs a positive '
+                         'pension_replacement_default')
+    return -floor / ref
+
+
+def pension_floor_at(floor, replacement):
+    """Floor in a period with the given replacement rate; `floor` as returned
+    by encoded_pension_floor()."""
+    return floor if floor >= 0.0 else -floor * replacement
+
+
 @dataclass
 class LifecycleConfig:
     """Configuration class for lifecycle model parameters."""
@@ -31,6 +57,9 @@ class LifecycleConfig:
     pension_replacement_path: Optional[np.ndarray] = None  # Pension replacement rate path (fraction of avg earnings)
     pension_replacement_default: float = 0.80  # Default pension replacement rate (80% of last working income)
     pension_min_floor: float = 0.0       # Minimum pension floor (Feature #11)
+    # The floor follows the replacement-rate path: it equals pension_min_floor
+    # where the rate is pension_replacement_default and moves in proportion.
+    pension_floor_indexed: bool = False
     
     # === Asset grid parameters ===
     a_min: float = 0.0                   # Borrowing constraint
@@ -293,7 +322,7 @@ class LifecycleModelPerfectForesight:
         self.kappa = config.kappa
         self.N_earnings_history = config.N_earnings_history
         self.retirement_age = config.retirement_age
-        self.pension_min_floor = config.pension_min_floor
+        self.pension_min_floor = encoded_pension_floor(config)
         self.tax_progressive = config.tax_progressive
         self.tax_kappa = config.tax_kappa
         self.tax_eta = config.tax_eta
@@ -721,7 +750,8 @@ class LifecycleModelPerfectForesight:
             # Phase 8: pension scales with the retiree's permanent productivity multiplier
             pension = self.pension_replacement_path[t] * self.w_at_retirement * pension_base * self._alpha_mult
             # Feature #11: minimum pension floor (flat amount, not scaled by alpha)
-            pension = max(pension, self.pension_min_floor)
+            pension = max(pension, pension_floor_at(self.pension_min_floor,
+                                                    self.pension_replacement_path[t]))
             if self.tax_progressive:
                 # Feature #14: HSV progressive tax on pension
                 income_tax = pension - self.tax_kappa * max(pension, 1e-10) ** (1 - self.tax_eta)
@@ -1205,7 +1235,8 @@ class LifecycleModelPerfectForesight:
                                     + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
                     pension_val = pension_replacement * self.w_at_retirement * pension_base * a_mult
                     # Feature #11: minimum pension floor (flat, not scaled by alpha)
-                    pension_val = max(pension_val, self.pension_min_floor)
+                    pension_val = max(pension_val, pension_floor_at(
+                        self.pension_min_floor, pension_replacement))
                     pension_sim[t_sim, i] = pension_val
 
                     y_sim[t_sim, i] = 0.0
@@ -1374,7 +1405,9 @@ class LifecycleModelPerfectForesight:
                             + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
             pension = np.maximum(
                 self.pension_replacement_path[lifecycle_age] * self.w_at_retirement
-                * pension_base * a_mult, self.pension_min_floor)
+                * pension_base * a_mult,
+                pension_floor_at(self.pension_min_floor,
+                                 self.pension_replacement_path[lifecycle_age]))
             y_val, employed, ui, l = zeros, np.zeros(shape, dtype=bool), zeros, zeros
         else:
             pension = zeros

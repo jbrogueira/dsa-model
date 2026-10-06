@@ -71,8 +71,8 @@ def _retirement_row(cfg, mod):
     path = None if not rel else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', rel)
     if path and os.path.exists(path):
         base_age = float(np.load(path)['base_age'])
-        return ('$R_{2023}$', 'average effective retirement age, 2023', base_age,
-                '2024 Ageing Report; rises with life expectancy at 65')
+        return ('$R_{2022}$', 'average effective retirement age, 2022', base_age,
+                '2024 Ageing Report; its projection to 2070')
     return ('$J_R$', f"retirement age (real age {25 + int(mod.get('retirement_age'))})",
             mod.get('retirement_age'), '')
 
@@ -102,12 +102,14 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$\\delta_g$', 'public capital depreciation', prod.get('delta_g'),
          '$I_g/K_g-(\\Gamma-1)$'),
         ('$r$', 'world return on capital', pri.get('r'), ''),
-        ('$r_B$', 'sovereign rate', pri.get('r_B'), 'implicit rate 2012--24'),
+        ('$r_B$', 'real sovereign rate', pri.get('r_B'),
+         'mean real effective rate, debt projection 2026--60'),
         ('$\\tau_c$', 'consumption tax rate', ext.get('tau_c'), 'effective rate'),
         ('$\\tau_l$', 'labour income tax rate', ext.get('tau_l'), 'effective rate'),
         ('$\\tau_k$', 'capital income tax rate', ext.get('tau_k'), 'effective rate'),
-        ('$b_{min}$', 'minimum pension', ext.get('pension_min_floor'),
-         'national pension, L.4387/2016'),
+        ('$b_{min}$', 'minimum pension, 2023', ext.get('pension_min_floor'),
+         'national pension, L.4387/2016'
+         + ('; follows the pension index' if ext.get('pension_floor_indexed') else '')),
         ('$\\underline{c}$', 'consumption floor (means-tested)', ext.get('transfer_floor'),
          'guaranteed minimum income'),
         ('$\\tau^{beq}$', 'tax on accidental bequests', ext.get('tau_beq'), ''),
@@ -118,6 +120,20 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$T$', 'model ages (real ages 25--84)', mod.get('T'), ''),
         _retirement_row(cfg, mod),
     ]
+    edu = cfg.get('edu_params', {})
+    shares = cfg.get('education_shares', {})
+    for key, name in (('low', 'low'), ('medium', 'medium'), ('high', 'high')):
+        if key in edu:
+            rows_ext.append((f'$u_{{{name}}}$', f'unemployment rate, {name} education',
+                             edu[key].get('unemployment_rate'),
+                             'Eurostat \\texttt{lfsa\\_urgaed}, 2023, ages 25--64'
+                             if key == 'low' else ''))
+    for key, name in (('low', 'low'), ('medium', 'medium'), ('high', 'high')):
+        if key in shares:
+            rows_ext.append((f'$\\omega_{{{name}}}$', f'population share, {name} education',
+                             shares[key],
+                             'survey 2023 (ages 25--74), 2021 census (75--84)'
+                             if key == 'low' else ''))
     # One row per parameter the configuration lists for the SMM; a parameter
     # the last fit did not cover shows no value rather than its initial.
     rows_cal = []
@@ -275,6 +291,28 @@ def growth_table(paths, t_stable=None):
             h = len(x) // 2 if t_stable is None else min(int(t_stable), len(x) - 3)
             trend = 100 * (np.log(x[-1]) - np.log(x[h])) / (len(x) - 1 - h)
         out.append(f'{label} & {fmt(trend, 3)} \\\\')
+    return '\n'.join(out)
+
+
+def projection_table(closure, dsa, paths, budget):
+    """The baseline against the Commission's debt projection, % of output."""
+    years = closure['years']
+    Y = np.asarray(paths['Y'], float)
+    proj = {int(y): i for i, y in enumerate(dsa['years'])}
+    out = []
+    for y in (2025, 2030, 2040, 2050, 2060, 2070, 2100):
+        if y > years[-1]:
+            continue
+        t = int(y - years[0])
+        i = proj.get(y)
+        d_proj = None if i is None else 100 * float(dsa['debt'][i])
+        cells = [fmt(d_proj, 1), fmt(100 * closure['debt'][t], 1),
+                 fmt(100 * closure['primary_balance'][t], 1),
+                 fmt(100 * closure['other_net_over_Y'][t], 1),
+                 fmt(100 * float(budget['total_revenue'][t]) / Y[t], 1),
+                 fmt(100 * float(budget['pension'][t]) / Y[t], 1),
+                 fmt(100 * float(budget['gov_health'][t]) / Y[t], 1)]
+        out.append(f'{y} & ' + ' & '.join(cells) + ' \\\\')
     return '\n'.join(out)
 
 
@@ -587,6 +625,7 @@ def main():
     gammaT_minus_1 = float(G_path[-1] - 1.0)         # Gamma_T - 1, the balanced growth path
 
     paths = None
+    closure = dsa = budget = None
     if args.run_baseline:
         prod = L['config_data']['production']
         I_g = ((prod.get('delta_g', 0.05) + economy.growth_factors(T_TR) - 1.0)
@@ -619,6 +658,23 @@ def main():
                  delta=float(L['config_data']['production'].get('delta', 0.07)),
                  base_year=int(economy.current_year))
         print('  wrote baseline_paths.npz')
+
+        # Other net spending, the primary balance and debt under the closure
+        # of baseline_closure.py, when a debt projection is configured.
+        from baseline_closure import closure_from_run, load_dsa_projection
+        dsa = load_dsa_projection(L['config_data'])
+        saved = dict(paths, growth_factor=economy.growth_factors(T_TR),
+                     base_year=int(economy.current_year),
+                     **{('budget_' + k): v for k, v in budget.items()})
+        closure = closure_from_run(saved, L['config_data'], dsa=dsa)
+        if closure is not None:
+            np.savez(os.path.join(outdir, 'baseline_closure.npz'), **closure)
+            print('  wrote baseline_closure.npz')
+            t60 = int(dsa['years'][-1] - closure['years'][0])
+            print(f"  closure: debt {100 * closure['debt'][t60]:.1f}% of output in "
+                  f"{int(dsa['years'][-1])} (projection {100 * float(dsa['debt'][-1]):.1f}%), "
+                  f"O/Y from {100 * closure['other_net_over_Y'][0]:.1f}% to "
+                  f"{100 * closure['other_net_over_Y'][t60]:.1f}%")
 
         # The resource constraint is the one identity that does not cancel a
         # normalisation error: every other check in the repo compares two
@@ -685,6 +741,13 @@ def main():
             ' & {Growth, \\% per year}',
             growth_table(paths, t_stable=t_stable)),
     }
+    if closure is not None:
+        frag['projection_body.tex'] = wrap(
+            'l' + 'S[table-format=3.1]' * 2 + 'S[table-format=+2.1]' * 2
+            + 'S[table-format=2.1]' * 3,
+            ' & {Debt, projection} & {Debt} & {Primary balance} & {$O/Y$} & {Revenue}'
+            ' & {Pensions} & {Public health}',
+            projection_table(closure, dsa, paths, budget))
     # Without a baseline transition there is nothing to put in the growth
     # table's trend column or in the transition panels. Writing them anyway
     # destroys the output of a run that did have one, so skip them instead.

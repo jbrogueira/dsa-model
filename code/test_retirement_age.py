@@ -25,13 +25,29 @@ def test_e65_reproduces_the_ageing_report(d):
         assert round(float(d['e65_women'][y.index(yr)]), 1) == women
 
 
-def test_effective_age_is_63_8_in_2023_and_moves_one_for_one_at_reviews(d):
+def test_effective_age_follows_the_fiche_to_2070_and_the_review_rule_after(d):
+    """Country Fiche EL, Table 4: 63.8 (2022), 65.5 (2030), 66.4 (2040),
+    66.6 (2050), 67.4 (2060), 67.9 (2070)."""
     years, R = list(d['years']), d['retirement_age_path']
+    assert all(R[years.index(y)] == pytest.approx(63.8) for y in range(1939, 2023))
+    for y, a in ((2022, 63.8), (2030, 65.5), (2040, 66.4), (2050, 66.6),
+                 (2060, 67.4), (2070, 67.9)):
+        assert R[years.index(y)] == pytest.approx(a)
+    assert R[years.index(2026)] == pytest.approx(63.8 + 0.5 * (65.5 - 63.8))
+    e = dict(zip(d['e65_years'].tolist(), d['e65'].tolist()))
+    for r in (2072, 2075, 2099):          # reviews after 2070
+        assert R[years.index(r)] == pytest.approx(67.9 + e[r] - e[2069])
+        assert R[years.index(r + 1)] == R[years.index(r)]   # constant between reviews
+    assert np.all(np.diff(R) >= -1e-12)
+
+
+def test_rule_path_is_63_8_in_2023_and_moves_one_for_one_at_reviews(d):
+    years, R = list(d['years']), d['rule_path']
     e = dict(zip(d['e65_years'].tolist(), d['e65'].tolist()))
     assert all(R[years.index(y)] == pytest.approx(63.8) for y in range(1939, 2024))
     for r in (2024, 2027, 2030, 2060, 2099):
         assert R[years.index(r)] == pytest.approx(63.8 + e[r] - e[2023])
-        assert R[years.index(r + 1)] == R[years.index(r)]   # constant between reviews
+        assert R[years.index(r + 1)] == R[years.index(r)]
     assert np.all(np.diff(R) >= -1e-12)
 
 
