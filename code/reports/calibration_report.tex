@@ -274,16 +274,6 @@ Aggregates (Figure~\ref{fig:aggregates}):
   to 2027 and potential growth after. The model has no cycle.
 \end{itemize}
 
-\noindent Balanced growth path (Table~\ref{tab:growth}):
-\begin{itemize}
-\item Each entry is the mean log growth per year,
-  $\frac{1}{T-t_0}\sum_{t\ge t_0}\log(\hat x_{t+1}/\hat x_t)$, from
-  $t_0=2179$, when the age distribution becomes constant, to the end of the
-  horizon.
-\item With correct detrending every series is flat. A series left in levels
-  would show $\Gamma_T-1$ (1.7\%), one left per capita $g$ (also 1.7\%).
-\end{itemize}
-
 \begin{figure}[htbp]\centering
 \IfFileExists{\rundir/baseline_aggregates.pdf}
   {\includegraphics[width=\linewidth]{\rundir/baseline_aggregates.pdf}}
@@ -320,12 +310,6 @@ baseline as a 5-year centred mean.}
 end of the year over the same year's output}\vspace{-2pt}
 \label{tab:projection}
 \tabinput{projection_body.tex}
-\end{table}
-
-\begin{table}[htbp]\centering\footnotesize
-\caption{Growth of the detrended series on the balanced growth path}\vspace{-2pt}
-\label{tab:growth}
-\tabinput{growth_body.tex}
 \end{table}
 
 \clearpage
