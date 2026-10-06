@@ -6,10 +6,12 @@ Written 2026-10-05. Status on 2026-10-06:
   3 (minimum pension), 4 (effective retirement age), the levels of item 5
   (2023 unemployment rates and education shares), and items 7 and 8 as a
   calculation on the baseline's saved paths (`baseline_closure.py`).
+- Implemented later on 2026-10-06: the O/Y path and the stock-flow term in
+  the fiscal experiments (`run_fiscal_figures.py`, `compute_debt_path`,
+  `eval_fiscal_results.py`); results in `output/fiscal_2026-10-06/` and the
+  last section of the calibration report.
 - Not implemented: the declining unemployment path of item 5, item 6 (health
-  care unit costs), item 9, and the use of the O/Y path and the stock-flow
-  term in the fiscal experiments (`run_fiscal_figures.py` still passes the
-  scalar O/Y and `compute_debt_path` has no adjustment term).
+  care unit costs) and item 9.
 
 The model numbers in this document are from the baseline transition of
 2026-10-05 (effective retirement age, `960d20e`), before any of these changes.

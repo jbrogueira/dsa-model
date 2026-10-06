@@ -11,6 +11,7 @@
 
 \sisetup{table-align-text-post=false}
 \newcommand{\rundir}{../output/calibration_growth}
+\newcommand{\fiscaldir}{../output/fiscal_2026-10-06}
 % Fallbacks so the template compiles before any run exists; header.tex
 % overrides them with the values of the run \rundir points at.
 \newcommand{\runlabel}{\np}\newcommand{\gval}{\np}\newcommand{\nval}{\np}
@@ -20,6 +21,8 @@
 \newcommand{\np}{\ensuremath{\text{--}}}   % empty cell; safe in S columns and math
 \newcommand{\tabinput}[1]{\IfFileExists{\rundir/#1}{\input{\rundir/#1}}%
   {\figbox{run \texttt{fill\_report.py} to fill this table}{1.2cm}}}
+\newcommand{\fiscalinput}[1]{\IfFileExists{\fiscaldir/#1}{\input{\fiscaldir/#1}}%
+  {\figbox{run \texttt{reports/fiscal\_figures.py} to fill this table}{1.2cm}}}
 \newcommand{\figbox}[2]{\fbox{\parbox[c][#2][c]{\dimexpr\linewidth-2\fboxsep-2\fboxrule}%
   {\centering\small\itshape #1}}}
 
@@ -44,7 +47,14 @@ Government debt is held abroad by official creditors at the real rate $r_B$.
 TFP $A$ is set so that $\hat y=1$ in 2023, so ratios to output can be read as
 levels. The period is a year.
 
-\vspace{2pt}
+
+
+\vspace{0.1cm}
+\begin{table}[!htbp]\centering\footnotesize
+\caption{Parameters}\vspace{-2pt}
+\tabinput{params_body.tex}
+\end{table}
+
 \noindent\footnotesize
 Sources for the externally set parameters that are not read directly from a
 table: $K_g/Y$ is the IMF ICSD public capital stock for 2019, carried forward
@@ -89,12 +99,6 @@ education are the 2023 rates for ages 25--64, the model's working ages
 population aged 25--84 in 2023: the labour force survey for ages 25--74
 (Eurostat \texttt{lfsa\_pgaed}) and, for ages 75--84, which the survey tables
 do not cover, the 2021 census by cohort (Eurostat \texttt{cens\_21ae\_r2}).
-
-\vspace{0.1cm}
-\begin{table}[!htbp]\centering\footnotesize
-\caption{Parameters}\vspace{-2pt}
-\tabinput{params_body.tex}
-\end{table}
 
 \begin{table}[!htbp]\centering\footnotesize
 \caption{Moments}\vspace{-2pt}
@@ -255,5 +259,76 @@ $t_0=2179$, when the age distribution becomes constant, to the end of the
 horizon. With correct detrending each series is flat, so the entries should be
 zero. A series left in levels would show $\Gamma_T-1$ (1.7\%), and one left
 in per-capita terms $g$ (also 1.7\%). Every entry is zero to three decimals.
+
+\clearpage
+\section*{Policy experiments}\vspace{-0.2cm}
+
+\noindent\footnotesize
+Two permanent increases in public spending start in 2023, each of 2\% of
+output. Government consumption $G$ rises by 2\% of each year's output. Public
+investment $I_g$ rises by 2\% of 2023 output, held constant in detrended
+per-capita terms, because public capital enters production and an increase
+set as a share of output would depend on its own effect. Neither enters
+utility. Under debt financing the primary deficit is borrowed abroad at $r_B$
+and no tax changes. Under the two labour-tax rules the labour income tax rate
+rises by a constant $\Delta\tau_l$ from 2023 on, set so that in 2202, the
+last year of the horizon, the debt ratio or net foreign assets over output
+equal their baseline values. Other net spending keeps the baseline's path as a
+share of each run's output, and the stock-flow adjustment keeps its baseline
+levels. The policy is announced in 2023, and the wealth each cohort holds in
+that year is the baseline's. Net foreign assets are the household sector's
+foreign assets less government debt. The cumulative multiplier is the sum of
+the output response over the sum of the spending increase, both as aggregate
+flows over the horizon.
+
+With debt financing, government consumption leaves output, consumption and
+hours unchanged: it does not enter utility or production, and the debt is held
+abroad, so no household budget changes. The cumulative multiplier is zero. The
+debt ratio rises to 206\% of output in 2060 and 338\% in 2200. The labour-tax
+rule that returns the debt ratio to 125\% in 2202 needs $\Delta\tau_l=4.41$
+percentage points. Hours and output fall by 1.6\% in 2023 and by 0.8\% on
+average over 2023--32, and are back at the baseline by 2050; consumption is
+3.2\% below the baseline in 2023 and 5.3\% below in 2100, and household wealth
+6.3\% below in 2100. The rule that returns net foreign assets to their
+baseline ratio needs 5.16 points, and leaves the debt ratio at 90\% in 2200.
+
+Public investment raises public capital per person from 0.70 of 2023 output
+to 0.99 in 2050 and 1.05 in 2100. With debt financing, output is 1.8\% below
+the baseline in 2023, because households expect higher wages and supply fewer
+hours, and 2.7\% above in 2050 and 3.0\% above in 2100. Consumption is 1.3\%
+above the baseline in 2023 and 3.2\% above in 2100. Output is below the
+baseline for the first three years and above it from 2026; the cumulative
+multiplier is 0.20 over 2023--32 and 1.52 over the horizon. The debt ratio
+reaches 201\% in 2060 and 294\% in 2200. The labour-tax rules need 3.43 points
+(debt-ratio target) and 3.92 points (net-foreign-asset target). Output is
+2.4\% below the baseline in 2023 under both and 2.6--2.7\% above in 2050;
+consumption is 1.0\% and 1.6\% below in 2100.
+
+\begin{table}[htbp]\centering\footnotesize
+\caption{Policy experiments: responses by financing rule}\vspace{-2pt}
+\fiscalinput{fiscal_body.tex}
+\caption*{\footnotesize Debt at the end of the year over the same year's
+output; the baseline has 125\% from 2060 on and net foreign assets of
+$-0.25$ of output in 2200. The 2023--32 column is the mean deviation over
+those years.}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{\fiscaldir/fiscal_G.pdf}
+  {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_G.pdf}}
+  {\figbox{Figure 4 --- run \texttt{reports/fiscal\_figures.py}.}{6cm}}
+\caption{Government consumption up by 2\% of output from 2023, under the
+three financing rules. \emph{Top}: output and consumption, \% deviation from
+the baseline. \emph{Bottom}: debt at the end of the year and net foreign
+assets, both over output, with the baseline.}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{\fiscaldir/fiscal_Ig.pdf}
+  {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_Ig.pdf}}
+  {\figbox{Figure 5 --- run \texttt{reports/fiscal\_figures.py}.}{6cm}}
+\caption{Public investment up by 2\% of 2023 output from 2023, under the
+three financing rules; panels as in Figure~4.}
+\end{figure}
 
 \end{document}

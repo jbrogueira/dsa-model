@@ -171,14 +171,28 @@ def chk_budget_identity(budget, scenario):
     return _pass('budget_identity', scenario, 'FAIL')
 
 
+def _sfa_levels(params, T):
+    """The run's stock-flow adjustment (params['sfa_path'], levels) as a (T,)
+    array, zero when absent or past its end."""
+    out = np.zeros(T)
+    a = params.get('sfa_path') if params else None
+    if a is not None:
+        a = np.asarray(a, dtype=float).ravel()
+        n = min(T, len(a))
+        out[:n] = a[:n]
+    return out
+
+
 def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
-                          growth_factor=1.0):
+                          growth_factor=1.0, params=None):
     """Debt accrues at the sovereign rate r_B (the rate in the B law of motion),
     not the capital return r; the caller passes r_B when available.
 
     In per-capita detrended units the whole right-hand side is divided by
     Gamma_t = (1+g)(1+n_t), passed as a scalar or a path; 1.0 recovers the
-    no-growth identity."""
+    no-growth identity. The stock-flow adjustment of the run, when it carries
+    one (params['sfa_path']), enters the right-hand side as in
+    fiscal_experiments.compute_debt_path."""
     PD   = _arr(budget, 'primary_deficit')
     Ygdp = np.asarray(Y, dtype=float)
     Bgdp = np.asarray(B_gdp_path, dtype=float)
@@ -188,11 +202,12 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
     Y_ext = np.append(Ygdp, Ygdp[-1])
     B = Bgdp * Y_ext           # length T+1
     G = _growth_seq(growth_factor, T)
-    resid = np.abs(G * B[1:] - ((1 + r[:T]) * B[:T] + PD))
+    sfa = _sfa_levels(params, T)
+    resid = np.abs(G * B[1:] - ((1 + r[:T]) * B[:T] + PD + sfa))
     mx = float(resid.max())
     if mx > IDENTITY_TOL * float(np.abs(B).mean() + 1):
         return _fail('debt_accumulation', scenario, 'FAIL', mx,
-                     f"max |G*B[t+1] - (1+r_B)*B[t] - PD[t]| = {mx:.2e}")
+                     f"max |G*B[t+1] - (1+r_B)*B[t] - PD[t] - SFA[t]| = {mx:.2e}")
     return _pass('debt_accumulation', scenario, 'FAIL')
 
 
@@ -258,8 +273,11 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     M = line('gov_health') / float(kappa)
     B = (np.asarray(B_gdp_path, dtype=float)[:n] * Y[:n]
          if B_gdp_path is not None and len(B_gdp_path) >= n else np.zeros(n))
+    # The stock-flow adjustment raises debt without a deficit, so it lowers
+    # net foreign assets without a resource flow: it is netted out of dNFA.
+    sfa = _sfa_levels(params, n)
     nfi = r * NFA[:n] + (r - r_B) * B
-    resid = (C[:n] - (Y[:n] + nfi - I_priv - purchases - M - dNFA)) / Y[:n]
+    resid = (C[:n] - (Y[:n] + nfi - I_priv - purchases - M - (dNFA + sfa))) / Y[:n]
     mx = float(np.max(np.abs(resid)))
     # Sampling noise of a finite n_sim and the discrete timing of deaths are
     # all that is left; 2% of output is well above either.
@@ -566,7 +584,8 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
     results.append(chk_budget_identity(cf_bud, label))
     if len(B_gdp) > 1 and len(Y) > 0:
         results.append(chk_debt_accumulation(cf_bud, B_gdp, Y, r_debt, label,
-                                             growth_factor=_growth_factor(params)))
+                                             growth_factor=_growth_factor(params),
+                                             params=params))
     results.append(chk_nfa_accounting(cf_mac, B_gdp, label))
     results.append(chk_goods_market(cf_mac, cf_bud, params, label, B_gdp_path=B_gdp))
     results += chk_tax_revenue(cf_bud, cf_mac, params, label)

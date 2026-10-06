@@ -210,6 +210,35 @@ if args.config:
     B_initial = B_over_Y * Y0          # initial debt level pins B/Y at t=0
     target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
     print(f"  Y(0) = {Y0:.4f}  (baseline run, n_sim={N_SIM})")
+
+    # Fiscal closure of the baseline (baseline_closure.py), when a debt
+    # projection is configured: other net spending follows the path that gives
+    # the projection's primary balance to its last year and a constant debt
+    # ratio after, the stock-flow adjustment enters the debt recursion, and
+    # debt at the end of the base year equals fiscal.B_over_Y (the data's
+    # convention), so the start-of-year stock is (B/Y·Y0 - PD0)/(1 + r_B).
+    # The path is not a household input, so the second baseline run is served
+    # from the household cache and recomputes only aggregates and the budget.
+    from baseline_closure import closure_from_run, load_dsa_projection
+    dsa = load_dsa_projection(config_data)
+    closure = None
+    if dsa is not None:
+        bb = base_paths['base_budget']
+        saved = {'Y': Y_path, 'growth_factor': economy.growth_factors(T_TR),
+                 'base_year': int(economy.current_year),
+                 **{'budget_' + k: np.asarray(bb[k])[:T_TR]
+                    for k in ('total_revenue', 'total_spending', 'other_net_spending')}}
+        closure = closure_from_run(saved, config_data, dsa=dsa)
+        base_paths['other_net_over_Y'] = np.asarray(closure['other_net_over_Y'], float)
+        base_paths['sfa_path'] = np.asarray(closure['sfa'], float) * Y_path
+        PD0 = float(np.asarray(bb['primary_deficit'])[0])
+        r_B0 = float(economy.r_B) if getattr(economy, 'r_B', None) is not None else float(r_path[0])
+        B_initial = (B_over_Y * Y0 - PD0) / (1.0 + r_B0)
+        print(f"  closure: O/Y path from {closure['other_net_over_Y'][0]:+.4f} (2023) to "
+              f"{closure['other_net_over_Y'][-1]:+.4f}; end-{int(economy.current_year)} debt/Y "
+              f"= {B_over_Y}, start-of-year stock B_initial = {B_initial:.4f}")
+        print("Re-running the baseline with the closure path …")
+        base_paths = run_baseline(economy, base_paths, n_post=N_POST, n_sim=N_SIM)
     if eta_g_cfg != 0.0:
         print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
               f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
@@ -542,6 +571,14 @@ params_out = {
     'T_transition':  int(T_TR),
     'B_initial':     float(B_initial),
     'target_debt_gdp': float(target_B_Y),
+    # The baseline closure (baseline_closure.py): other net spending as a
+    # path of shares of each run's output, the stock-flow adjustment as
+    # levels entering the debt recursion, both None without a projection.
+    'other_net_over_Y_path': ([float(x) for x in base_paths['other_net_over_Y']]
+                              if args.config and np.ndim(base_paths.get('other_net_over_Y', 0.0)) == 1
+                              else None),
+    'sfa_path':      ([float(x) for x in base_paths['sfa_path']]
+                      if args.config and base_paths.get('sfa_path') is not None else None),
     'tau_l_path':    [float(x) for x in base_paths['tau_l_path']],
     'tau_c_path':    [float(x) for x in base_paths['tau_c_path']],
     'tau_p_path':    [float(x) for x in base_paths['tau_p_path']],
