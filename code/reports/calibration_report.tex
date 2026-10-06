@@ -154,12 +154,12 @@ Sources for the parameters not taken straight from a published table:
   has too many prime-age and old people until the 2050s and too few after
   (persons aged 65--84 per person aged 25--64: 0.69 in 2050 and 0.48 in 2080,
   against 0.66 and 0.52 in the projection); people under 25 and over 84 (the
-  85+ group is 4\% of the population in 2023 and 10\% in 2100); the outturn
-  since 2022 (recorded births in 2023--24 are 11--14\% below the
+  85+ group is 4\% of the population in 2023 and 10\% in 2100); what has
+  happened since 2022 (recorded births in 2023--24 are 11--14\% below the
   projection's).
-\item The entering cohort (Figure~\ref{fig:demography}, top left) carries all
-  net migration. It is negative until the 2050s, hence the fall in 2024 and
-  the movements through the 2030s.
+\item Net migration at every age is put into the cohort entering at 25
+  (Figure~\ref{fig:demography}, top left). It is negative until the 2050s,
+  hence the fall in 2024 and the movements through the 2030s.
 \item The drop in 2048 is EUROPOP2023's own: its 2022 birth cohort is 9\%
   smaller than 2021's, matching the recorded fall in live births from 85.3 to
   75.9 thousand (Eurostat \texttt{demo\_fasec}). The projection starts from
@@ -222,24 +222,28 @@ Aggregates (Figure~\ref{fig:aggregates}):
   while the working-age population shrinks.
 \end{itemize}
 
-\noindent Fiscal closure (Figure~\ref{fig:fiscal}, Table~\ref{tab:projection}):
+\noindent Government budget (Figure~\ref{fig:fiscal}, Table~\ref{tab:projection}):
 \begin{itemize}
 \item Tax rates, $G/Y$ and defence$/Y$ are fixed. Pensions follow the index
   and the number of retirees. Health spending and the tax bases follow the
   age structure.
-\item Other net spending $O$ is the primary spending less revenue that has no
-  explicit line in the model. No household pays or receives it. It is negative
-  where the revenue the model lacks exceeds the spending it lacks.
-\item $O$ is set so that the primary balance equals the 2023 outturn (1.95\%
-  of output), the Commission's projection over 2024--60, and from 2061 the
-  balance that holds the debt ratio at its 2060 value.
+\item Other net spending $O$ stands for the government spending and revenue
+  the model does not describe: everything in the primary balance other than
+  pensions, unemployment benefits, the minimum income, public health,
+  government consumption, defence, public investment and the four taxes. No
+  household pays or receives it. It is negative because the revenue it stands
+  in for exceeds the spending.
+\item $O$ is set so that the primary balance equals its 2023 value in the
+  data (1.95\% of output), the Commission's projection over 2024--60, and
+  from 2061 the balance that holds the debt ratio at its 2060 value.
 \item Debt is the end-of-year stock over the year's output,
   $d_t=d_{t-1}(1+r_B)/(1+g_t)-pb_t+sfa_t$ from 1.64 in 2023, with
   $g_t=\Gamma_{t-1}\hat y_t/\hat y_{t-1}-1$.
-\item The stock-flow adjustment $sfa$ reproduces the ratios of 2024 (154.2\%)
-  and 2025 (146.1\%), is the projection's own over 2026--60 (0.8--1.1\% of
-  output a year to 2032, the deferred interest on the official loans) and
-  zero after.
+\item The stock-flow adjustment $sfa$ is the change in debt not explained by
+  the deficit. It is set to reproduce the debt ratios of 2024 (154.2\%) and
+  2025 (146.1\%). Over 2026--60 it is the projection's (0.8--1.1\% of output
+  a year to 2032, interest on the official loans whose payment is deferred).
+  After 2060 it is zero.
 \item Debt falls to 136.9\% in 2030 and 129.1\% in 2040, rises to 134.6\% in
   2050 and settles at 125.8\% from 2060. The projection reaches 103.4\% in
   2060 (Figure~\ref{fig:projection}).
@@ -252,9 +256,9 @@ Aggregates (Figure~\ref{fig:aggregates}):
   when the nominal rate on the official loans is below deflator growth, and
   1.47\% over 2033--60. With debt at 140\% of output, the early difference
   adds about 2.4 points a year to the model's ratio. $r_B$ does not enter
-  the household problem, so the closure could take the projection's path
-  instead; the model's ratio would then be 115.5\% in 2040, 127.3\% in 2050
-  and 122.6\% in 2060.
+  the household problem, so the debt recursion could use the projection's
+  path instead; the model's ratio would then be 115.5\% in 2040, 127.3\% in
+  2050 and 122.6\% in 2060.
 \item Growth. $g$ is productivity growth per worker, not output growth.
   Output growth is $(1+g)(1+n_t)\hat y_{t+1}/\hat y_t-1$: over 2026--60,
   1.70\% ($g$) $-0.75$\% (population aged 25--84) $-0.29$\% (hours per
@@ -268,7 +272,7 @@ Aggregates (Figure~\ref{fig:aggregates}):
   retirement age works against it.
 \end{itemize}
 
-\noindent Paths (Figure~\ref{fig:fiscal}, Table~\ref{tab:projection}):
+\noindent Spending, revenue and the balance (Figure~\ref{fig:fiscal}, Table~\ref{tab:projection}):
 \begin{itemize}
 \item Pensions fall from 16.0\% of output in 2023 to 14.2\% in 2030, because
   the index falls faster than the number of retirees grows. They climb back
@@ -348,10 +352,10 @@ Design:
 \item Labour-tax financing: $\tau_l$ rises by a constant $\Delta\tau_l$ from
   2023, set so that in 2202, the last year of the horizon, either the debt
   ratio or net foreign assets over output are back at their baseline values.
-\item Other net spending keeps its baseline share of each run's output; the
-  stock-flow adjustment keeps its baseline levels.
+\item Other net spending stays at its baseline share of output; the
+  stock-flow adjustment stays at its baseline level.
 \item The policy is announced in 2023. The wealth each cohort holds that year
-  is the baseline's.
+  is the same as in the baseline.
 \item Net foreign assets are household foreign assets less government debt.
 \item The cumulative multiplier is the sum of the output response over the
   sum of the spending increase, both as aggregate flows over the horizon.
