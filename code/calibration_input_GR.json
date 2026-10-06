@@ -9,7 +9,7 @@
     "n_h": 1,
     "n_alpha": 5,
     "a_min": 0.0,
-    "a_max": 200.0,
+    "a_max": 50.0,
     "beta": 0.96,
     "gamma": 1.0,
     "labor_supply": true,
@@ -19,16 +19,16 @@
   },
   "_derived": {
     "theta": {
-      "nu": 12.388292947699059,
-      "beta": 1.0039029886634092,
-      "tau_p": 0.19402985074626855,
-      "pension_replacement_default": 0.2350537376931145,
-      "m_good": 0.08989197502710963,
-      "ui_replacement_rate": 0.07551731978885462
+      "nu": 12.46631595584043,
+      "beta": 0.9991108035965218,
+      "tau_p": 0.1940298507462686,
+      "pension_replacement_default": 0.2322815208606958,
+      "m_good": 0.09021309212144943,
+      "ui_replacement_rate": 0.07462575695613216
     },
     "theta_metadata": {
-      "calibration_date": "2026-10-06T07:00:08",
-      "source_report": "output/calibration/calibration_GR_20261006_070008.md"
+      "calibration_date": "2026-10-06T09:18:46",
+      "source_report": "output/calibration/calibration_GR_20261006_091846.md"
     }
   },
   "prices": {
@@ -38,7 +38,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.43387824,
+    "A_tfp": 1.44531489,
     "K_g": 0.703,
     "eta_g": 0.05,
     "delta_g": 0.04281
@@ -289,7 +289,7 @@
     "interest_over_Y": 0.0339,
     "primary_balance_target_over_Y": 0.0195,
     "dsa_projection_file": "../data/dsa_projection_GR.npz",
-    "other_net_spending_over_Y": -0.090608
+    "other_net_spending_over_Y": -0.088601
   },
   "calibration": {
     "params": [
@@ -298,42 +298,42 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 12.304767222784758
+        "initial": 12.485672819828453
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 1.0034994678231774
+        "initial": 0.9991385349911893
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.19402985074626872
+        "initial": 0.19402985074626866
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.23505541778185773
+        "initial": 0.23226369849695833
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.09308917890122383
+        "initial": 0.08907163197490253
       },
       {
         "name": "ui_replacement_rate",
         "path": "ui_replacement_rate",
         "lower": 0.01,
         "upper": 0.3,
-        "initial": 0.07550947941077953
+        "initial": 0.07462329136597888
       }
     ],
     "targets": [
