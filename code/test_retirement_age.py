@@ -25,7 +25,7 @@ def test_e65_reproduces_the_ageing_report(d):
         assert round(float(d['e65_women'][y.index(yr)]), 1) == women
 
 
-def test_effective_age_follows_the_fiche_to_2070_and_the_review_rule_after(d):
+def test_effective_age_follows_the_fiche_to_2070_and_e65_after(d):
     """Country Fiche EL, Table 4: 63.8 (2022), 65.5 (2030), 66.4 (2040),
     66.6 (2050), 67.4 (2060), 67.9 (2070)."""
     years, R = list(d['years']), d['retirement_age_path']
@@ -35,10 +35,12 @@ def test_effective_age_follows_the_fiche_to_2070_and_the_review_rule_after(d):
         assert R[years.index(y)] == pytest.approx(a)
     assert R[years.index(2026)] == pytest.approx(63.8 + 0.5 * (65.5 - 63.8))
     e = dict(zip(d['e65_years'].tolist(), d['e65'].tolist()))
-    for r in (2072, 2075, 2099):          # reviews after 2070
-        assert R[years.index(r)] == pytest.approx(67.9 + e[r] - e[2069])
-        assert R[years.index(r + 1)] == R[years.index(r)]   # constant between reviews
+    for y in (2071, 2072, 2085, 2100):     # one for one with e65, every year
+        assert R[years.index(y)] == pytest.approx(67.9 + e[y] - e[2070])
+    assert R[years.index(2101)] == R[years.index(2100)]   # e65 held at 2100
     assert np.all(np.diff(R) >= -1e-12)
+    late = np.diff(R[years.index(2070):years.index(2100)])
+    assert late.max() < 0.12 and late.min() > 0.05       # no three-year steps
 
 
 def test_rule_path_is_63_8_in_2023_and_moves_one_for_one_at_reviews(d):

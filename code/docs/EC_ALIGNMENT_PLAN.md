@@ -275,7 +275,12 @@ sources paragraph describe it as a real rate.
   between decades, and the current rule after 2070.
 - Needs: the data file, then a recalibration.
 - Done 2026-10-06: `build_retirement_age_GR.py` uses the fiche path from 2022
-  (64.0 in 2023) and the review rule's increments after 2070 (70.4 in 2100).
+  (64.0 in 2023) and, after 2070, the change in life expectancy at 65 year by
+  year (70.3 in 2100). Applying the three-yearly reviews literally moved the
+  age in steps, and each step put a one-year jump into hours and output
+  growth and, through the debt-stabilising rule, a sawtooth into the primary
+  balance after 2070; the annual path removes it. Cohorts entering before
+  2028 are unaffected, so the calibration is unchanged.
   A cohort entering in 2023 retires on average at 67.7 and one entering in
   2050 at 69.9. The previous path is kept in the file as `rule_path`.
 - Effect (retiree count): retirees per non-retired person are 1.04, 1.25,

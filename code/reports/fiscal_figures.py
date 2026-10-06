@@ -10,7 +10,7 @@ Gamma_t B_{t+1} / Y_t, the convention of the baseline figures; the results
 file stores B_t / Y_t.
 
 Usage (from code/):
-    python reports/fiscal_figures.py [--results output/fiscal_2026-10-06_grid50/fiscal_results.json]
+    python reports/fiscal_figures.py [--results output/fiscal_2026-10-06_ret_annual/fiscal_results.json]
                                      [--baseline output/calibration_growth/baseline_paths.npz]
                                      [--last-year 2100]
 """
@@ -125,7 +125,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser()
     ap.add_argument('--results',
-                    default=os.path.join(here, '..', 'output', 'fiscal_2026-10-06_grid50', 'fiscal_results.json'))
+                    default=os.path.join(here, '..', 'output', 'fiscal_2026-10-06_ret_annual', 'fiscal_results.json'))
     ap.add_argument('--baseline',
                     default=os.path.join(here, '..', 'output', 'calibration_growth', 'baseline_paths.npz'))
     ap.add_argument('--last-year', type=int, default=2100)

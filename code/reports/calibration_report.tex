@@ -11,7 +11,7 @@
 
 \sisetup{table-align-text-post=false}
 \newcommand{\rundir}{../output/calibration_growth}
-\newcommand{\fiscaldir}{../output/fiscal_2026-10-06_grid50}
+\newcommand{\fiscaldir}{../output/fiscal_2026-10-06_ret_annual}
 % Fallbacks so the template compiles before any run exists; header.tex
 % overrides them with the values of the run \rundir points at.
 \newcommand{\runlabel}{\np}\newcommand{\gval}{\np}\newcommand{\nval}{\np}
@@ -79,8 +79,8 @@ old-age, early or disability pension, 63.8 in 2022 against a statutory 67. To
 2070 it follows the Ageing Report's projection (country fiche, Table 4): 65.5
 in 2030, 66.4 in 2040, 66.6 in 2050, 67.4 in 2060 and 67.9 in 2070, linear in
 between. After 2070 it rises one for one with life expectancy at 65 (men and
-women averaged, EUROPOP2023) at the three-yearly reviews of Law 4336/2015, and
-reaches 70.4 in 2100. A cohort retires at the age in force when it gets there,
+women averaged, EUROPOP2023), the link of Law 4336/2015, and reaches 70.3 in
+2100. A cohort retires at the age in force when it gets there,
 67.7 for the cohort entering in 2023 and 69.9 for the one entering in 2050.
 The model is annual, so each cohort is split between the two whole ages around
 its average, in the proportions that reproduce it.
@@ -134,6 +134,18 @@ EUROPOP2023 baseline to 2100, in the baseline and in every experiment. After
 2100 mortality stays at its 2100 level and the growth of entering cohorts goes
 to zero by 2120; the age distribution is constant from 2179 on.
 
+\begin{itemize}\setlength{\itemsep}{0pt}
+\item Matched exactly: the population aged 25--84, every year; the 2023 age
+  distribution, at every age; death rates by year and age.
+\item Missed: the age composition after 2023: net migration at ages 26--84 is
+  replaced by a change in the cohort entering at 25, so the model has too
+  many prime-age and old people until the 2050s and too few after (persons
+  aged 65--84 per person aged 25--64: 0.69 in 2050 and 0.48 in 2080, against
+  0.66 and 0.52 in the projection); people under 25 and over 84 (the 85+
+  group is 4\% of the population in 2023 and 10\% in 2100); the outturn since
+  2022 (recorded births in 2023--24 are 11--14\% below the projection's).
+\end{itemize}
+
 Because the 2023 population is not stationary, the economy is in transition
 even with no policy change. Prices do not move, since the return is set abroad
 and the wage follows from it. Ageing reaches households through the retirement
@@ -172,7 +184,7 @@ from 0.26 to 0.41 by 2050 as the cohorts born in the 1960s and 1970s retire.
 2051, from 0.36 in 2023; the retired per non-retired person peak at 0.60 and
 fall to 0.29 by 2100, below today's value, because the retirement age rises
 and people above 84 are outside the model. \emph{Bottom right}: the average
-effective retirement age, 64.0 in 2023 to 70.4 in 2100, and 65 plus life
+effective retirement age, 64.0 in 2023 to 70.3 in 2100, and 65 plus life
 expectancy at 65, 85.4 to 92.8 years.}
 \end{figure}
 
@@ -214,7 +226,7 @@ adjustment $sfa$ reproduces the ratios of 2024 (154.2\%) and 2025 (146.1\%),
 is the projection's own over 2026--60 (0.8--1.1\% of output a year to 2032,
 the deferred interest on the official loans) and zero after. Debt falls to
 136.9\% in 2030 and 129.1\% in 2040, rises to 134.6\% in 2050 and settles at
-125.9\% from 2060; the projection reaches 103.4\% in 2060. The gap comes from
+125.8\% from 2060; the projection reaches 103.4\% in 2060. The gap comes from
 the constant real rate and from lower output growth
 (Figure~\ref{fig:projection}).}
 \end{figure}
@@ -259,7 +271,7 @@ their lower pensions, wealth rises from 4.0 to 5.3 times output, and the
 consumption it finances is taxed. The primary balance before $O$ is $-6.9$\%
 of output in 2023, $-4.9$\% in 2030 and $-5.6$\% in 2050, so $O/Y$ goes from
 $-8.9$\% in 2023 ($-11.2$\% in 2025) to $-7.2$\% in 2030, $-6.2$\% in 2040 and
-$-5.4$\% in 2060, and then up to $+0.4$\% by 2100 as pensions keep falling; a
+$-5.4$\% in 2060, and then up to $+0.5$\% by 2100 as pensions keep falling; a
 primary deficit of about 0.8\% of output holds debt at 126\%. Output per
 person bottoms out at 0.87 of its 2023 level in 2051 and recovers to 1.06 by
 2100 on the rising retirement age. Real growth averages 0.65\% a year over
@@ -305,10 +317,10 @@ Debt-financed government consumption leaves output, consumption and hours
 exactly where they were. It enters neither utility nor production, and the
 debt is held abroad, so no household budget changes. The multiplier is zero,
 and the debt ratio climbs to 207\% of output in 2060 and 339\% in 2200.
-Bringing the ratio back to 126\% by 2202 takes $\Delta\tau_l=4.19$ percentage
+Bringing the ratio back to 126\% by 2202 takes $\Delta\tau_l=4.18$ percentage
 points. Hours and output fall 0.8\% in 2023 and 0.4\% on average over
 2023--32, and are back at the baseline by 2050; consumption is 3.2\% below the
-baseline in 2023 and 4.8\% below in 2100, wealth 4.6\% below in 2100.
+baseline in 2023 and 4.8\% below in 2100, wealth 4.5\% below in 2100.
 Returning net foreign assets to their baseline ratio instead takes 4.67
 points and leaves the debt ratio at 102\% in 2200.
 
@@ -319,7 +331,7 @@ by 2.7\% in 2050 and 3.0\% in 2100. Consumption is 1.2\% above the baseline in
 2023 and 3.1\% above in 2100. Output is below the baseline for three years and
 above it from 2026; the cumulative multiplier is 0.20 over 2023--32 and 1.49
 over the horizon. The debt ratio reaches 203\% in 2060 and 299\% in 2200. The
-labour-tax rules need 3.42 points (debt target) and 3.82 points
+labour-tax rules need 3.42 points (debt target) and 3.83 points
 (net-foreign-asset target). Output is 1.6\% below the baseline in 2023 under
 both and 2.8--2.9\% above in 2050; consumption ends 0.9\% and 1.4\% below in
 2100.
@@ -328,7 +340,7 @@ both and 2.8--2.9\% above in 2050; consumption ends 0.9\% and 1.4\% below in
 \caption{Policy experiments: responses by financing rule}\vspace{-2pt}
 \fiscalinput{fiscal_body.tex}
 \caption*{\footnotesize End-of-year debt over the year's output; the
-baseline has 126\% from 2060 on and net foreign assets of $-0.38$ of output
+baseline has 126\% from 2060 on and net foreign assets of $-0.37$ of output
 in 2200. The 2023--32 column is the mean deviation over those years.}
 \end{table}
 

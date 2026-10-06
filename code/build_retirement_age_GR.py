@@ -9,18 +9,22 @@ Country Fiche EL, December 2023, Table 4, p. 23): 63.8 in 2022, 65.5 in 2030,
 linearly between those years and equal to 63.8 before 2022. The statutory age
 is 67 in 2022.
 
-After 2070 the path moves with the rule of Law 4336/2015, which links the
-minimum and statutory ages to the change in life expectancy at 65, re-examined
-every three years from 2021 (fiche p. 6 item (x), p. 9 section 1.1.5):
+After 2070 the path rises one for one with life expectancy at 65, the link
+of Law 4336/2015 between the minimum and statutory ages and longevity (fiche
+p. 6 item (x), p. 9 section 1.1.5), applied year by year:
 
-  R_y = 67.9 + e65(r(y)) - e65(r(2070)),    r(y) = last review year <= y,
+  R_y = 67.9 + e65(y) - e65(2070),
 
-with reviews in 2024, 2027, ... and e65 the unisex period life expectancy at
-65 (the mean of men and women) from the EUROPOP2023 baseline mortality
-assumptions, ages 65 to 100+. The projection ends in 2100; the model's
-mortality is held at the 2100 schedule after that, so e65 and R are held there
-too. `rule_path` in the output is the same rule applied from 2024 on a base
-of 63.8, the path used before the Ageing Report's projection was adopted.
+with e65 the unisex period life expectancy at 65 (the mean of men and women)
+from the EUROPOP2023 baseline mortality assumptions, ages 65 to 100+. The law
+re-examines the ages every three years; applied literally the path would move
+in steps every three years, and each step would move the hours of the cohorts
+at the margin in one year, so the annual path is used. The projection ends in
+2100; the model's mortality is held at the 2100 schedule after that, so e65
+and R are held there too. `rule_path` in the output is the literal review
+rule, R_y = 63.8 + e65(r(y)) - e65(2023) with r(y) the last review year
+(2024, 2027, ...), the path used before the Ageing Report's projection was
+adopted.
 
 A cohort entering at real age 25 in year k retires on average at the age A_k
 that solves A_k = R_{k + round(A_k) - 25}: the age in force in the year it
@@ -115,14 +119,14 @@ def statutory_age(years, e_years, e65):
 
 
 def effective_age(years, e_years, e65):
-    """R_y for each year in `years`: the fiche's path to 2070, then the review
-    rule's increments."""
+    """R_y for each year in `years`: the fiche's path to 2070, then one for one
+    with e65, year by year."""
     years = np.asarray(years)
-    rule = statutory_age(years, e_years, e65)
-    rule_last = float(statutory_age(np.array([FICHE_YEARS[-1]]), e_years, e65)[0])
+    e = dict(zip(e_years.tolist(), e65.tolist()))
+    e_at = lambda y: e.get(int(y), e[PROJ_END])
     out = np.interp(years, FICHE_YEARS, FICHE_AGES)      # flat outside the range
     late = years > FICHE_YEARS[-1]
-    out[late] = FICHE_AGES[-1] + rule[late] - rule_last
+    out[late] = FICHE_AGES[-1] + np.array([e_at(y) for y in years[late]]) - e_at(FICHE_YEARS[-1])
     return out
 
 
