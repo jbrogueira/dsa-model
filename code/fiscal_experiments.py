@@ -1357,12 +1357,21 @@ def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
     # that _extend_base_paths can safely extend it later.
     T_orig = len(np.asarray(base_paths['r_path']))
     base_paths['w_path'] = np.array(olg.w_path[:T_orig])
+    # The pre-transition dict was built before this run, when base_paths had
+    # no wage path; without it the stitching models fall back to the
+    # counterfactual wages whenever the cache below cannot serve them.
+    pre_tp['w_path'] = base_paths['w_path']
+    if pre_tp.get('r_path') is None:
+        pre_tp['r_path'] = np.asarray(base_paths['r_path'])
 
     # Pre-populate the MIT baseline cache from the baseline run's solutions.
     # Counterfactual runs need baseline policy functions for stitching
     # pre-transition ages. The baseline run just solved these exact models —
     # reuse them instead of re-solving 177 NumPy models sequentially.
+    # A baseline served from the household cache keeps no models; the cache
+    # filled by the earlier solve of the same households then stays valid.
     if olg.birth_cohort_solutions is not None:
+        olg._mit_baseline_cache = {}
         for edu_type, models_dict in olg.birth_cohort_solutions.items():
             for bp, model in models_dict.items():
                 if bp < 0:
@@ -1428,6 +1437,11 @@ def run_fiscal_scenario(olg, scenario: FiscalScenario, base_paths: dict,
                      # a baseline from run_baseline() under other settings is not this one
                      and base_paths.get('_baseline_settings', settings) == settings)
     if have_baseline:
+        # A baseline supplied by the caller without its wage path: take the
+        # path of the run that produced it, which is the object's last run.
+        if base_paths.get('w_path') is None and getattr(olg, 'w_path', None) is not None:
+            T_orig = len(np.asarray(base_paths['r_path']))
+            base_paths['w_path'] = np.array(olg.w_path[:T_orig])
         # Reuse pre_transition_paths if already in base_paths (avoids cache
         # invalidation across scenarios sharing the same baseline).
         if '_pre_transition_paths' not in base_paths:

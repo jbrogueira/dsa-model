@@ -15,6 +15,11 @@ inherit each cohort's ages.
 The Ig case exercises the K_g→w channel: an I_g (level) shock with eta_g != 0
 moves K_g and hence the wage path, so the MIT baseline model must be built
 from pure-baseline wages. A[0] must still be exactly baseline.
+The 'Ig+rerun' case follows the fiscal driver's sequence: a baseline run, a
+second baseline run with another closure path served from the household
+cache (which keeps no cohort models), then the I_g scenario, with a shock
+large enough to move the wage by several percent. The stitching models must
+then come from the pre-transition dict's own wage path.
 
 Usage: python check_a0_predetermination.py
 """
@@ -26,13 +31,13 @@ import numpy as np
 
 from olg_transition import OLGTransition
 from lifecycle_perfect_foresight import LifecycleConfig
-from fiscal_experiments import FiscalScenario, run_fiscal_scenario
+from fiscal_experiments import FiscalScenario, run_fiscal_scenario, run_baseline
 
 T_TR = 10
 N_SIM = 50
 TREND_GROWTH = 0.017   # balanced-growth rate under test; 0.0 recovers the old harness
 
-def run_backend(backend, shock, cohort_retirement=False):
+def run_backend(backend, shock, cohort_retirement=False, rerun=False):
     cfg = LifecycleConfig(T=20, n_a=30, n_y=3, n_alpha=3, retirement_age=12,
                           trend_growth=TREND_GROWTH)
     ep = dict(cfg.edu_params)
@@ -67,7 +72,7 @@ def run_backend(backend, shock, cohort_retirement=False):
         bp['I_g_path'] = (0.05 + olg.growth_factors(T_TR) - 1.0) * 0.745
         scen = FiscalScenario(
             name='Ig_shock',
-            delta_I_g_path=np.full(T_TR, 0.02),
+            delta_I_g_path=np.full(T_TR, 0.5 if rerun else 0.02),
             financing='debt',
             balance_condition='terminal_debt_gdp',
             B_initial=0.0,
@@ -80,17 +85,26 @@ def run_backend(backend, shock, cohort_retirement=False):
             balance_condition='terminal_debt_gdp',
             B_initial=0.0,
         )
+    if rerun:
+        olg.household_cache_size = 16
+        bp['other_net_over_Y'] = np.full(T_TR, -0.05)
+        bp = run_baseline(olg, bp, n_post=0, n_sim=N_SIM)
+        bp['other_net_over_Y'] = np.full(T_TR, -0.06)
+        bp = run_baseline(olg, bp, n_post=0, n_sim=N_SIM)
+        assert olg._household_cache_hits == 1, "the rerun was not served from the household cache"
     res = run_fiscal_scenario(olg, scen, bp, n_sim=N_SIM, verbose=False)
     A0_base = float(np.asarray(res.base_macro['A'])[0])
     A0_cf = float(np.asarray(res.cf_macro['A'])[0])
     return A0_base, A0_cf
 
-for shock, ret in (('tau_l', False), ('Ig', False), ('tau_l', True), ('Ig', True)):
+for shock, ret, rerun in (('tau_l', False, False), ('Ig', False, False),
+                          ('tau_l', True, False), ('Ig', True, False),
+                          ('Ig', False, True)):
     for backend in ('numpy', 'jax'):
-        A0_base, A0_cf = run_backend(backend, shock, cohort_retirement=ret)
+        A0_base, A0_cf = run_backend(backend, shock, cohort_retirement=ret, rerun=rerun)
         diff = abs(A0_cf - A0_base)
         status = "OK" if diff == 0.0 else "FAIL"
-        label = shock + ('+ret' if ret else '')
+        label = shock + ('+ret' if ret else '') + ('+rerun' if rerun else '')
         print(f"{label:9s} {backend:6s}: A[0] base = {A0_base:.10f}, "
               f"cf = {A0_cf:.10f}, |diff| = {diff:.3e}  {status}")
 print("DONE")

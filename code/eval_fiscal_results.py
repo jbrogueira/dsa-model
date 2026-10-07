@@ -31,6 +31,7 @@ NEUTRAL_REL   = 0.02   # debt-financed neutrality: 2% of mean Y
 BISECT_TOL    = 1e-2   # bisection target tolerance
 WEALTH_LO     = 0.5    # A/Y lower bound (short test models can be < 1)
 WEALTH_HI     = 15.0   # A/Y upper bound
+A0_REL_TOL    = 1e-10  # A[0] predetermination: exact up to floating-point summation order
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +415,22 @@ def chk_wealth_output_ratio(macro, scenario):
     return _pass('wealth_output_ratio', scenario, 'WARN')
 
 
+def chk_a0_predetermined(base_macro, cf_macro, scenario):
+    """Household wealth entering t=0 is predetermined: the shock is announced at
+    t=0, so pre-transition cohorts' assets at t=0 must equal the baseline's
+    exactly (MIT stitching). A difference means the stitching used
+    counterfactual policies for pre-transition ages."""
+    base = _arr(base_macro, 'A')
+    cf   = _arr(cf_macro,   'A')
+    if base is None or cf is None or len(base) == 0 or len(cf) == 0:
+        return _skip('a0_predetermined', scenario, 'FAIL', 'no A path')
+    rel = abs(float(cf[0]) - float(base[0])) / (abs(float(base[0])) + 1e-12)
+    if rel > A0_REL_TOL:
+        return _fail('a0_predetermined', scenario, 'FAIL', rel,
+                     f"|A_cf[0] - A_base[0]| / A_base[0] = {rel:.3e} > {A0_REL_TOL:.0e}")
+    return _pass('a0_predetermined', scenario, 'FAIL')
+
+
 def chk_debt_financed_neutrality(base_macro, cf_macro, params, scenario):
     """In SOE with exogenous r and no tax change, K/L/Y/C must be identical."""
     results = []
@@ -646,6 +663,7 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
     if scenario_key != 'baseline':
         results.append(chk_terminal_converged(exp_data, label))
         results.append(chk_kg_ss_gap(exp_data, params, label))
+        results.append(chk_a0_predetermined(base_mac, cf_mac, label))
 
     # --- WARN tier ---
     results += chk_firm_foc(cf_mac, params, label)

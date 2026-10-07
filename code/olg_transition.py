@@ -1409,6 +1409,12 @@ class OLGTransition:
                 pre_transition_paths.get('pension_replacement_path'), self.T)
             _base_r_ext = _extend_path(pre_transition_paths.get('r_path'), self.T)
             _base_w_ext = _extend_path(pre_transition_paths.get('w_path'), self.T)
+            if _base_w_ext is None or _base_r_ext is None:
+                warnings.warn(
+                    "pre_transition_paths has no 'w_path' or 'r_path': the MIT "
+                    "baseline models fall back to the counterfactual prices, so "
+                    "A[0] is not predetermined for a shock that moves them.",
+                    RuntimeWarning, stacklevel=2)
         else:
             _base_tau_c_ext = _base_tau_l_ext = _base_tau_p_ext = \
                 _base_tau_k_ext = _base_pension_ext = _base_r_ext = _base_w_ext = None
@@ -2422,10 +2428,14 @@ class OLGTransition:
         # Valid while pre_transition_paths is the same object across calls (bisection
         # iterations within a single run all share the same pre_tp dict).
         # Invalidated whenever pre_transition_paths changes (new experiment or new run).
-        _new_pre_tp_id = id(pre_transition_paths) if pre_transition_paths is not None else None
-        if getattr(self, '_mit_pre_tp_id', None) != _new_pre_tp_id:
-            self._mit_baseline_cache = {}
-            self._mit_pre_tp_id = _new_pre_tp_id
+        # A call without pre_transition_paths (a baseline run) does not use the
+        # cache and leaves it in place: a baseline rerun served from the
+        # household cache keeps no cohort models to refill it from.
+        if pre_transition_paths is not None:
+            _new_pre_tp_id = id(pre_transition_paths)
+            if getattr(self, '_mit_pre_tp_id', None) != _new_pre_tp_id:
+                self._mit_baseline_cache = {}
+                self._mit_pre_tp_id = _new_pre_tp_id
 
         # Feature A: Bequest redistribution loop (closed-circuit bequests)
         # When recompute_bequests=True and survival_probs is set, iterate until
