@@ -111,6 +111,27 @@ def chk_terminal_converged(exp_data, scenario):
     return _pass('terminal_converged', scenario, 'WARN')
 
 
+def chk_terminal_debt_window(B_gdp_path, Y, params, scenario, year0=2070, window=10):
+    """The output tax's terminal rate holds the baseline's debt ratio over
+    the ten years after 2070 at its 2070 value (baseline_closure.solve_baseline);
+    this WARN-tier check reads the change of the ratio over that window off
+    the stored path. Runs on the baseline scenario only."""
+    base_year = params.get('base_year', 2023)
+    t0 = int(year0 - base_year)
+    t1 = t0 + int(window)
+    B = np.asarray(B_gdp_path, dtype=float)
+    if len(B) <= t1 + 1 or t0 < 1:
+        return _skip('terminal_debt_window', scenario, 'WARN', 'horizon ends before the window')
+    # B_gdp_path[t] is the start-of-period stock over Y[t]; the end-of-year
+    # ratio of year t is B_gdp_path[t+1] Gamma_t Y[t+1]/Y[t]. The change over
+    # the window is read on the start-of-period series (one period apart).
+    change = float(B[t1 + 1] - B[t0 + 1])
+    if abs(change) > 0.02:
+        return _fail('terminal_debt_window', scenario, 'WARN', abs(change),
+                     f"debt ratio changes by {change:+.3f} over {year0}-{year0 + window}")
+    return _pass('terminal_debt_window', scenario, 'WARN')
+
+
 def chk_kg_ss_gap(exp_data, params, scenario):
     drift = exp_data.get('terminal_drift', {})
     gap = drift.get('K_g_ss_gap')
@@ -172,6 +193,33 @@ def chk_budget_identity(budget, scenario):
     return _pass('budget_identity', scenario, 'FAIL')
 
 
+def _r_B_seq(params, T, fallback):
+    """The sovereign rate by period: params['r_B_path'] padded with its last
+    value, else the scalar params['r_B'], else `fallback` (an array)."""
+    path = params.get('r_B_path') if params else None
+    if path is not None and len(path) > 0:
+        a = np.asarray(path, dtype=float).ravel()
+        if len(a) >= T:
+            return a[:T]
+        return np.concatenate([a, np.full(T - len(a), a[-1])])
+    r_B = params.get('r_B') if params else None
+    if r_B is not None:
+        return np.full(T, float(r_B))
+    fb = np.asarray(fallback, dtype=float).ravel()
+    if len(fb) >= T:
+        return fb[:T]
+    return np.concatenate([fb, np.full(T - len(fb), fb[-1])])
+
+
+def _tau_y_seq(params, T):
+    """The output-tax rate by period, zero when the run has none."""
+    path = params.get('tau_y_path') if params else None
+    if path is None:
+        return np.zeros(T)
+    a = np.asarray(path, dtype=float).ravel()
+    return a[:T] if len(a) >= T else np.concatenate([a, np.full(T - len(a), a[-1])])
+
+
 def _sfa_levels(params, T):
     """The run's stock-flow adjustment (params['sfa_path'], levels) as a (T,)
     array, zero when absent or past its end."""
@@ -215,7 +263,7 @@ def chk_debt_accumulation(budget, B_gdp_path, Y, r_debt_path, scenario,
 def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     """Resource constraint of the open economy, per capita and detrended:
 
-        C = Y + r*NFA + (r - r_B)*B - I_priv - G - I_g - D - O - M - dNFA,
+        C = Y + r*NFA + (r - r_B)*B + FT - I_priv - G - I_g - D - O - E - M - dNFA,
 
     with NFA = A - K_dom - B the economy's net foreign position (the series
     the fiscal layer stores), B the debt stock, M total medical spending
@@ -224,7 +272,10 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     r on the household sector's foreign assets A - K_dom = NFA + B less r_B on
     the debt. Benefits, transfers, taxes and the bequest tax net out between
     households and the government, and the deficit is financed by B, so no
-    budget flow other than the government's purchases appears.
+    budget flow other than the government's purchases appears. Since
+    2026-10-07 the purchases include education E, and FT is the transfer from
+    abroad the government receives; the output tax and the lump-sum transfer
+    net out like the other taxes and transfers.
 
     FAIL tier, because this is the one identity in the model that does NOT
     cancel a normalisation error. Every ratio check divides a quantity by
@@ -260,8 +311,7 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     G = _growth_seq(_growth_factor(params), n)
     delta = float(params['delta'])
     r = float(params['r'])
-    r_B = params.get('r_B')
-    r_B = r if r_B is None else float(r_B)
+    r_B = _r_B_seq(params, n, np.full(n, r))
 
     def line(key):
         v = _arr(budget, key)
@@ -270,7 +320,9 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     I_priv = G * Kd[1:n + 1] - (1.0 - delta) * Kd[:n]
     dNFA = G * NFA[1:n + 1] - NFA[:n]
     purchases = (line('govt_spending') + line('public_investment')
-                 + line('defense_spending') + line('other_net_spending'))
+                 + line('defense_spending') + line('other_net_spending')
+                 + line('education'))
+    FT = line('foreign_transfer')
     M = line('gov_health') / float(kappa)
     B = (np.asarray(B_gdp_path, dtype=float)[:n] * Y[:n]
          if B_gdp_path is not None and len(B_gdp_path) >= n else np.zeros(n))
@@ -278,13 +330,13 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     # net foreign assets without a resource flow: it is netted out of dNFA.
     sfa = _sfa_levels(params, n)
     nfi = r * NFA[:n] + (r - r_B) * B
-    resid = (C[:n] - (Y[:n] + nfi - I_priv - purchases - M - (dNFA + sfa))) / Y[:n]
+    resid = (C[:n] - (Y[:n] + nfi + FT - I_priv - purchases - M - (dNFA + sfa))) / Y[:n]
     mx = float(np.max(np.abs(resid)))
     # Sampling noise of a finite n_sim and the discrete timing of deaths are
     # all that is left; 2% of output is well above either.
     if mx > 0.02:
         return _fail('goods_market', scenario, 'FAIL', mx,
-                     f"max |C - (Y + r NFA + (r - r_B) B - I_priv - purchases - M - dNFA)| / Y = "
+                     f"max |C - (Y + r NFA + (r - r_B) B + FT - I_priv - purchases - M - dNFA)| / Y = "
                      f"{mx:.3f}; a flow is missing or mis-dated")
     return _pass('goods_market', scenario, 'FAIL')
 
@@ -326,12 +378,15 @@ def chk_tax_revenue(budget, macro, params, scenario):
     A  = _arr(macro, 'A')   # total household wealth — correct base for capital tax
     wL = w * L if (w is not None and L is not None) else None
     rA = r * A if (r is not None and A is not None) else None
+    Y_arr = _arr(macro, 'Y')
     checks = [
         ('tax_l', 'tau_l_path', wL),
         ('tax_c', 'tau_c_path', C),
         ('tax_p', 'tau_p_path', wL),
         ('tax_k', 'tau_k_path', rA),
     ]
+    if params.get('tau_y_path') is not None and Y_arr is not None:
+        checks.append(('tax_y', 'tau_y_path', Y_arr))   # exact: tau_y Y
     for rev_key, rate_key, base in checks:
         rev  = _arr(budget, rev_key)
         rate = np.asarray(params.get(rate_key, []), dtype=float)
@@ -373,10 +428,11 @@ def chk_firm_foc(macro, params, scenario):
     w  = _arr(macro, 'w')
     r  = _arr(macro, 'r')
 
-    # MPK: r + δ = α · Y / K_domestic
+    # MPK: r + δ = (1 - τ_y) α · Y / K_domestic (firm_conditions.py)
+    tau_y = _tau_y_seq(params, len(Y)) if Y is not None else 0.0
     if Kd is not None and r is not None and Y is not None:
         lhs = r + delta
-        rhs = alpha * Y / Kd
+        rhs = (1.0 - tau_y) * alpha * Y / Kd
         resid = np.abs(lhs - rhs)
         mx_rel = float(resid.max()) / (float(np.abs(rhs).mean()) + 1e-8)
         if mx_rel > FOC_TOL:
@@ -387,9 +443,9 @@ def chk_firm_foc(macro, params, scenario):
     else:
         results.append(_skip('firm_foc_mpk', scenario, 'WARN', 'no K_domestic or r'))
 
-    # MPL: w = (1-α) · Y / L
+    # MPL: w = (1 - τ_y)(1-α) · Y / L
     if w is not None and Y is not None and L is not None:
-        rhs = (1 - alpha) * Y / L
+        rhs = (1.0 - tau_y) * (1 - alpha) * Y / L
         resid = np.abs(w - rhs)
         mx_rel = float(resid.max()) / (float(np.abs(rhs).mean()) + 1e-8)
         if mx_rel > FOC_TOL:
@@ -588,9 +644,7 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
     Y        = cf_mac.get('Y', base_mac.get('Y', []))
     # Debt accrues at r_B, not the capital return r; fall back to r only when
     # r_B is unavailable (pre-r_B JSONs evaluated without --config).
-    r_B      = params.get('r_B')
-    r_debt   = (np.full(max(len(Y), 1), float(r_B)) if r_B is not None
-                else np.asarray(r_path, dtype=float))
+    r_debt   = _r_B_seq(params, max(len(Y), 1), np.asarray(r_path, dtype=float))
 
     results = []
 
@@ -605,6 +659,8 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
                                              params=params))
     results.append(chk_nfa_accounting(cf_mac, B_gdp, label))
     results.append(chk_goods_market(cf_mac, cf_bud, params, label, B_gdp_path=B_gdp))
+    if scenario_key == 'baseline' and params.get('tau_y_path') is not None and len(B_gdp) > 1:
+        results.append(chk_terminal_debt_window(B_gdp, Y, params, label))
     results += chk_tax_revenue(cf_bud, cf_mac, params, label)
 
     # Shock path checks, in the mode the run used.  Explicit shock_mode_* keys

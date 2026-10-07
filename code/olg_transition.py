@@ -5,7 +5,9 @@ import pickle
 from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
-from lifecycle_perfect_foresight import LifecycleModelPerfectForesight, LifecycleConfig
+from lifecycle_perfect_foresight import (LifecycleModelPerfectForesight, LifecycleConfig,
+                                         income_matrices_by_age, employed_transition_matrix)
+from firm_conditions import firm_conditions, marginal_products
 import os
 from datetime import datetime
 from numba import njit
@@ -136,6 +138,34 @@ class OLGTransition:
                  # Other net primary spending residual (baseline fiscal closure):
                  # (other expenditure - other revenue) not modelled elsewhere.
                  other_net_spending_path=None,
+                 # Tax on gross output paid by firms: a scalar or a path by
+                 # transition period. It enters the firm conditions
+                 # (firm_conditions.py) and the budget as revenue tau_y Y.
+                 tau_y=0.0,
+                 # Real sovereign rate by transition period; overrides the
+                 # scalar r_B when given.
+                 r_B_path=None,
+                 # Education spending, a level path in the budget:
+                 # e_0 Y_ref (w_t / w_0) s_t, with e_0 the base-year share of
+                 # output, Y_ref base-year output (the run's own when None),
+                 # w the detrended wage and s_t the school-age population
+                 # relative to the model's population (education_index_path,
+                 # by transition period, one in the base year).
+                 education_over_Y0=0.0,
+                 education_index_path=None,
+                 education_Y0=None,
+                 # Lump-sum transfer per adult by transition period (a level
+                 # in detrended units), received by every living household
+                 # and booked as spending.
+                 lump_sum_path=None,
+                 # Transfer from abroad (the EU net flow), a share of Y(t),
+                 # scalar or path; booked as revenue, a flow from abroad in
+                 # the resource constraint.
+                 foreign_transfer_over_Y=None,
+                 # Index of the unemployment rate by transition period (one in
+                 # the base year): each cohort's income transition matrix by
+                 # age follows u_e,t = u_e,base x index_t along its diagonal.
+                 unemployment_index_path=None,
                  # Population aging (Feature #21)
                  fertility_path=None,              # (T + T_transition,) relative entering cohort sizes
                  survival_improvement_rate=0.0,    # annual multiplicative improvement in survival probs
@@ -255,6 +285,24 @@ class OLGTransition:
         else:
             self.other_net_spending_path = None
 
+        # Output tax, sovereign-rate path and the budget lines added on
+        # 2026-10-07 (BUDGET_ALIGNMENT_PLAN.md, EC_ALIGNMENT_PLAN.md)
+        self.tau_y = (float(tau_y) if np.isscalar(tau_y) or np.ndim(tau_y) == 0
+                      else np.asarray(tau_y, dtype=float))
+        self.r_B_path_input = (None if r_B_path is None
+                               else np.asarray(r_B_path, dtype=float))
+        self.education_over_Y0 = float(education_over_Y0 or 0.0)
+        self.education_index_path = (None if education_index_path is None
+                                     else np.asarray(education_index_path, dtype=float))
+        self.education_Y0 = None if education_Y0 is None else float(education_Y0)
+        self.lump_sum_path = (None if lump_sum_path is None
+                              else np.asarray(lump_sum_path, dtype=float))
+        self.foreign_transfer_over_Y = foreign_transfer_over_Y
+        self.unemployment_index_path = (None if unemployment_index_path is None
+                                        else np.asarray(unemployment_index_path, dtype=float))
+        self._P_employed_cache = {}
+        self._cohort_P_y_cache = {}
+
         # Output directory
         self.output_dir = output_dir
         if not os.path.exists(output_dir):
@@ -288,6 +336,10 @@ class OLGTransition:
         self._active_I_g_over_Y = None
         self._active_defense_over_Y = None
         self._active_other_net_over_Y = None
+        self._active_tau_y_path = None
+        self._active_lump_sum_path = None
+        self._active_foreign_transfer_over_Y = None
+        self._active_education = (0.0, None, None)   # (e_0, index path, Y_ref)
 
         # Backend selection ('numpy' or 'jax')
         self.backend = backend
@@ -505,9 +557,16 @@ class OLGTransition:
         tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
         pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
         w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
+        ls_paths = jnp.stack([m.lump_sum_path for m in model_list])
 
-        # Pass all args positionally to match vmap in_axes
-        P_y_4d_arg = ref.P_y_4d if ref.P_y_age_health else None
+        # Pass all args positionally to match vmap in_axes. With age-dependent
+        # income matrices every cohort carries its own (the unemployment path),
+        # so they are stacked and batched over cohorts.
+        per_cohort_py = bool(ref.P_y_age_health)
+        P_y_4d_arg = None
+        py_stack = jnp.stack([m.P_y_4d for m in model_list]) if per_cohort_py else None
+        from lifecycle_jax import _solve_lifecycle_jax_batched_pyc
+        solve_batched = _solve_lifecycle_jax_batched_pyc if per_cohort_py else _solve_lifecycle_jax_batched
         bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
                                       for b in birth_periods])
         # Per-cohort survival schedules (in_axes=0). Cohorts may have distinct
@@ -527,8 +586,9 @@ class OLGTransition:
         # LifecycleModelJAX.solve. The per-agent simulation side draws alpha
         # indices over the full grid (Phase 8.5b), so the solve must supply
         # matching per-alpha policies.
-        def _solve_chunk(alpha_mult_jax, w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c, surv_c):
-            return _solve_lifecycle_jax_batched(
+        def _solve_chunk(alpha_mult_jax, w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c,
+                         surv_c, ls_c, *py_c):
+            return solve_batched(
                 ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                 ref.P_y_2d, ref.P_h,
                 w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
@@ -539,17 +599,19 @@ class OLGTransition:
                 ref.tax_kappa_hsv, ref.tax_eta,
                 ref.transfer_floor, ref.education_subsidy_rate,
                 ref.child_cost_profile, ref.schooling_years,
-                surv_c, P_y_4d_arg,
+                surv_c, (py_c[0] if per_cohort_py else P_y_4d_arg),
                 ref.labor_supply, ref.nu, ref.phi, ref.trend_growth,
                 beq_c,
                 ref.wage_age_profile,
                 ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
                 alpha_mult_jax,
+                ls_c,
             )
 
         batched_arrays = (w_at_rets, r_paths, w_paths,
                           tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
-                          pension_paths, bequest_lumpsums, surv_paths)
+                          pension_paths, bequest_lumpsums, surv_paths, ls_paths) \
+            + ((py_stack,) if per_cohort_py else ())
 
         # Where the results are kept: host arrays (the default; frees device
         # memory chunk by chunk), or device arrays with jax_policies_on_device,
@@ -629,7 +691,11 @@ class OLGTransition:
         parts = (model.r_path, model.w_path, model.tau_c_path, model.tau_l_path,
                  model.tau_p_path, model.tau_k_path, model.pension_replacement_path,
                  model.w_at_retirement, model.bequest_lumpsum,
-                 surv if surv is not None else ())
+                 surv if surv is not None else (),
+                 getattr(model, 'lump_sum_path', ()),
+                 # the income matrices, which differ across cohorts under an
+                 # unemployment path
+                 model.P_y)
         return b'|'.join(np.asarray(x, dtype=float).tobytes() for x in parts)
 
     def _simulate_cohorts_jax_batched(self, n_sim, seed_base, verbose=False,
@@ -671,21 +737,24 @@ class OLGTransition:
             ref = model_list[0]
             n_y = ref.n_y
 
-            # Stationary distribution for initial income draws — use 2D P_y
-            # Cache: keyed by edu_type; P_y_2d is fixed for object lifetime
+            # Stationary distribution of each cohort's entry-year income matrix
+            # for the initial income draws (the matrices differ across cohorts
+            # under an unemployment path). Cached by the matrix's bytes.
             if not hasattr(self, '_stationary_dist_cache'):
                 self._stationary_dist_cache = {}
-            if edu_type not in self._stationary_dist_cache:
-                edu_unemployment_rate = ref.config.edu_params[ref.config.education_type]['unemployment_rate']
-                if edu_unemployment_rate < 1e-10:
-                    self._stationary_dist_cache[edu_type] = None
-                else:
-                    eigenvalues, eigenvectors = eig(np.asarray(ref.P_y_2d).T)
-                    stationary_idx = np.argmax(eigenvalues.real)
-                    stationary_dist = eigenvectors[:, stationary_idx].real
-                    stationary_dist = stationary_dist / stationary_dist.sum()
-                    self._stationary_dist_cache[edu_type] = jnp.array(stationary_dist)
-            stationary = self._stationary_dist_cache[edu_type]
+
+            def stationary_for(m):
+                u = m.config.edu_params[m.config.education_type]['unemployment_rate']
+                if u < 1e-10:
+                    return None
+                P2 = np.asarray(m.P_y_2d)
+                k = P2.tobytes()
+                if k not in self._stationary_dist_cache:
+                    eigenvalues, eigenvectors = eig(P2.T)
+                    st = eigenvectors[:, np.argmax(eigenvalues.real)].real
+                    self._stationary_dist_cache[k] = jnp.array(st / st.sum())
+                return self._stationary_dist_cache[k]
+            stationary = stationary_for(ref)
 
             # Stack per-cohort 6-D policies on CPU; upload per chunk during
             # simulation to avoid holding all cohorts' policies on GPU at once.
@@ -713,6 +782,7 @@ class OLGTransition:
             tau_k_paths = jnp.stack([m.tau_k_path for m in model_list])
             pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
             beq_lumps = jnp.array([float(getattr(m, 'bequest_lumpsum', 0.0)) for m in model_list])
+            ls_paths = jnp.stack([m.lump_sum_path for m in model_list])
 
             # Pre-compute per-cohort initial conditions and PRNG keys
             # (replicates LifecycleModelJAX.simulate() setup per cohort)
@@ -739,6 +809,7 @@ class OLGTransition:
                     all_seeds_u32.append(seed)
 
                     key = jax.random.PRNGKey(seed)
+                    stationary = stationary_for(model)
 
                     # 1st split: draw initial income state
                     key, subkey = jax.random.split(key)
@@ -813,7 +884,14 @@ class OLGTransition:
                 n_chunks = (n_cohorts + chunk_size - 1) // chunk_size
                 print(f"  JAX batched simulate: {edu_type} ({n_cohorts} cohorts, n_sim={n_sim}, chunk_size={chunk_size}, n_chunks={n_chunks})")
 
-            P_y_4d_sim = ref.P_y_4d if ref.P_y_age_health else None
+            # Per-cohort income matrices (the unemployment path) are batched
+            # over cohorts; the kernel variant with that axis is used then.
+            per_cohort_py = bool(ref.P_y_age_health)
+            P_y_4d_sim = None
+            py_stack_sim = jnp.stack([m.P_y_4d for m in model_list]) if per_cohort_py else None
+            from lifecycle_jax import _simulate_lifecycle_jax_batched_pyc
+            simulate_batched = (_simulate_lifecycle_jax_batched_pyc if per_cohort_py
+                                else _simulate_lifecycle_jax_batched)
 
             # Per-cohort survival schedules (in_axes=0 in the batched simulate kernel).
             _ones_surv = jnp.ones((ref.T, self.n_h))
@@ -832,7 +910,8 @@ class OLGTransition:
                 batch_alpha_idx, batch_alpha_mult,  # Phase 8 per-cohort FE arrays
                 surv_paths_sim,
                 beq_lumps,
-            )
+                ls_paths,
+            ) + ((py_stack_sim,) if per_cohort_py else ())
 
             # Cohorts with different retirement ages cannot share a batch (the
             # age is a static argument), so simulate each retirement group in
@@ -856,12 +935,14 @@ class OLGTransition:
                     ca_pol = _policy_stack(padded, 'a_policy_alpha', 'a_policy')
                     cc_pol = _policy_stack(padded, 'c_policy_alpha', 'c_policy')
                     cl_pol = _policy_stack(padded, 'l_policy_alpha', 'l_policy')
+                    sliced = [s(a) for a in per_cohort_arrs]
                     (cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                      ckeys,
                      ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
-                     calpha_idx, calpha_mult, csurv, cbeq) = (s(a) for a in per_cohort_arrs)
+                     calpha_idx, calpha_mult, csurv, cbeq, cls) = sliced[:20]
+                    cpy = sliced[20] if per_cohort_py else P_y_4d_sim
 
-                    chunk_results = _simulate_lifecycle_jax_batched(
+                    chunk_results = simulate_batched(
                         ca_pol, cc_pol, cl_pol,
                         ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
                         ref.P_y_2d, ref.P_h,
@@ -875,7 +956,7 @@ class OLGTransition:
                         cavg, cn_yr,
                         ref.pension_min_floor, ref.tax_progressive,
                         ref.tax_kappa_hsv, ref.tax_eta,
-                        ref.P_y_age_health, P_y_4d_sim,
+                        ref.P_y_age_health, cpy,
                         csurv,
                         ref.wage_age_profile,
                         gref.pension_avg_weight, gref.mean_kappa_working, ref.mean_y_employed,
@@ -883,6 +964,7 @@ class OLGTransition:
                         ref.trend_growth,
                         ref.transfer_floor,
                         cbeq,
+                        cls,
                     )
 
                     # Store only actual (non-padded) cohorts
@@ -944,11 +1026,15 @@ class OLGTransition:
         model}), one vmapped call per chunk of each retirement group.
         Returns {birth_period: (T, 23) array}."""
         import jax.numpy as jnp
-        from lifecycle_jax import _exact_age_means_jax_batched
+        from lifecycle_jax import _exact_age_means_jax_batched, _exact_age_means_jax_batched_pyc
 
         out = {}
         for group in self._retirement_groups(models):
             ref = models[group[0]]
+            # Per-cohort income matrices and initial distributions under an
+            # unemployment path; shared otherwise.
+            per_cohort_py = bool(ref.P_y_age_health)
+            exact_batched = _exact_age_means_jax_batched_pyc if per_cohort_py else _exact_age_means_jax_batched
             if (float(ref.transfer_floor) > 0.0
                     and int(getattr(ref.config, 'schooling_years', 0) or 0) > 0):
                 raise NotImplementedError(
@@ -965,7 +1051,12 @@ class OLGTransition:
                 padded = sel + [sel[-1]] * (chunk - len(sel))
                 ms = [models[b] for b in padded]
                 stack = lambda f: jnp.stack([jnp.asarray(f(m)) for m in ms])
-                res = _exact_age_means_jax_batched(
+                if per_cohort_py:
+                    init_arg = stack(lambda m: m._np_model._initial_distribution())
+                    py_arg = stack(lambda m: m.P_y_4d)
+                else:
+                    init_arg, py_arg = initial_dist, P_y_4d
+                res = exact_batched(
                     stack(lambda m: m.a_policy_alpha), stack(lambda m: m.c_policy_alpha),
                     stack(lambda m: m.l_policy_alpha),
                     ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
@@ -976,10 +1067,10 @@ class OLGTransition:
                     stack(lambda m: m.r_path), stack(lambda m: m.pension_replacement_path),
                     ref.ui_replacement_rate, ref.kappa,
                     ref.retirement_age, ref.T, ref.current_age,
-                    initial_dist, ref.alpha_grid,
+                    init_arg, ref.alpha_grid,
                     ref.pension_min_floor, ref.tax_progressive,
                     ref.tax_kappa_hsv, ref.tax_eta,
-                    ref.P_y_age_health, P_y_4d,
+                    ref.P_y_age_health, py_arg,
                     stack(lambda m: m.survival_probs if m.survival_probs is not None
                           else ones_surv),
                     ref.wage_age_profile,
@@ -987,6 +1078,7 @@ class OLGTransition:
                     ref.trend_growth,
                     ref.transfer_floor,
                     jnp.array([float(m.bequest_lumpsum) for m in ms]),
+                    stack(lambda m: m.lump_sum_path),
                     False,
                 )
                 res = np.asarray(res)
@@ -1023,13 +1115,14 @@ class OLGTransition:
 
     @staticmethod
     @njit
-    def _marginal_products_njit(K, L, alpha, delta, A, K_g=1.0, eta_g=0.0):
-        """JIT-compiled marginal products and factor prices with public capital."""
+    def _marginal_products_njit(K, L, alpha, delta, A, K_g=1.0, eta_g=0.0, tau_y=0.0):
+        """JIT-compiled factor prices with public capital and the output tax:
+        r = (1 - tau_y) MPK - delta, w = (1 - tau_y) MPL (firm_conditions.py)."""
         K_g_factor = K_g ** eta_g if eta_g != 0.0 else 1.0
         MPK = alpha * A * K_g_factor * (K ** (alpha - 1)) * (L ** (1 - alpha))
         MPL = (1 - alpha) * A * K_g_factor * (K ** alpha) * (L ** (-alpha))
-        r = MPK - delta
-        w = MPL
+        r = (1.0 - tau_y) * MPK - delta
+        w = (1.0 - tau_y) * MPL
         return r, w
     
     @staticmethod
@@ -1084,10 +1177,59 @@ class OLGTransition:
         K_g_val = K_g if K_g is not None else 1.0
         return self._production_function_njit(K, L, self.alpha, self.A, K_g_val, self.eta_g)
 
-    def factor_prices(self, K, L, K_g=None):
+    def factor_prices(self, K, L, K_g=None, tau_y=None):
         """Compute factor prices from production function with optional public capital."""
         K_g_val = K_g if K_g is not None else 1.0
-        return self._marginal_products_njit(K, L, self.alpha, self.delta, self.A, K_g_val, self.eta_g)
+        if tau_y is None:
+            tau_y = self.tau_y if np.isscalar(self.tau_y) else float(np.asarray(self.tau_y)[0])
+        return self._marginal_products_njit(K, L, self.alpha, self.delta, self.A, K_g_val,
+                                            self.eta_g, float(tau_y))
+
+    @staticmethod
+    def _as_period_path(x, n):
+        """A scalar or array as a (n,) path: a scalar is repeated, a shorter
+        array is padded with its last value, a longer one truncated."""
+        if x is None:
+            return None
+        if np.isscalar(x) or np.ndim(x) == 0:
+            return np.full(n, float(x))
+        a = np.asarray(x, dtype=float).ravel()
+        if len(a) >= n:
+            return a[:n].copy()
+        return np.concatenate([a, np.full(n - len(a), a[-1])])
+
+    # --- Unemployment path: per-cohort income matrices ------------------------
+
+    def _employed_matrix(self, edu_type):
+        """Tauchen matrix of the employed income states of an education group."""
+        if edu_type not in self._P_employed_cache:
+            self._P_employed_cache[edu_type] = employed_transition_matrix(
+                self.lifecycle_config, edu_type)
+        return self._P_employed_cache[edu_type]
+
+    def _cohort_unemployment(self, edu_type, birth_period, index_full):
+        """(rates by age (T,), P_y by age (T, n_h, n_y, n_y)) of the cohort
+        born at birth_period, from the unemployment index along its diagonal
+        (one before the base year), or (None, None) without an index path."""
+        if index_full is None:
+            return None, None
+        u0 = float(self.lifecycle_config.edu_params[edu_type]['unemployment_rate'])
+        idx = _extract_cohort_path(index_full, birth_period, self.T, default=1.0, pre_value=1.0)
+        rates = u0 * np.asarray(idx, dtype=float)
+        key = (edu_type, rates.tobytes())
+        if key not in self._cohort_P_y_cache:
+            lc = self.lifecycle_config
+            self._cohort_P_y_cache[key] = income_matrices_by_age(
+                self._employed_matrix(edu_type), lc.n_y, lc.n_h, rates,
+                lc.job_finding_rate, lc.max_job_separation_rate)
+        return rates, self._cohort_P_y_cache[key]
+
+    def _edu_params_at_entry(self, edu_type, u_entry):
+        """edu_params with the group's unemployment rate set to the rate at
+        the cohort's entry (the rate behind its initial income draw)."""
+        ep = dict(self.lifecycle_config.edu_params)
+        ep[edu_type] = dict(ep[edu_type], unemployment_rate=float(u_entry))
+        return ep
 
     # --- Demographics: time-varying cohort weights (ageing experiments) -----------------
 
@@ -1330,7 +1472,9 @@ class OLGTransition:
                           pension_replacement_path=None,
                           bequest_lumpsum_path=None,
                           pre_transition_paths=None,
-                          verbose=False):
+                          verbose=False,
+                          lump_sum_path=None,
+                          unemployment_index_path=None):
         """
         Solve lifecycle problems for all cohorts given full price paths.
         
@@ -1409,6 +1553,7 @@ class OLGTransition:
                 pre_transition_paths.get('pension_replacement_path'), self.T)
             _base_r_ext = _extend_path(pre_transition_paths.get('r_path'), self.T)
             _base_w_ext = _extend_path(pre_transition_paths.get('w_path'), self.T)
+            _base_ls_ext = _extend_path(pre_transition_paths.get('lump_sum_path'), self.T)
             if _base_w_ext is None or _base_r_ext is None:
                 warnings.warn(
                     "pre_transition_paths has no 'w_path' or 'r_path': the MIT "
@@ -1418,6 +1563,11 @@ class OLGTransition:
         else:
             _base_tau_c_ext = _base_tau_l_ext = _base_tau_p_ext = \
                 _base_tau_k_ext = _base_pension_ext = _base_r_ext = _base_w_ext = None
+            _base_ls_ext = None
+        # The unemployment index over the cohorts' horizon (one before t = 0),
+        # the same in the baseline and in every counterfactual.
+        _unemp_full = (self._as_period_path(unemployment_index_path, self.T_transition + self.T)
+                       if unemployment_index_path is not None else None)
 
         # Define the range of birth cohorts we need to solve for
         min_birth_period = 1 - self.T  # Oldest cohort alive at t=0
@@ -1442,6 +1592,8 @@ class OLGTransition:
                 cohort_tau_p = _extract_cohort_path(tau_p_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_p_path'))
                 cohort_tau_k = _extract_cohort_path(tau_k_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_k_path'))
                 cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4, pre_value=_pv('pension_replacement_path'))
+                cohort_ls = _extract_cohort_path(lump_sum_path, birth_period, self.T, default=0.0, pre_value=_pv('lump_sum_path'))
+                u_rates, cohort_P_y = self._cohort_unemployment(edu_type, birth_period, _unemp_full)
 
                 # A cohort split between two retirement ages solves both problems;
                 # part 0 retires first, part 1 a year later with share `share`.
@@ -1450,6 +1602,10 @@ class OLGTransition:
                     # Create and solve the model for this birth cohort
                     cohort_feature_kwargs = dict(_feature_kwargs)
                     cohort_feature_kwargs.update(ret_kw)
+                    if cohort_P_y is not None:
+                        cohort_feature_kwargs['P_y_by_age_health'] = cohort_P_y
+                        cohort_feature_kwargs['edu_params'] = self._edu_params_at_entry(
+                            edu_type, u_rates[0])
                     if _use_per_cohort_survival:
                         cohort_surv = self._cohort_survival_schedule(birth_period)
                         cohort_feature_kwargs['survival_probs'] = cohort_surv
@@ -1469,6 +1625,7 @@ class OLGTransition:
                         tau_p_path=cohort_tau_p, tau_k_path=cohort_tau_k,
                         pension_replacement_path=cohort_pension,
                         bequest_lumpsum=bequest_ls,
+                        lump_sum_path=cohort_ls,
                         **cohort_feature_kwargs,
                     )
                 
@@ -1502,6 +1659,9 @@ class OLGTransition:
                             base_cohort_w = _extract_cohort_path(
                                 _base_w_ext if _base_w_ext is not None else w_path,
                                 birth_period, self.T)
+                            base_cohort_ls = _extract_cohort_path(
+                                _base_ls_ext if _base_ls_ext is not None else lump_sum_path,
+                                birth_period, self.T, default=0.0)
                             # MIT baseline must use baseline feature values, not the
                             # (possibly mutated) counterfactual ones.  Currently only
                             # transfer_floor can be mutated on lifecycle_config by
@@ -1520,6 +1680,7 @@ class OLGTransition:
                                 tau_p_path=base_cohort_tau_p, tau_k_path=base_cohort_tau_k,
                                 pension_replacement_path=base_cohort_pension,
                                 bequest_lumpsum=bequest_ls,
+                                lump_sum_path=base_cohort_ls,
                                 **base_feature_kwargs,
                             )
                             if self.backend == 'jax':
@@ -2147,6 +2308,14 @@ class OLGTransition:
         I_g_t = _spend(self._active_I_g_over_Y, self._active_I_g_path, self.I_g_path)
         defense_t = _spend(self._active_defense_over_Y, self._active_defense_spending_path, self.defense_spending_path)
         other_t   = _spend(self._active_other_net_over_Y, self._active_other_net_spending_path, self.other_net_spending_path)
+        # Lines added on 2026-10-07: the output tax and the transfer from
+        # abroad as revenue, education and the lump-sum transfer as spending.
+        tau_y_t = _at(self._active_tau_y_path)
+        tax_y_t = tau_y_t * Y_t
+        ft_ratio = _ratio_at(self._active_foreign_transfer_over_Y)
+        foreign_t = (ft_ratio or 0.0) * Y_t
+        lump_t = _at(self._active_lump_sum_path)      # per living person
+        education_t = self._education_at(t_idx)
 
         # Feature #9: Sovereign debt service
         debt_service = 0.0
@@ -2165,7 +2334,8 @@ class OLGTransition:
         # top-up each household received (transfer_sim) and it is aggregated
         # above, so a positive floor is a closed circuit (since 2026-10-02).
         total_spending = (total_ui + total_pension + total_gov_health + total_transfers
-                          + G_t + I_g_t + defense_t + other_t)
+                          + G_t + I_g_t + defense_t + other_t + education_t + lump_t)
+        total_revenue = total_revenue + tax_y_t + foreign_t
         total_revenue_with_borrowing = total_revenue + new_borrowing
         primary_deficit = total_spending - total_revenue
         fiscal_deficit = total_spending - total_revenue_with_borrowing
@@ -2184,6 +2354,10 @@ class OLGTransition:
             "public_investment": I_g_t,
             "defense_spending": defense_t,
             "other_net_spending": other_t,
+            "tax_y": tax_y_t,
+            "foreign_transfer": foreign_t,
+            "education": education_t,
+            "lump_sum": lump_t,
             "debt_service": debt_service,
             "new_borrowing": new_borrowing,
             "total_spending": total_spending,
@@ -2193,6 +2367,21 @@ class OLGTransition:
             "bequest_transfers": bequest_transfers,
             "total_bequests": total_bequests,
         }
+
+    def _education_at(self, t_idx):
+        """Education spending of period t: e_0 Y_ref (w_t / w_0) s_t (the
+        constructor's description), zero without a base-year share."""
+        e0, index_path, Y_ref = self._active_education
+        if not e0:
+            return 0.0
+        if Y_ref is None:
+            Y_ref = float(self.Y_path[0])
+        s_t = 1.0
+        if index_path is not None:
+            arr = np.asarray(index_path, dtype=float)
+            s_t = float(arr[t_idx]) if t_idx < len(arr) else float(arr[-1])
+        w_t = float(self.w_path[t_idx]) if t_idx < len(self.w_path) else float(self.w_path[-1])
+        return float(e0) * Y_ref * (w_t / float(self.w_path[0])) * s_t
 
     def _compute_bequest_lumpsum_path(self, n_sim: Optional[int] = None) -> dict:
         """Compute per-capita after-tax bequest transfer for each birth period.
@@ -2272,6 +2461,12 @@ class OLGTransition:
                            G_over_Y=None, I_g_over_Y=None,
                            defense_over_Y=None, other_net_over_Y=None,
                            transfer_floor=None,
+                           tau_y_path=None, r_B_path=None,
+                           lump_sum_path=None,
+                           education_over_Y0=None, education_index_path=None,
+                           education_Y0=None,
+                           foreign_transfer_over_Y=None,
+                           unemployment_index_path=None,
                            n_sim=10000, verbose=True,
                            pop_growth_path=None,
                            bequest_lumpsum_path=None,
@@ -2282,11 +2477,12 @@ class OLGTransition:
         """
         Simulate transition dynamics with exogenous interest rate path.
         
-        With exogenous r, the capital-labor ratio K/L is pinned down by:
-            r = α * A * (K/L)^(α-1) - δ
+        With exogenous r, the capital-labor ratio K/L is pinned down by the
+        firm's condition with the tax on gross output (firm_conditions.py):
+            r + δ = (1 - τ_y) α A K_g^η (K/L)^(α-1)
         
         This determines the wage:
-            w = (1-α) * A * (K/L)^α
+            w = (1 - τ_y)(1-α) A K_g^η (K/L)^α
         
         Parameters
         ----------
@@ -2325,6 +2521,22 @@ class OLGTransition:
         self._active_I_g_over_Y       = I_g_over_Y
         self._active_defense_over_Y   = defense_over_Y
         self._active_other_net_over_Y = other_net_over_Y
+        # Output tax by period; the lump-sum transfer, the education line and
+        # the transfer from abroad (explicit arguments override the object's).
+        self._active_tau_y_path = self._as_period_path(
+            tau_y_path if tau_y_path is not None else self.tau_y, self.T_transition)
+        _ls = lump_sum_path if lump_sum_path is not None else self.lump_sum_path
+        self._active_lump_sum_path = self._as_period_path(_ls, self.T_transition)
+        self._active_foreign_transfer_over_Y = (foreign_transfer_over_Y
+                                                if foreign_transfer_over_Y is not None
+                                                else self.foreign_transfer_over_Y)
+        self._active_education = (
+            float(education_over_Y0 if education_over_Y0 is not None else self.education_over_Y0),
+            (education_index_path if education_index_path is not None
+             else self.education_index_path),
+            education_Y0 if education_Y0 is not None else self.education_Y0)
+        _unemp = (unemployment_index_path if unemployment_index_path is not None
+                  else self.unemployment_index_path)
         # I_g feeds public capital (K_g) BEFORE Y exists, so a GDP-share I_g would
         # create a simultaneity (I_g level needs Y; K_g→Y needs I_g level). Only
         # safe when public capital has no production feedback.
@@ -2361,12 +2573,16 @@ class OLGTransition:
         # Extend r_path for cohorts born before transition
         r_path_full = np.concatenate([r_path, np.ones(self.T) * r_path[-1]])
 
-        # Sovereign rate path: scalar r_B broadcast to length T_transition; fall back to
-        # the capital path if r_B is unset, so debt service / debt accumulation default
-        # to the capital rate (prior behaviour).
-        self.r_B_path = (np.full(self.T_transition, float(self.r_B))
-                         if self.r_B is not None
-                         else np.asarray(r_path, dtype=float))
+        # Sovereign rate path: the configured path by period when there is one
+        # (a real rate: the data's to 2025, the Commission's projection to 2060,
+        # 2% from 2070), else the scalar r_B broadcast, else the capital path.
+        _rb = r_B_path if r_B_path is not None else self.r_B_path_input
+        if _rb is not None:
+            self.r_B_path = self._as_period_path(_rb, self.T_transition)
+        else:
+            self.r_B_path = (np.full(self.T_transition, float(self.r_B))
+                             if self.r_B is not None
+                             else np.asarray(r_path, dtype=float))
 
         # Compute wage path from production function
         if w_path is None:
@@ -2378,9 +2594,9 @@ class OLGTransition:
             if K_g_path is not None and self.eta_g != 0.0:
                 K_g_factor = K_g_path ** self.eta_g
 
-            K_over_L = np.power((r_path + self.delta) / (self.alpha * self.A * K_g_factor),
-                                1.0 / (self.alpha - 1.0))
-            w_path = (1 - self.alpha) * self.A * K_g_factor * np.power(K_over_L, self.alpha)
+            # The firm's conditions with the output tax (firm_conditions.py).
+            K_over_L, w_path, _ = firm_conditions(r_path, self.A, K_g_factor, self.alpha,
+                                                  self.delta, self._active_tau_y_path)
 
             if verbose:
                 print(f"  Initial: r={r_path[0]:.4f} → K/L={K_over_L[0]:.4f} → w={w_path[0]:.4f}")
@@ -2397,6 +2613,7 @@ class OLGTransition:
         tau_p_path_full = _extend_path(tau_p_path, self.T)
         tau_k_path_full = _extend_path(tau_k_path, self.T)
         pension_path_full = _extend_path(pension_replacement_path, self.T)
+        lump_path_full = _extend_path(self._active_lump_sum_path, self.T)
         
         if verbose:
             print("\n" + "=" * 60)
@@ -2468,6 +2685,8 @@ class OLGTransition:
                     bequest_lumpsum_path=current_bequest_path,
                     pre_transition_paths=pre_transition_paths,
                     verbose=False,
+                    lump_sum_path=lump_path_full,
+                    unemployment_index_path=_unemp,
                 )
                 if verbose:
                     print(f"  Bequest iteration {self._bequest_iter_count}/{max_bequest_iters}: simulating panels (n_sim={n_sim})...")
@@ -2503,7 +2722,8 @@ class OLGTransition:
             if self.household_cache_size > 0:
                 cache_key = self._household_inputs_key(
                     (r_path_full, w_path_full, tau_c_path_full, tau_l_path_full,
-                     tau_p_path_full, tau_k_path_full, pension_path_full),
+                     tau_p_path_full, tau_k_path_full, pension_path_full,
+                     lump_path_full, _unemp),
                     bequest_lumpsum_path, pre_transition_paths, n_sim)
                 cached_panels = self._household_cache.get(cache_key)
             if cached_panels is not None:
@@ -2530,7 +2750,9 @@ class OLGTransition:
                     pension_replacement_path=pension_path_full,
                     bequest_lumpsum_path=bequest_lumpsum_path,
                     pre_transition_paths=pre_transition_paths,
-                    verbose=verbose
+                    verbose=verbose,
+                    lump_sum_path=lump_path_full,
+                    unemployment_index_path=_unemp,
                 )
                 # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
                 self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
@@ -2600,10 +2822,8 @@ class OLGTransition:
             K_g_factor_arr = np.ones(self.T_transition)
             if K_g_path is not None and self.eta_g != 0.0:
                 K_g_factor_arr = K_g_path ** self.eta_g
-            K_over_L_implied = np.power(
-                (r_path + self.delta) / (self.alpha * self.A * K_g_factor_arr),
-                1.0 / (self.alpha - 1.0)
-            )
+            K_over_L_implied, _, _ = firm_conditions(r_path, self.A, K_g_factor_arr, self.alpha,
+                                                     self.delta, self._active_tau_y_path)
             K_domestic = K_over_L_implied * L_path
             NFA_path = K_path - K_domestic   # = A - K_domestic; B not yet subtracted
             if verbose:
@@ -2622,7 +2842,8 @@ class OLGTransition:
             K_g_0 = K_g_path[0] if K_g_path is not None else 1.0
             K_g_end = K_g_path[-1] if K_g_path is not None else 1.0
             r_implied, w_implied = self._marginal_products_njit(
-                K_for_Y[0], L_path[0], self.alpha, self.delta, self.A, K_g_0, self.eta_g
+                K_for_Y[0], L_path[0], self.alpha, self.delta, self.A, K_g_0, self.eta_g,
+                float(self._active_tau_y_path[0])
             )
             print("  Period 0:")
             print(f"    Exogenous r: {r_path[0]:.4f}, Implied r: {r_implied:.4f}")
@@ -2630,7 +2851,8 @@ class OLGTransition:
 
             if self.T_transition > 1:
                 r_implied_end, w_implied_end = self._marginal_products_njit(
-                    K_for_Y[-1], L_path[-1], self.alpha, self.delta, self.A, K_g_end, self.eta_g
+                    K_for_Y[-1], L_path[-1], self.alpha, self.delta, self.A, K_g_end, self.eta_g,
+                    float(self._active_tau_y_path[-1])
                 )
                 print(f"  Period {self.T_transition-1}:")
                 print(f"    Exogenous r: {r_path[-1]:.4f}, Implied r: {r_implied_end:.4f}")
@@ -2703,6 +2925,7 @@ class OLGTransition:
             'tax_c', 'tax_l', 'tax_p', 'tax_k', 'total_revenue',
             'ui', 'pension', 'gov_health', 'transfers', 'govt_spending',
             'public_investment', 'defense_spending', 'other_net_spending',
+            'tax_y', 'foreign_transfer', 'education', 'lump_sum',
             'debt_service', 'new_borrowing',
             'total_spending', 'primary_deficit', 'fiscal_deficit',
             'bequest_tax', 'bequest_transfers', 'total_bequests',
@@ -3357,7 +3580,16 @@ def run_from_config(config_path, backend='numpy', recompute_bequests=False, n_si
     economy, paths, T_tr = build_olg_transition(config_data, backend=backend)
     sim_n = n_sim or config_data.get('transition', {}).get('n_sim', 2000)
 
-    # Run baseline simulation (T_transition determined by len(r_path))
+    # Run baseline simulation (T_transition determined by len(r_path)) with
+    # the budget lines of the configuration: the spending shares, public
+    # investment at its stationary level, the output tax at its base-year
+    # rate and the lump-sum transfer at lambda times base-year output (one);
+    # the fixed point over the lump-sum path and the terminal tax rate is the
+    # drivers' (baseline_closure.solve_baseline), not this quick route's.
+    prod = config_data.get('production', {})
+    fisc = config_data.get('fiscal', {})
+    I_g = ((prod.get('delta_g', 0.05) + economy.growth_factors(T_tr) - 1.0)
+           * prod.get('K_g', 0.0)) if prod.get('eta_g', 0.0) != 0.0 else None
     results = economy.simulate_transition(
         r_path=paths['r_path'],
         tau_c_path=paths['tau_c_path'],
@@ -3365,6 +3597,16 @@ def run_from_config(config_path, backend='numpy', recompute_bequests=False, n_si
         tau_p_path=paths['tau_p_path'],
         tau_k_path=paths['tau_k_path'],
         pension_replacement_path=paths['pension_replacement_path'],
+        I_g_path=I_g,
+        G_over_Y=fisc.get('G_over_Y', 0.0),
+        defense_over_Y=fisc.get('defense_over_Y', 0.0),
+        tau_y_path=np.full(T_tr, float(paths.get('tau_y', 0.0) or 0.0)),
+        lump_sum_path=np.full(T_tr, float(paths.get('lump_sum_over_Y', 0.0) or 0.0)),
+        education_over_Y0=paths.get('education_over_Y0', 0.0),
+        education_index_path=paths.get('education_index_path'),
+        foreign_transfer_over_Y=paths.get('foreign_transfer_over_Y'),
+        unemployment_index_path=paths.get('unemployment_index_path'),
+        r_B_path=paths.get('r_B_path'),
         n_sim=sim_n,
         recompute_bequests=recompute_bequests,
     )

@@ -47,6 +47,7 @@ FISCAL_VARS = [
     'tax_l_gdp', 'tax_c_gdp', 'tax_p_gdp', 'tax_k_gdp',
     'ui_gdp', 'pension_gdp', 'govt_spending', 'public_investment',
     'defense_spending', 'other_net_spending',
+    'tax_y_gdp', 'foreign_transfer', 'education', 'lump_sum',
     'interest_payments',
 ]
 FISCAL_LABELS = {
@@ -61,6 +62,10 @@ FISCAL_LABELS = {
     'public_investment': 'Public investment (I_g)',
     'defense_spending':  'Defense',
     'other_net_spending':'Other net spending',
+    'tax_y_gdp':         'Output tax / Y',
+    'foreign_transfer':  'Transfer from abroad',
+    'education':         'Education',
+    'lump_sum':          'Lump-sum transfer',
     'interest_payments': 'Interest payments (r_B·B)',
 }
 
@@ -79,6 +84,10 @@ BUDGET_COMPONENTS = [
     ('defense_spending',   'Defense',                   '#4a3aa7', '--'),
     ('public_investment',  'Public investment (I_g)',   '#eb6834', '--'),
     ('other_net_spending', 'Other net spending',        '#898781', '--'),
+    ('tax_y',              'Output tax',                '#0b0b0b', '-'),
+    ('foreign_transfer',   'Transfer from abroad',      '#52514e', '-'),
+    ('education',          'Education',                 '#d9d8d4', '--'),
+    ('lump_sum',           'Lump-sum transfer',         '#b4b2ad', '--'),
 ]
 
 

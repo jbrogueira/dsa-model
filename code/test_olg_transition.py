@@ -3358,7 +3358,8 @@ class TestAuditFixes20261002:
         olg.simulate_transition(np.full(3, 0.04), n_sim=self.N_SIM, verbose=False)
         bud = olg.compute_government_budget_path(n_sim=self.N_SIM, verbose=False)
         lines = sum(np.asarray(bud[k]) for k in ('ui', 'pension', 'gov_health', 'transfers', 'govt_spending',
-                                                  'public_investment', 'defense_spending', 'other_net_spending'))
+                                                  'public_investment', 'defense_spending', 'other_net_spending',
+                                                  'education', 'lump_sum'))
         assert np.asarray(bud['transfers']).max() > 0.0
         np.testing.assert_allclose(lines, np.asarray(bud['total_spending']), rtol=0, atol=1e-12)
 

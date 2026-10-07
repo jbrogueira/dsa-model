@@ -32,7 +32,7 @@ grep -q "OUTER LOOP CONVERGED" /tmp/step0_scale.log \
 python3 -c "
 import json; c=json.load(open('$CFG'))
 print('calibrated:', {k: round(v, 6) for k, v in c['_derived']['theta'].items()})
-print('A_tfp', c['production']['A_tfp'], '| closure', c['fiscal']['other_net_spending_over_Y'])
+print('A_tfp', c['production']['A_tfp'], '| tau_y', c['fiscal'].get('tau_y'))
 print('K_g', c['production']['K_g'], '| delta_g', c['production']['delta_g'])
 "
 

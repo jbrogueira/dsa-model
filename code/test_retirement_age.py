@@ -27,20 +27,40 @@ def test_e65_reproduces_the_ageing_report(d):
 
 def test_effective_age_follows_the_fiche_to_2070_and_e65_after(d):
     """Country Fiche EL, Table 4: 63.8 (2022), 65.5 (2030), 66.4 (2040),
-    66.6 (2050), 67.4 (2060), 67.9 (2070)."""
+    66.6 (2050), 67.4 (2060), 67.9 (2070); after 2070, 0.75 of the change in
+    e65 every year."""
     years, R = list(d['years']), d['retirement_age_path']
     assert all(R[years.index(y)] == pytest.approx(63.8) for y in range(1939, 2023))
     for y, a in ((2022, 63.8), (2030, 65.5), (2040, 66.4), (2050, 66.6),
                  (2060, 67.4), (2070, 67.9)):
         assert R[years.index(y)] == pytest.approx(a)
     assert R[years.index(2026)] == pytest.approx(63.8 + 0.5 * (65.5 - 63.8))
+    assert float(d['pass_through']) == 0.75
     e = dict(zip(d['e65_years'].tolist(), d['e65'].tolist()))
-    for y in (2071, 2072, 2085, 2100):     # one for one with e65, every year
-        assert R[years.index(y)] == pytest.approx(67.9 + e[y] - e[2070])
+    for y in (2071, 2072, 2085, 2100):
+        assert R[years.index(y)] == pytest.approx(67.9 + 0.75 * (e[y] - e[2070]))
     assert R[years.index(2101)] == R[years.index(2100)]   # e65 held at 2100
     assert np.all(np.diff(R) >= -1e-12)
     late = np.diff(R[years.index(2070):years.index(2100)])
-    assert late.max() < 0.12 and late.min() > 0.05       # no three-year steps
+    assert late.max() < 0.09 and late.min() > 0.05       # no three-year steps
+
+
+def test_effective_age_in_2100_and_continuity_at_2070(d):
+    """R(2100) = 67.9 + 0.75 (e65(2100) - e65(2070)), 69.7; the fiche's
+    segment and the e65 rule meet at 67.9 in 2070 with one-year steps on
+    both sides (0.05 from the fiche's 2060-70 slope, 0.75 of the e65 change
+    after)."""
+    years, R = list(d['years']), d['retirement_age_path']
+    e = dict(zip(d['e65_years'].tolist(), d['e65'].tolist()))
+    r2100 = 67.9 + 0.75 * (e[2100] - e[2070])
+    assert R[years.index(2100)] == pytest.approx(r2100)
+    assert round(r2100, 1) == 69.7
+    assert R[years.index(2070)] == pytest.approx(67.9)
+    assert R[years.index(2070)] == pytest.approx(67.9 + 0.75 * (e[2070] - e[2070]))
+    assert R[years.index(2070)] - R[years.index(2069)] == pytest.approx(0.05)
+    step_after = R[years.index(2071)] - R[years.index(2070)]
+    assert step_after == pytest.approx(0.75 * (e[2071] - e[2070]))
+    assert 0.0 < step_after < 0.1
 
 
 def test_rule_path_is_63_8_in_2023_and_moves_one_for_one_at_reviews(d):

@@ -113,6 +113,23 @@ if args.config:
     G_path = I_g_path = defense_path = other_path = None  # ratio mode → no levels
     if eta_g_cfg != 0.0:
         I_g_path = I_g_warmup      # level mode for I_g only
+    # The lines of 2026-10-07 (BUDGET_ALIGNMENT_PLAN.md): the output tax (a
+    # rate path, constant until the fixed point below sets its terminal
+    # ramp), the lump-sum transfer (a level path, lambda times output, set by
+    # the fixed point), education, the transfer from abroad, the real
+    # sovereign-rate path and the unemployment index.
+    tau_y_base     = float(paths.get('tau_y', 0.0) or 0.0)
+    lump_over_Y    = float(paths.get('lump_sum_over_Y', 0.0) or 0.0)
+    new_lines = {
+        'tau_y_path': np.full(T_TR, tau_y_base),
+        'lump_sum_path': np.full(T_TR, lump_over_Y),
+        'education_over_Y0': paths.get('education_over_Y0', 0.0),
+        'education_index_path': paths.get('education_index_path'),
+        'foreign_transfer_over_Y': paths.get('foreign_transfer_over_Y'),
+        'unemployment_index_path': paths.get('unemployment_index_path'),
+    }
+    if paths.get('r_B_path') is not None:
+        new_lines['r_B_path'] = np.asarray(paths['r_B_path'], dtype=float)
 
 else:
     # Hardcoded fast-test parameters (backward compatible)
@@ -184,6 +201,7 @@ if args.config:
         base_paths['I_g_over_Y']   = I_g_over_Y
     base_paths['defense_over_Y']   = defense_over_Y
     base_paths['other_net_over_Y'] = other_over_Y
+    base_paths.update({k: v for k, v in new_lines.items() if v is not None})
 else:
     # Baseline-only fiscal lines (no shock applied to them; constant across scenarios).
     if defense_path is not None:
@@ -211,34 +229,48 @@ if args.config:
     target_B_Y = B_over_Y  # tax-financed: return to initial debt ratio
     print(f"  Y(0) = {Y0:.4f}  (baseline run, n_sim={N_SIM})")
 
-    # Fiscal closure of the baseline (baseline_closure.py), when a debt
-    # projection is configured: other net spending follows the path that gives
-    # the projection's primary balance to its last year and a constant debt
-    # ratio after, the stock-flow adjustment enters the debt recursion, and
-    # debt at the end of the base year equals fiscal.B_over_Y (the data's
-    # convention), so the start-of-year stock is (B/Y·Y0 - PD0)/(1 + r_B).
-    # The path is not a household input, so the second baseline run is served
-    # from the household cache and recomputes only aggregates and the budget.
-    from baseline_closure import closure_from_run, load_dsa_projection
-    dsa = load_dsa_projection(config_data)
-    closure = None
-    if dsa is not None:
-        bb = base_paths['base_budget']
-        saved = {'Y': Y_path, 'growth_factor': economy.growth_factors(T_TR),
-                 'base_year': int(economy.current_year),
-                 **{'budget_' + k: np.asarray(bb[k])[:T_TR]
-                    for k in ('total_revenue', 'total_spending', 'other_net_spending')}}
-        closure = closure_from_run(saved, config_data, dsa=dsa)
-        base_paths['other_net_over_Y'] = np.asarray(closure['other_net_over_Y'], float)
-        base_paths['sfa_path'] = np.asarray(closure['sfa'], float) * Y_path
-        PD0 = float(np.asarray(bb['primary_deficit'])[0])
-        r_B0 = float(economy.r_B) if getattr(economy, 'r_B', None) is not None else float(r_path[0])
-        B_initial = (B_over_Y * Y0 - PD0) / (1.0 + r_B0)
-        print(f"  closure: O/Y path from {closure['other_net_over_Y'][0]:+.4f} (2023) to "
-              f"{closure['other_net_over_Y'][-1]:+.4f}; end-{int(economy.current_year)} debt/Y "
-              f"= {B_over_Y}, start-of-year stock B_initial = {B_initial:.4f}")
-        print("Re-running the baseline with the closure path …")
+    # The baseline's fixed point (baseline_closure.solve_baseline): the
+    # lump-sum transfer is lambda times the run's own output and the output
+    # tax ramps after 2060 to the rate that holds the debt ratio at its 2070
+    # value; both are household inputs, so each iteration is a full
+    # transition. The stock-flow adjustment (the data's 2024-25 ratios, the
+    # projection's rows to 2060) then enters the debt recursion as levels and
+    # the start-of-base-year stock makes end-of-2023 debt equal fiscal.B_over_Y.
+    from baseline_closure import solve_baseline
+    dsa_cfg = config_data.get('fiscal', {}).get('dsa_projection_file')
+    G_growth = economy.growth_factors(T_TR)
+    r_B_full = np.asarray(base_paths['r_B_path'], dtype=float)
+    # The education line is anchored on the baseline's base-year output in
+    # every scenario (e_0 Y_2023 (w_t/w_0) s_t), not on each run's own Y(0).
+    base_paths['education_Y0'] = Y0
+
+    def _run(lump, tau):
+        global base_paths
+        base_paths['lump_sum_path'] = np.asarray(lump, dtype=float)
+        base_paths['tau_y_path'] = np.asarray(tau, dtype=float)
         base_paths = run_baseline(economy, base_paths, n_post=N_POST, n_sim=N_SIM)
+        return (np.asarray(base_paths['base_macro']['Y'])[:T_TR],
+                {k: np.asarray(v)[:T_TR] for k, v in base_paths['base_budget'].items()})
+
+    fx = solve_baseline(_run, config_data, T_TR, int(economy.current_year), lump_over_Y,
+                        tau_y_base, r_B_full, G_growth, Y_init=Y_path,
+                        ramp_years=int(paths.get('tau_y_ramp_years', 10)),
+                        tol_Y=1e-4, tol_pb=1e-4, verbose=True,
+                        match_projection=(config_data.get('fiscal', {}).get('tau_y_mode', 'constant')
+                                          == 'projection'))
+    Y_path = np.asarray(base_paths['base_macro']['Y'])[:T_TR]
+    Y0 = float(Y_path[0])
+    debt = fx['debt']
+    base_paths['sfa_path'] = np.asarray(debt['sfa'], float) * Y_path
+    PD0 = float(np.asarray(base_paths['base_budget']['primary_deficit'])[0])
+    r_B0 = float(r_B_full[0])
+    B_initial = (B_over_Y * Y0 - PD0) / (1.0 + r_B0)
+    t70 = debt['terminal_year'] - int(economy.current_year)
+    print(f"  baseline: tau_y {tau_y_base:.5f} to 2060, {fx['tau_terminal']:.5f} from "
+          f"{debt['terminal_year']} ({fx['iterations']} iterations); debt "
+          f"{100 * debt['debt'][2]:.1f}% in 2025, {100 * debt['debt'][t70]:.1f}% in "
+          f"{debt['terminal_year']}; end-{int(economy.current_year)} debt/Y = {B_over_Y}, "
+          f"start-of-year stock B_initial = {B_initial:.4f}")
     if eta_g_cfg != 0.0:
         print(f"  G/Y = {G_over_Y}, defense/Y = {defense_over_Y}, "
               f"other_net/Y = {other_over_Y}  (fixed shares of Y(t))")
@@ -402,11 +434,15 @@ for res_base, res_debt, res_taul, res_nfa, _ in experiment_results.values():
     for res in (res_base, res_debt, res_taul, res_nfa):
         _T = len(res.cf_macro['Y'])
         _B = res.B_path[:_T]
-        # Interest at the sovereign rate r_B (the rate in the B law of motion),
-        # not the capital return r; fall back to r when r_B is unset.
-        _rB = getattr(economy, 'r_B', None)
-        _r = (np.full(_T, float(_rB)) if _rB is not None
-              else np.asarray(res.cf_macro['r']))
+        # Interest at the sovereign rate r_B (the rate in the B law of motion,
+        # a path by period since 2026-10-07), not the capital return r.
+        _rbp = base_paths.get('r_B_path')
+        if _rbp is not None:
+            _r = economy._as_period_path(np.asarray(_rbp, dtype=float), _T)
+        else:
+            _rB = getattr(economy, 'r_B', None)
+            _r = (np.full(_T, float(_rB)) if _rB is not None
+                  else np.asarray(res.cf_macro['r']))
         res.cf_budget['interest_payments'] = _r * _B
         _Kg = res.cf_macro.get('K_g')
         if _Kg is not None:
@@ -437,6 +473,7 @@ FISCAL_VARS = [
     'tax_l_gdp', 'tax_c_gdp', 'tax_p_gdp', 'tax_k_gdp',
     'ui_gdp', 'pension_gdp', 'govt_spending', 'public_investment',
     'defense_spending', 'other_net_spending',
+    'tax_y_gdp', 'foreign_transfer', 'education', 'lump_sum',
     'interest_payments',
 ]
 FISCAL_LABELS = {
@@ -451,6 +488,10 @@ FISCAL_LABELS = {
     'public_investment': 'Public investment (I_g)',
     'defense_spending':  'Defense',
     'other_net_spending':'Other net spending',
+    'tax_y_gdp':         'Output tax / Y',
+    'foreign_transfer':  'Transfer from abroad',
+    'education':         'Education',
+    'lump_sum':          'Lump-sum transfer',
     'interest_payments': 'Interest payments (r_B·B)',
 }
 
@@ -571,6 +612,7 @@ params_out = {
     'T_transition':  int(T_TR),
     'B_initial':     float(B_initial),
     'target_debt_gdp': float(target_B_Y),
+    'base_year':     int(economy.current_year),
     # The baseline closure (baseline_closure.py): other net spending as a
     # path of shares of each run's output, the stock-flow adjustment as
     # levels entering the debt recursion, both None without a projection.
@@ -579,6 +621,22 @@ params_out = {
                               else None),
     'sfa_path':      ([float(x) for x in base_paths['sfa_path']]
                       if args.config and base_paths.get('sfa_path') is not None else None),
+    # The lines of 2026-10-07: the output-tax path, the lump-sum level path,
+    # the education inputs, the transfer from abroad and the real
+    # sovereign-rate path, as the runs used them.
+    'tau_y_path':    ([float(x) for x in base_paths['tau_y_path']]
+                      if args.config and base_paths.get('tau_y_path') is not None else None),
+    'lump_sum_path': ([float(x) for x in base_paths['lump_sum_path']]
+                      if args.config and base_paths.get('lump_sum_path') is not None else None),
+    'education_over_Y0': (float(base_paths.get('education_over_Y0') or 0.0) if args.config else None),
+    'education_index_path': ([float(x) for x in base_paths['education_index_path']]
+                             if args.config and base_paths.get('education_index_path') is not None
+                             else None),
+    'foreign_transfer_over_Y_path': (
+        [float(x) for x in np.atleast_1d(base_paths['foreign_transfer_over_Y'])]
+        if args.config and base_paths.get('foreign_transfer_over_Y') is not None else None),
+    'r_B_path':      ([float(x) for x in base_paths['r_B_path']]
+                      if args.config and base_paths.get('r_B_path') is not None else None),
     'tau_l_path':    [float(x) for x in base_paths['tau_l_path']],
     'tau_c_path':    [float(x) for x in base_paths['tau_c_path']],
     'tau_p_path':    [float(x) for x in base_paths['tau_p_path']],

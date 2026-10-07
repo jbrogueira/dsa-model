@@ -1,21 +1,22 @@
 # Aligning the baseline with the Commission's debt projection for Greece
 
-Written 2026-10-05. Status on 2026-10-06:
+Written 2026-10-05. Status on 2026-10-07:
 
-- Implemented: items 1 (real sovereign rate), 2 (pension per pensioner),
-  3 (minimum pension), 4 (effective retirement age), the levels of item 5
-  (2023 unemployment rates and education shares), and items 7 and 8 as a
-  calculation on the baseline's saved paths (`baseline_closure.py`).
-- Implemented later on 2026-10-06: the O/Y path and the stock-flow term in
-  the fiscal experiments (`run_fiscal_figures.py`, `compute_debt_path`,
-  `eval_fiscal_results.py`); results in `output/fiscal_2026-10-06/` and the
-  last section of the calibration report.
-- Not implemented: the declining unemployment path of item 5, item 6 (health
-  care unit costs) and item 9.
+- Implemented: item 1 as a rate path by calendar year (see item 1), items 2
+  and 3, item 4 with the post-2070 rule of item 4, item 5 in level and path,
+  and item 7 as modified on 2026-10-07.
+- Not adopted: item 6 (health care unit costs) and the pension path by
+  cohort and age (see items 6 and 2).
+- Superseded: item 8, by `BUDGET_ALIGNMENT_PLAN.md`. The budget has no
+  residual line. A tax on gross output paid by firms, at a rate pinned in
+  2023, carries what O carried, and the Commission's primary balance is a
+  comparison series.
+- Item 9: the ages 85 and over are scheduled in `BUDGET_ALIGNMENT_PLAN.md`
+  §3.17; productivity growth by decade remains open.
 
-The model numbers in this document are from the baseline transition of
-2026-10-05 (effective retirement age, `960d20e`), before any of these changes.
-The calibration report has the numbers of the run that includes them.
+The model numbers in the tables of this document are from the baseline
+transition of 2026-10-05 (effective retirement age, `960d20e`), before any of
+these changes. The calibration report has the current numbers.
 
 ## Object
 
@@ -81,7 +82,7 @@ Commission document found publishes the 2037-2060 part of the projection.
 | Pension per pensioner relative to GDP per employed person, base year = 1 | 0.84 (2030), 0.75 (2040), 0.65 (2050), 0.60 (2060) | 1.00, 0.99, 0.98, 0.98 |
 | Indexation of pensions in payment | min(CPI, 0.5 CPI + 0.5 GDP growth) | Benefits grow with g, 1.7% a year in real terms |
 | Effective retirement age | 63.8 (2022), 65.5 (2030), 66.4 (2040), 66.6 (2050), 67.9 (2070) | 63.8, 64.7, 65.7, 66.6, 68.6 |
-| Unemployment rate | 12.5% (2022), 10.2% (2032), 6.8% (2050), 6.6% (2060) | 14.6% in every year |
+| Unemployment rate | 12.4% (2022), 9.9% (2030), 8.5% (2040), 6.6% (2050), 6.5% (2060-70), ages 20-64 (projections volume Table II.1.50; fiche Table 3 gives the same through the share of workers in the labour force) | 14.6% in every year |
 | Employment | Employment rate 20-64 from 66.1% (2022) to 73.9% (2050). Employment 18.5% lower in 2050 than in 2022 | Non-retired population 25% lower in 2050 than in 2023 |
 | Public health care, % of GDP | 5.2 in 2025, +0.6 pp by 2040, +0.7 pp by 2070. Unit costs grow with GDP per capita | 5.5 in 2025, +1.2 pp by 2040, peak 7.4 in 2053. Unit costs grow with trend productivity |
 | Education, long-term care | -0.3 pp and 0.0 pp by 2040 | No separate lines |
@@ -224,6 +225,28 @@ the baseline.
 Done 2026-10-06: `prices.r_B = 0.0105`; the report's parameter table and
 sources paragraph describe it as a real rate.
 
+**Decision of 2026-10-07: a rate path.** r_B is a path by calendar year
+(`data/r_B_path_GR.npz`, `build_r_B_path_GR.py`). To 2025 it is the data's
+real effective rate: -4.1% in 2023, -1.1% in 2024, and a proxy for 2025 of
+-1.0%, the file's 2026 nominal rate deflated by 2025 deflator growth (the 2025
+interest expenditure is not in the two Spring 2026 documents). Over 2026-2060
+it is the projection's real effective rate year by year: -1.1% in 2026, -0.55%
+in 2030, 1.67% in 2040, 1.59% in 2050, 1.25% in 2060. Over 2061-2070 it moves
+linearly from 1.25% to 2.0%. After 2070 it is 2.0%, the Monitor's long-run
+real rate on market debt, reached once the official loans are repaid.
+
+The reason for the path: a constant 1.05% averages -0.65% over 2026-32, when
+the official loans carry rates below deflator growth, with 1.47% over 2033-60,
+and it puts the terminal rate below output growth (1.05 against 1.7), while
+the Commission-consistent terminal rate is above it. With r_B at 2% and g at
+1.7% the debt-stabilising primary balance at a ratio of 1.26 is a surplus of
+about 0.4% of output.
+
+The path enters the debt recursion, the budget's interest line, the
+pension-fund recursion, the resource-constraint checks and the terminal rest
+point. It does not enter the household problem. `prices.r_B` in the
+configuration is the terminal value, 0.02.
+
 ### 2. Pension per pensioner
 
 - Commission: falls to 0.84 of its 2022 value in 2030, 0.75 in 2040, 0.65 in
@@ -250,6 +273,31 @@ sources paragraph describe it as a real rate.
   and the calibration's base-year cross-section gives each cohort the path on
   its own calendar diagonal (`CalibrationSpec.cohort_pension_index`,
   `pension_stack` in the JAX cross-sections). Tests: `test_pension_index.py`.
+
+**Alternative considered on 2026-10-07, not adopted.** The fiche's Table 9
+gives a total benefit ratio of 0.76, 0.73, 0.65, 0.57, 0.52, 0.54 over
+2022-2070 and a replacement rate at retirement of 0.76, 0.77, 0.70, 0.67,
+0.66, 0.71 (public old-age earnings-related pensions: 0.76, 0.77, 0.70, 0.67,
+0.65, 0.65). Relative to 2022 the benefit ratio is 0.96, 0.86, 0.75, 0.68 in
+2030-2060 and the replacement rate at retirement 1.01, 0.92, 0.88, 0.87,
+against the index of Tables 6 and 10 of 0.84, 0.75, 0.65, 0.60. The gap in
+2030 is composition (Table 7): loadings on outstanding claims fall from 0.9 to
+0.2% of GDP, disability pensions from 0.9 to 0.5 and survivors' pensions from
+2.2 to 1.5 by 2070. The constructed index reproduces the fiche's aggregate
+pension spending given the model's dependency ratio and attributes these
+composition changes to the pension of every retiree.
+
+A path by cohort and age, with new awards at the Table 9 replacement rate and
+pensions in payment indexed to prices (a fall of 1.7% a year in detrended
+units, the fiche's rule from 2028), would change the household's pension
+formula. It was not approved on 2026-10-07 and the calendar-year index stays.
+Under the index a new award in 2060 is 0.62 of the 2023 rate against the
+fiche's 0.87, and a pension in payment loses 7% in detrended terms over
+2050-70 against 29% under price indexation.
+
+Every cohort alive in 2023 is assumed to have anticipated the path from entry,
+as it anticipates its survival and retirement age. The alternative, a shock in
+2023, was not adopted.
 
 ### 3. Minimum pension
 
@@ -283,6 +331,12 @@ sources paragraph describe it as a real rate.
   2028 are unaffected, so the calibration is unchanged.
   A cohort entering in 2023 retires on average at 67.7 and one entering in
   2050 at 69.9. The previous path is kept in the file as `rule_path`.
+- Changed 2026-10-07: after 2070 the age rises by 0.75 of the change in life
+  expectancy at 65 (69.7 in 2100). The factor is the ratio of the fiche's
+  rise in the effective age (4.1 years, Table 4) to its rise in the statutory
+  age (5.5 years, 67 to 72.5, Table 1a) over 2022-70. The fiche's
+  labour-market exit age (63.8 to 67.5, Table 4) is up to 0.9 years below the
+  effective retirement age in 2030; the model uses the latter for both.
 - Effect (retiree count): retirees per non-retired person are 1.04, 1.25,
   1.51 times the 2023 value in 2030, 2040, 2050. The fiche has 1.05, 1.26,
   1.48 for pensioners per employed person.
@@ -320,11 +374,22 @@ sources paragraph describe it as a real rate.
   The model gives every cohort the same shares, so its working-age population
   has a low-education share 10 pp above the data and its retired population
   one below the data.
-- Path, to do: a declining path. It needs transition matrices that differ by
-  cohort in the batched solve, which now shares one matrix.
-- Effect of the path: about 9% more employment in 2050 at given
-  participation. The fiche attributes -2.0 pp of GDP of pension spending to
-  the labour market by 2050.
+- Path, done 2026-10-07 (`BUDGET_ALIGNMENT_PLAN.md` §3.15): each group's
+  rate is its 2023 rate times an index by calendar year
+  (`data/unemployment_index_GR.npz`, `build_unemployment_path_GR.py`). The
+  index is built from the 2024 and 2025 outturns for ages 25-64 (9.5% and
+  8.3%, Eurostat `lfsa_urgaed`); the Spring 2026 forecast for 2026-27 (8.3%
+  and 7.9% for ages 15-74, scaled by the 2023 ratio of the two age groups,
+  0.919, to 7.6% and 7.3%); a linear path to the Ageing Report's 2050 rate of
+  6.6% scaled by the 2023 ratio of ages 25-64 to the Report's 20-64 (0.844,
+  to 5.6%); a linear path to 5.5% in 2055; and a constant after. The index is
+  0.93 in 2024, 0.81 in 2025, 0.69 in 2030, 0.62 in 2040, 0.55 in 2050 and
+  0.54 from 2055. The Report's own 2025-2045 values (10.9% to 7.5%) are above
+  the outturns and are not used. The separation rate by calendar year gives
+  each cohort its own income transition matrix by age; the base-year
+  cross-section carries the path as it carries the pension index.
+- Effect of the path: employment of the labour force in 2050 is about 4%
+  above a flat path at the 2023 rate (from 10.2% to 5.6% unemployment).
 
 ### 6. Health care unit costs
 
@@ -337,6 +402,13 @@ sources paragraph describe it as a real rate.
   of a previous run.
 - Effect (mechanical): the rise in health spending between 2025 and 2040
   falls from 1.2 pp to 0.7 pp of output.
+- Not adopted on 2026-10-07. Unit costs stay constant in detrended units.
+  The reasons recorded: the rule makes the unit cost depend on the run's own
+  output per person, a fixed point with the household's out-of-pocket share;
+  the Commission's rule also has an elasticity above one and a shift of the
+  age profile by half of the gain in life expectancy, which the plan omitted;
+  and the age range to 100 (`BUDGET_ALIGNMENT_PLAN.md` §3.17), where unit
+  costs are highest, changes the health path first.
 
 ### 7. Starting stock and stock-flow adjustments
 
@@ -358,8 +430,32 @@ sources paragraph describe it as a real rate.
   the data. The adjustment is -6.1% of output in 2024 and -4.3% in 2025 on
   the earlier baseline; these residuals include the effect of inflation on
   the ratio in those years.
+- Changed 2026-10-07. The two years before the projection are history. The
+  2024 debt ratio is the Monitor's 154.2% and the 2025 ratio the projection's
+  146.1%. The flow that reconciles each with the recursion at the model's own
+  primary balance, real rate and growth is recorded as that year's stock-flow
+  adjustment and labelled as such. The comparison with the projection starts
+  in 2026 from the same stock. The reconciling flow is not an inflation
+  effect alone: in 2024 the data's carry factor (1 + i)/(1 + nominal growth)
+  is 0.969 and the model's (1 + r_B)/(1 + g) about 1.004, six points of the
+  ratio, half from real growth (2.1% in the data, about 0.7% in the model)
+  and half from the real rate. The file's 2025 adjustment cell of 6.24% of
+  GDP is not used: from the Monitor's 2024 stock with the file's primary
+  balance, nominal growth of 4.9% and an implicit rate near 2.1% it would put
+  the 2025 ratio near 151, not 146.1. Over 2026-2060 the projection's
+  adjustment rows enter the recursion; after 2060 the adjustment is zero.
 
 ### 8. Other net spending set to the Commission's primary balance
+
+Superseded on 2026-10-07 by `BUDGET_ALIGNMENT_PLAN.md` §3.14 and §5: the
+budget has no residual line. A tax on gross output paid by firms, at a rate
+pinned in 2023 to the outturn primary balance and constant to 2060, carries
+what O carried; from 2061 the rate moves linearly over ten years to the rate
+that makes the debt ratio in 2080 equal to its 2070 value and stays there (a
+ten-year window: at a ratio above one the one-year condition moves with the
+growth rate of a single year). The Commission's primary balance and debt are
+comparison series. The rest of this item
+describes the closure in force from 2026-10-05 to 2026-10-07.
 
 **What O is.** Other net spending O is primary expenditure less revenue that
 the model has no explicit line for. It enters the government budget as a
@@ -438,8 +534,14 @@ spending and revenue then move the primary balance: 1.8% in 2030, -0.7% in
 ### 9. Later
 
 - Ages 85 and over. In 2060 the baseline has 8% fewer retirees than in 2023.
-  The fiche has 11% more pensioners than in 2022.
+  The fiche has 11% more pensioners than in 2022. (Scheduled:
+  `BUDGET_ALIGNMENT_PLAN.md` §3.17, age range to 100 before the next
+  recalibration.)
 - Productivity growth by decade. g is a scalar in the household problem.
+  The Ageing Report's hourly productivity growth for Greece is 1.0% in 2025,
+  1.3% in 2030, 2.1% in 2040-45, 2.0% in 2050, 1.6% in 2060 and 1.2% in 2070
+  (projections volume Table II.1.17), against the model's 1.7% in every
+  year.
 
 ## Model outcomes that also differ
 
@@ -457,16 +559,31 @@ spending and revenue then move the primary balance: 1.8% in 2030, -0.7% in
 
 ## Order of work
 
-0. A script that reads the DSA file and `baseline_paths.npz` and writes the
-   tables of this document, so each step can be measured. No script in the
-   repository produces these tables yet.
-1. Item 1 (config and text) and item 7 on the saved paths. Rerun the
-   tax-financed experiments at the new r_B.
-2. Item 4, one recalibration. It also brings θ, A_tfp and the closure in line
-   with the 2023 unemployment rates and education shares.
-3. Items 2 and 3, one recalibration.
-4. Items 5 (path) and 6, one recalibration.
-5. Item 8 after each of steps 2-4.
+1. Item 1 (config and text) and item 7 on the saved paths, with the
+   tax-financed experiments rerun at the new r_B: done 2026-10-05/06.
+2. Item 4, with θ, A_tfp and the closure brought in line with the 2023
+   unemployment rates and education shares: done 2026-10-06.
+3. Items 2 and 3: done 2026-10-06. Steps 1-3 were carried by the
+   recalibrations of `88b44a7`, `420f67c` and `ad61203`.
+4. Item 5 (path): done 2026-10-07 inside the budget restructure
+   (`BUDGET_ALIGNMENT_PLAN.md` §3.15). Item 6: not adopted.
+5. Item 8: replaced by the output tax of `BUDGET_ALIGNMENT_PLAN.md`.
+
+The next recalibration is the budget plan's (`BUDGET_ALIGNMENT_PLAN.md` §4).
+
+## Sources added 2026-10-07
+
+- 2024 Ageing Report, projections volume, Tables II.1.17 (hourly
+  productivity growth) and II.1.50 (unemployment rate, ages 20-64), in
+  `lit-review/data-debt/ageing2024_projections_ip279.txt`.
+- Eurostat `lfsa_urgaed`, unemployment rates by age and education, in
+  `data/eurostat_raw/`.
+- The Commission's Spring 2026 forecast page for Greece (unemployment
+  2026-27).
+- Eurostat `gov_10a_main`, `gov_10a_taxag`, `gov_10a_exp`, in
+  `data/gov_accounts_GR.json`.
+- The Commission's EU budget spending and revenue workbook 2000-2025, in
+  `data/eu_transfers_GR.npz`.
 
 ## Sources
 

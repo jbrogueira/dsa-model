@@ -42,7 +42,8 @@ from scipy.optimize import minimize_scalar
 # ---------------------------------------------------------------------------
 
 _PRE_TP_KEYS = ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
-                'tau_k_path', 'pension_replacement_path')
+                'tau_k_path', 'pension_replacement_path',
+                'lump_sum_path')
 
 
 def _nice_ylim(ax, min_span=0.01):
@@ -618,6 +619,19 @@ def _apply_shock(scenario: FiscalScenario,
         cf['defense_spending_path']     = defense
         cf['other_net_spending_path']   = other
 
+    # Lines of 2026-10-07, the same in the baseline and every counterfactual:
+    # the output-tax path, the lump-sum level path, the education line's
+    # inputs, the transfer from abroad and the unemployment index. Each run
+    # prices education at its own wage and the transfer at its own output.
+    cf['tau_y_path'] = _base('tau_y_path')
+    cf['lump_sum_path'] = _base('lump_sum_path')
+    cf['education_index_path'] = _base('education_index_path')
+    cf['unemployment_index_path'] = _base('unemployment_index_path')
+    ft = base_paths.get('foreign_transfer_over_Y')
+    cf['foreign_transfer_over_Y'] = (ft if ft is None or np.ndim(ft) == 0 else _base('foreign_transfer_over_Y'))
+    cf['education_over_Y0'] = base_paths.get('education_over_Y0')
+    cf['education_Y0'] = base_paths.get('education_Y0')
+
     # Apply financing instrument adjustment
     fin = scenario.financing
     if fin == 'tau_l':
@@ -676,6 +690,13 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
         defense_over_Y=cf.get('defense_over_Y'),
         other_net_over_Y=cf.get('other_net_over_Y'),
         transfer_floor=transfer_floor,
+        tau_y_path=cf.get('tau_y_path'),
+        lump_sum_path=cf.get('lump_sum_path'),
+        education_over_Y0=cf.get('education_over_Y0'),
+        education_index_path=cf.get('education_index_path'),
+        education_Y0=cf.get('education_Y0'),
+        foreign_transfer_over_Y=cf.get('foreign_transfer_over_Y'),
+        unemployment_index_path=cf.get('unemployment_index_path'),
         n_sim=n_sim,
         verbose=verbose,
         recompute_bequests=recompute_bequests,
@@ -1309,8 +1330,14 @@ def _with_default_paths(olg, base_paths: dict) -> dict:
     # branches (debt / tax / NFA) pick it up uniformly.
     if 'r_B_path' not in base_paths:
         _r_path_arr = np.asarray(base_paths['r_path'], dtype=float)
-        base_paths['r_B_path'] = (np.full(len(_r_path_arr), float(olg.r_B))
-                                  if olg.r_B is not None else _r_path_arr)
+        _rb_in = getattr(olg, 'r_B_path_input', None)
+        if _rb_in is not None:
+            # The configured rate path (a real rate by period), padded with
+            # its last value past its end.
+            base_paths['r_B_path'] = olg._as_period_path(_rb_in, len(_r_path_arr))
+        else:
+            base_paths['r_B_path'] = (np.full(len(_r_path_arr), float(olg.r_B))
+                                      if olg.r_B is not None else _r_path_arr)
     return base_paths
 
 
@@ -1363,6 +1390,10 @@ def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
     pre_tp['w_path'] = base_paths['w_path']
     if pre_tp.get('r_path') is None:
         pre_tp['r_path'] = np.asarray(base_paths['r_path'])
+    # The lump-sum level path changes between the iterations of the
+    # baseline's fixed point; the stitching models must see the current one.
+    if base_paths.get('lump_sum_path') is not None:
+        pre_tp['lump_sum_path'] = np.asarray(base_paths['lump_sum_path'], dtype=float)
 
     # Pre-populate the MIT baseline cache from the baseline run's solutions.
     # Counterfactual runs need baseline policy functions for stitching

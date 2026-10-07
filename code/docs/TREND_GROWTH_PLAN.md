@@ -1063,7 +1063,8 @@ position and household interest income is r·A under either reading; the
 resource constraint in the write-up carries r·(A − K_domestic) − r_B·B as net
 interest from abroad.
 
-**The level of r_B — settled: 1.9%, the implicit rate on the stock averaged
+Superseded on 2026-10-06/07: r_B is a real rate path (`EC_ALIGNMENT_PLAN.md`
+item 1). **The level of r_B — settled: 1.9%, the implicit rate on the stock averaged
 over 2012–2024.** The debt-ratio rest point is PD/Y = (Γ − 1 − r_B)·b. The
 implicit rate (interest payments ÷ debt, `DATA_GR.xlsx` codes 40 and 49)
 averages 1.93% over 2012–2024 and 1.90% on the aggregate (Σinterest ÷ Σdebt);

@@ -9,22 +9,27 @@ Country Fiche EL, December 2023, Table 4, p. 23): 63.8 in 2022, 65.5 in 2030,
 linearly between those years and equal to 63.8 before 2022. The statutory age
 is 67 in 2022.
 
-After 2070 the path rises one for one with life expectancy at 65, the link
-of Law 4336/2015 between the minimum and statutory ages and longevity (fiche
-p. 6 item (x), p. 9 section 1.1.5), applied year by year:
+After 2070 the path rises with life expectancy at 65 at a pass-through of
+0.75 (`PASS_THROUGH`), applied year by year:
 
-  R_y = 67.9 + e65(y) - e65(2070),
+  R_y = 67.9 + 0.75 (e65(y) - e65(2070)),
 
 with e65 the unisex period life expectancy at 65 (the mean of men and women)
-from the EUROPOP2023 baseline mortality assumptions, ages 65 to 100+. The law
-re-examines the ages every three years; applied literally the path would move
-in steps every three years, and each step would move the hours of the cohorts
-at the margin in one year, so the annual path is used. The projection ends in
-2100; the model's mortality is held at the 2100 schedule after that, so e65
-and R are held there too. `rule_path` in the output is the literal review
-rule, R_y = 63.8 + e65(r(y)) - e65(2023) with r(y) the last review year
-(2024, 2027, ...), the path used before the Ageing Report's projection was
-adopted.
+from the EUROPOP2023 baseline mortality assumptions, ages 65 to 100+. Law
+4336/2015 links the minimum and statutory ages one for one to longevity
+(fiche p. 6 item (x), p. 9 section 1.1.5). The pass-through is the ratio in
+the fiche's own projection over 2022-70. The statutory age rises 5.5 years,
+from 67 to 72.5 (Table 1a, p. 12-13). The average effective retirement age
+rises 4.1 years, from 63.8 to 67.9 (Table 4). The ratio is 0.745, rounded to
+0.75. The law re-examines the ages every three years. Applied literally the
+path would move in steps every three years, and each step would move the
+hours of the cohorts at the margin in one year, so the annual path is used.
+The projection ends in 2100. The model's mortality is held at the 2100
+schedule after that, so e65 and R are held there too. The one-for-one path
+used before gave 70.3 in 2100; this one gives 69.7. `rule_path` in the
+output is the literal review rule, R_y = 63.8 + e65(r(y)) - e65(2023) with
+r(y) the last review year (2024, 2027, ...), the path used before the Ageing
+Report's projection was adopted.
 
 A cohort entering at real age 25 in year k retires on average at the age A_k
 that solves A_k = R_{k + round(A_k) - 25}: the age in force in the year it
@@ -55,6 +60,10 @@ BASE_AGE = 63.8                 # average effective retirement age, 2022 (fiche 
 # Average effective retirement age, fiche Table 4 (p. 23).
 FICHE_YEARS = (2022, 2030, 2040, 2050, 2060, 2070)
 FICHE_AGES = (63.8, 65.5, 66.4, 66.6, 67.4, 67.9)
+# Rise in the average effective retirement age per year of e65 after 2070:
+# the fiche's 2022-70 rise in the effective age (4.1 years, Table 4) over the
+# rise in the statutory age (5.5 years, Table 1a), which follows e65 one for one.
+PASS_THROUGH = 0.75
 FIRST_REVIEW = 2024             # three-year cycle from 2021: 2021, 2024, 2027, ...
 REVIEW_EVERY = 3
 PROJ_END = 2100                 # last year of EUROPOP2023
@@ -119,14 +128,15 @@ def statutory_age(years, e_years, e65):
 
 
 def effective_age(years, e_years, e65):
-    """R_y for each year in `years`: the fiche's path to 2070, then one for one
-    with e65, year by year."""
+    """R_y for each year in `years`: the fiche's path to 2070, then
+    R_y = 67.9 + PASS_THROUGH * (e65(y) - e65(2070)), year by year."""
     years = np.asarray(years)
     e = dict(zip(e_years.tolist(), e65.tolist()))
     e_at = lambda y: e.get(int(y), e[PROJ_END])
     out = np.interp(years, FICHE_YEARS, FICHE_AGES)      # flat outside the range
     late = years > FICHE_YEARS[-1]
-    out[late] = FICHE_AGES[-1] + np.array([e_at(y) for y in years[late]]) - e_at(FICHE_YEARS[-1])
+    de65 = np.array([e_at(y) for y in years[late]]) - e_at(FICHE_YEARS[-1])
+    out[late] = FICHE_AGES[-1] + PASS_THROUGH * de65
     return out
 
 
@@ -160,8 +170,10 @@ def main():
     np.savez(OUT, e65_years=e_years, e65_men=eM, e65_women=eF, e65=e65,
              years=years, retirement_age_path=R, rule_path=rule, entry_years=entry,
              retirement_real_age=A, J_R=low - ENTRY_AGE, share_later=share_high,
-             base_year=BASE_YEAR, base_age=BASE_AGE, entry_age=ENTRY_AGE)
-    for y in (2023, 2024, 2030, 2040, 2050, 2070, 2100):
+             base_year=BASE_YEAR, base_age=BASE_AGE, entry_age=ENTRY_AGE,
+             pass_through=PASS_THROUGH)
+    print(f'  after 2070: R = {FICHE_AGES[-1]} + {PASS_THROUGH} * (e65(y) - e65(2070))')
+    for y in (2023, 2024, 2030, 2040, 2050, 2070, 2080, 2100):
         print(f'  {y}: e65 {e65[list(e_years).index(min(y, PROJ_END))]:.2f}  '
               f'retirement age {R_of[y]:.2f}')
     for k in (1939, 1960, 1990, 2000, 2023, 2050, 2100, 2210):

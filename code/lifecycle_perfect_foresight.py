@@ -183,6 +183,14 @@ class LifecycleConfig:
     # === Means-tested transfers (Feature #15) ===
     transfer_floor: float = 0.0         # Consumption floor (Huggett-style)
 
+    # === Lump-sum transfer (since 2026-10-07) ===
+    # A uniform amount per adult received every period at every age, untaxed,
+    # in detrended units, by age of the household: (T,). None means zero. It
+    # stands for the cash benefits to the working-age population and the
+    # social transfers in kind outside health that the model has no other
+    # line for (BUDGET_ALIGNMENT_PLAN.md section 3.2).
+    lump_sum_path: Optional[np.ndarray] = None
+
     # === Labor supply (Feature #1) ===
     labor_supply: bool = False           # Enable endogenous labor supply
     nu: float = 1.0                      # Labor disutility weight
@@ -242,6 +250,14 @@ class LifecycleConfig:
             assert self.survival_probs.shape == (self.T, self.n_h), \
                 f"survival_probs must have shape ({self.T}, {self.n_h}), got {self.survival_probs.shape}"
 
+        # Validate/default lump_sum_path
+        if self.lump_sum_path is None:
+            self.lump_sum_path = np.zeros(self.T)
+        else:
+            self.lump_sum_path = np.asarray(self.lump_sum_path, dtype=float)
+            assert self.lump_sum_path.shape == (self.T,), \
+                f"lump_sum_path must have shape ({self.T},), got {self.lump_sum_path.shape}"
+
         # Validate/default child_cost_profile
         if self.child_cost_profile is None:
             self.child_cost_profile = np.zeros(self.T)
@@ -289,6 +305,63 @@ class LifecycleConfig:
                 raise ValueError(f"P_h must be 2D or 3D array, got {self.P_h.ndim}D")
     
 
+def income_transition_matrix(P_employed, n_y, unemployment_rate, job_finding_rate,
+                             max_job_separation_rate):
+    """Transition matrix over the n_y income states (state 0 unemployment)
+    from the Tauchen matrix of the employed states, the unemployment rate u,
+    the job-finding probability f and the cap on the separation rate.
+
+    The separation rate s = u f / (1 - u) makes u the stationary unemployment
+    rate of the two-state chain; it is capped at max_job_separation_rate. A
+    rate of zero gives a chain with no unemployment.
+    """
+    n_employed = n_y - 1
+    P_y = np.zeros((n_y, n_y))
+    if unemployment_rate < 1e-10:
+        P_y[0, 0] = 0.0
+        P_y[0, 1:] = 1.0 / n_employed
+        for i in range(n_employed):
+            P_y[i + 1, 0] = 0.0
+            P_y[i + 1, 1:] = P_employed[i, :]
+    else:
+        P_y[0, 0] = 1 - job_finding_rate
+        P_y[0, 1:] = job_finding_rate / n_employed
+        s = min(unemployment_rate / (1 - unemployment_rate) * job_finding_rate,
+                max_job_separation_rate)
+        for i in range(n_employed):
+            P_y[i + 1, 0] = s
+            P_y[i + 1, 1:] = (1 - s) * P_employed[i, :]
+    for i in range(n_y):
+        P_y[i, :] = P_y[i, :] / P_y[i, :].sum()
+    return P_y
+
+
+def employed_transition_matrix(config, edu_type):
+    """Tauchen matrix of the employed income states of an education group,
+    as _income_process builds it (n_y - 1 states, n_std = 2)."""
+    ep = config.edu_params[edu_type]
+    mc = tauchen(config.n_y - 1, ep['rho_y'], ep['sigma_y'], (1.0 - ep['rho_y']) * ep['mu_y'],
+                 n_std=2)
+    return np.asarray(mc.P)
+
+
+def income_matrices_by_age(P_employed, n_y, n_h, rates_by_age, job_finding_rate,
+                           max_job_separation_rate):
+    """(T, n_h, n_y, n_y) transition matrices for an unemployment rate that
+    differs by age of the household (rates_by_age, (T,)), the same for every
+    health state. The LifecycleConfig field P_y_by_age_health takes it."""
+    rates = np.asarray(rates_by_age, dtype=float)
+    out = np.empty((len(rates), n_h, n_y, n_y))
+    cache = {}
+    for t, u in enumerate(rates):
+        key = round(float(u), 12)
+        if key not in cache:
+            cache[key] = income_transition_matrix(P_employed, n_y, float(u),
+                                                  job_finding_rate, max_job_separation_rate)
+        out[t] = cache[key][None, :, :]
+    return out
+
+
 class LifecycleModelPerfectForesight:
     """
     Lifecycle consumption-savings model with:
@@ -328,6 +401,7 @@ class LifecycleModelPerfectForesight:
         self.tax_eta = config.tax_eta
         self.transfer_floor = config.transfer_floor
         self.bequest_lumpsum = config.bequest_lumpsum
+        self.lump_sum_path = np.asarray(config.lump_sum_path, dtype=float)
         self.labor_supply = config.labor_supply
         self.nu = config.nu
         self.phi = config.phi
@@ -522,37 +596,11 @@ class LifecycleModelPerfectForesight:
         y_grid[0] = 0.0  # Unemployment state
         y_grid[1:] = y_employed
         
-        # Create full transition matrix
-        P_y = np.zeros((self.n_y, self.n_y))
-        
-        # If unemployment rate is zero, everyone stays employed
-        if unemployment_rate == 0.0 or unemployment_rate < 1e-10:
-            # From unemployment (should never happen, but set to go to employment)
-            P_y[0, 0] = 0.0
-            P_y[0, 1:] = 1.0 / n_employed  # Equal probability to any employed state
-            
-            # From employed states: no job separation, just normal employed transitions
-            for i in range(n_employed):
-                P_y[i + 1, 0] = 0.0  # Never become unemployed
-                P_y[i + 1, 1:] = P_employed[i, :]  # Normal employed transitions
-        else:
-            # Original code for non-zero unemployment
-            # Transition probabilities from unemployment (state 0)
-            P_y[0, 0] = 1 - job_finding_rate  # Stay unemployed
-            P_y[0, 1:] = job_finding_rate / n_employed  # Equal probability to any employed state
-            
-            # Transition probabilities from employed states (states 1 to n_y-1)
-            for i in range(n_employed):
-                job_separation_rate = unemployment_rate / (1 - unemployment_rate) * job_finding_rate
-                job_separation_rate = min(job_separation_rate, max_job_separation_rate)
-                
-                P_y[i + 1, 0] = job_separation_rate  # Become unemployed
-                P_y[i + 1, 1:] = (1 - job_separation_rate) * P_employed[i, :]
-        
-        # Ensure rows sum to 1 (numerical stability)
-        for i in range(self.n_y):
-            P_y[i, :] = P_y[i, :] / P_y[i, :].sum()
-
+        # Keep the employed-state matrix: the per-age matrices of a
+        # time-varying unemployment rate are built from it.
+        self._P_employed = P_employed
+        P_y = income_transition_matrix(P_employed, self.n_y, unemployment_rate,
+                                       job_finding_rate, max_job_separation_rate)
         return y_grid, P_y
 
     def _alpha_process(self):
@@ -791,6 +839,9 @@ class LifecycleModelPerfectForesight:
         # After-tax bequest lump-sum transfer received at age 0
         if t == self.current_age and self.bequest_lumpsum > 0.0:
             budget += self.bequest_lumpsum
+
+        # Lump-sum transfer per adult, every period, untaxed
+        budget += self.lump_sum_path[t]
 
         # Feature #4: schooling child costs
         if t < self.schooling_years:

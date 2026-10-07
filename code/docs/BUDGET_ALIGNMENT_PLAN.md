@@ -1,10 +1,10 @@
 # Aligning the government budget with the general government accounts
 
-Written 2026-10-07; decisions taken the same day (§5); implementation not started except §6.5. Companion to `EC_ALIGNMENT_PLAN.md` (debt dynamics, retirement age, pension index); this plan supersedes its item 8 (the closure) and implements its item 5 (the unemployment path).
+Written 2026-10-07; decisions taken the same day (§5); implementation done on 2026-10-07/08 (§0). Companion to `EC_ALIGNMENT_PLAN.md` (debt dynamics, retirement age, pension index); this plan supersedes its item 8 (the closure) and implements its item 5 (the unemployment path).
 
 ## 0. Handoff (read first)
 
-Status on 2026-10-07: every decision is taken (§5; the shared doc "Budget alignment plan" has the same table, rows 1–18). Where a "Proposal" in §3 and §5 disagree, §5 is authoritative; §6 corrects §3 where it says so. Implemented so far: only the fiscal-driver fix of §6.5, as uncommitted edits to `fiscal_experiments.py`, `olg_transition.py`, `eval_fiscal_results.py` and `check_a0_predetermination.py`; the I_g rerun in `output/fiscal_2026-10-07_a0/` (started 2026-10-07 on the Mac) is its confirmation on the production configuration.
+Status on 2026-10-07: every decision is taken (§5; the shared doc "Budget alignment plan" has the same table, rows 1–18). Where a "Proposal" in §3 and §5 disagree, §5 is authoritative; §6 corrects §3 where it says so. Implementation done on 2026-10-07/08 for every item of §4 except the age range to 100 (§3.17, scoping first): the data builders; the configuration; the code (the firm conditions with τ_y in `firm_conditions.py`; `tax_y` and the transfer from abroad as revenue; education and the lump-sum transfer as spending; the lump sum in both household solvers; the unemployment path as per-cohort income transition matrices; the real sovereign-rate path; the stock-flow adjustment and the terminal ramp in `baseline_closure.py`; the joint (A_tfp, τ_y) pin in `normalize_A_tfp.py --pin-tau-y`); the tests (`test_fiscal_restructure.py`); the recalibration on an A100; and the report. The O line stays in the code at zero. The fiscal-driver fix of §6.5 is confirmed by the I_g rerun in `output/fiscal_2026-10-07_a0/`.
 
 Targets for 2023, % of output, all on the ESA purchases basis net of imputed contributions (§3.10, §5): pensions 14.0; public health 5.3 (total 8.4, κ 0.631); education 2.6 (new line, school-age driver per adult, run's own wage); G 7.0 (own wage bill and intermediate consumption of functions outside defence, health, education); defence 1.66 (flat; code takes a path); I_g 4.0 constant with δ_g 0.046; lump-sum transfer 3.5 (new line, uniform per adult, untaxed); social contributions 11.2; unemployment benefits 0.6 and the floor as now; τ_c, τ_l, τ_k, bequest tax as now. O/Y removed: an output tax on firms τ_y at a constant rate pinned to the 2023 primary balance (about 0.06 after the lines below), plus a transfer from abroad at the EU net flow (§3.16). Unemployment rates by education follow the Ageing Report's aggregate path (§3.15). Age range extended to 100 before the recalibration (§3.17, scoping first).
 
@@ -309,7 +309,7 @@ Taken by the user on 2026-10-07 (in the shared doc "Budget alignment plan"):
 Taken by the user on 2026-10-07 after the audit (§6.4; doc rows 8–16):
 
 - Stock-flow adjustment 2024–25: fixed values from the data: sfa_t = d_t − d_{t−1}(1+i_t)/(1+γ_t) + pb_t with the data's debt ratios, implicit nominal rate i_t (interest/debt_{t−1}), nominal growth γ_t and primary balance pb_t (Eurostat `gov_10dd_edpt1`, `gov_10a_main`, `nama_10_gdp`); for 2025 this is the DSA file's own sfa row (6.24% of GDP), for 2024 it is computed. The two numbers go into the config (`fiscal.sfa_2024`, `fiscal.sfa_2025`) and replace the residuals at `baseline_closure.py` 107 and 112; the model's 2024–25 debt then differs from the data by its primary-balance gap (about 2.3 pp a year, §6.2).
-- Terminal rule: constant τ_y through 2060, then a smooth path rather than a step: a linear ramp over 2061–2070 to the rate that holds the debt ratio at its 2070 value; the ramp length is a parameter (`fiscal.tau_y_ramp_years`, 10). The terminal rate τ_y^T solves pb_2070(τ_y^T) = d_2070 · ((1+r_B)/Γ_2070 − 1) (sfa is zero after 2060), with d_2070 itself depending on the ramp: a fixed point in one scalar, iterated 2–3 times, each a full transition solve since τ_y moves the wage; τ_y is held at τ_y^T after 2070 and the terminal check of `eval_fiscal_results.py` tests the debt ratio from 2070.
+- Terminal rule: constant τ_y through 2060, then a smooth path rather than a step: a linear ramp over 2061–2070 to the rate that holds the debt ratio at its 2070 value; the ramp length is a parameter (`fiscal.tau_y_ramp_years`, 10). The terminal rate τ_y^T makes the debt ratio in 2080 equal to its 2070 value, d_2080 = d_2070 (sfa is zero after 2060); the one-year condition pb_2070 = d_2070 · ((1+r_B)/Γ_2070 − 1) is reported but not solved, since at a ratio above one it moves with the growth rate of a single year. The ratio depends on the ramp, so the rate is a fixed point in one scalar, iterated together with the lump-sum path, each iteration a full transition solve since τ_y moves the wage; τ_y is held at τ_y^T after 2070 and `eval_fiscal_results.py` checks the change of the debt ratio over 2070–2080 (`terminal_debt_window`, WARN tier). The time-varying path τ_y,t that reproduces the Commission's primary balance over 2024–2060 is `fiscal.tau_y_mode: "projection"` (`baseline_closure.solve_baseline`, `match_projection`); it is not run for the report.
 - EU transfers: a transfer line from abroad with a path (option F) beside τ_y; definition and path in §3.16.
 - I_g: constant 0.040 as a stationary level, δ_g re-derived to 0.046; the 2024–25 bump of the earlier decision is dropped.
 - Population aged 85 and over: extend the model's age range to 100 before the next recalibration. Scoping (survival data, health process, base-year cross-section beyond 84, solver grid, runtime) is a separate step and plan section.
@@ -323,6 +323,17 @@ Taken by the user on 2026-10-07 after the audit (§6.4; doc rows 8–16):
 - Education line driver: the run's own wage (the line responds inside the public-investment experiment, like the other purchase lines priced at the run's own values).
 
 - Unemployment path (§3.15, doc row 18): added, each education group's rate scaled by the Ageing Report's aggregate path (12.4% in 2022 to 6.5% from 2060), implemented as a separation rate by calendar year, before the recalibration.
+
+Taken on 2026-10-07 (evening):
+
+- EC plan item 1: r_B is a path by calendar year (the data's real effective rate to 2025, the projection's real effective rate over 2026–60, linear to 2% by 2070, 2% after); `prices.r_B` is the terminal value (`EC_ALIGNMENT_PLAN.md` item 1).
+- Stock-flow adjustment 2024–25: the data's debt ratios are imposed (154.2% in 2024, 146.1% in 2025) and the flows that reconcile them with the recursion at the model's own primary balance, real rate and growth are recorded as those years' adjustments. This replaces the fixed-value decision above. The file's 2025 cell (6.24% of GDP) is not used; it does not close the identity from the 2024 stock.
+- Unemployment path values: the 2024–25 outturns, the Spring 2026 forecast for 2026–27, then linear to the Report's 2050 and 2055 levels scaled to ages 25–64 (index 0.546 in 2050, 0.538 from 2055). The Report's 2025–45 values are not used.
+- Transfer from abroad: the general government's net receipts from the EU budget (D.7 and D.9 received from the EU less own resources): 1.9% of GDP in 2023, 1.8 in 2024, 2.7 in 2025 and 2026, 1.0 from 2027 (`data/foreign_transfer_GR.npz`). The broader series of all EU payments to Greece less the national contribution (3.5% of GDP in 2023, `data/eu_transfers_GR.npz`) includes payments to farmers and firms and is not government revenue.
+- Lump-sum transfer: λ times the run's own output, iterated with the terminal tax rate in the baseline's fixed point; the experiments hold the level path.
+- Retirement age after 2070: 0.75 of the change in life expectancy at 65 (`EC_ALIGNMENT_PLAN.md` item 4).
+- δ_g: 0.04477 = 0.040/0.703 less Γ_0 − 1 (0.01212), not 0.046.
+- Not adopted: the pension path by cohort and age; health unit costs growing with output per person (`EC_ALIGNMENT_PLAN.md` items 2 and 6).
 
 No decision is open; the equation changes are approved (doc row 15).
 
@@ -364,7 +375,7 @@ Two context-free reviews of this plan against the code (one on the economics, on
 
 Calls recorded in §5; none open.
 
-1. Stock-flow adjustment 2024–25: fixed data-based values (recommended) or the residual off the model's pb (a hidden two-year closure).
+1. Stock-flow adjustment 2024–25: fixed data-based values (recommended) or the residual off the model's pb (a hidden two-year closure). Replaced on 2026-10-07 (evening) by imposing the data's 2024 and 2025 ratios; see §5.
 2. Terminal rule after 2060: constant τ_y throughout and accept the debt ratio's drift (toward large net assets at r_B < g), or constant τ_y through 2060 and from 2061 the rate that holds the debt ratio at its 2060 value (recommended: the old rule's tail, keeps the experiments' target and the terminal check meaningful).
 3. EU transfers: add option F (a transfer from abroad, net 1.9 in 2023 to about 1.0 after 2027, with a path) beside τ_y (recommended by both reviews), or keep everything on τ_y.
 4. τ_p: 0.13 with the purchase lines as they are, or 0.112 with the purchase lines net of imputed contributions (G 7.8, defence 1.66, health 5.3, education 2.6; incidence-consistent).

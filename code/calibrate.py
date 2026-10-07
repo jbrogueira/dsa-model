@@ -27,6 +27,8 @@ import numpy as np
 from scipy.optimize import minimize, differential_evolution
 
 from lifecycle_perfect_foresight import LifecycleConfig, LifecycleModelPerfectForesight
+from lifecycle_perfect_foresight import income_matrices_by_age, employed_transition_matrix
+from firm_conditions import firm_conditions
 
 try:
     from lifecycle_jax import LifecycleModelJAX
@@ -375,6 +377,10 @@ class CalibrationSpec:
     # Pension-per-pensioner index faced at each age by the cohort aged 25+j in
     # the base year, (T, T); None keeps the replacement rate constant.
     cohort_pension_index: Optional[np.ndarray] = None
+    # (T, T) index of the unemployment rate, row j for the cohort aged 25+j
+    # in the base year along its calendar diagonal (one up to the base year);
+    # None keeps each group's rate constant.
+    cohort_unemployment_index: Optional[np.ndarray] = None
     backend: str = 'numpy'  # 'numpy' or 'jax'
     production: dict = field(default_factory=lambda: {
         'alpha': 0.33, 'delta': 0.07, 'A_tfp': 1.0,
@@ -923,10 +929,31 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
         return (None if pen_idx is None
                 else config.pension_replacement_default * np.asarray(pen_idx[j], dtype=float))
 
+    # Income transition matrices by age of each cohort: the group's base-year
+    # rate times the cohort's unemployment index along its diagonal (one up to
+    # the base year, so the entry-year rate and the initial draw are unchanged).
+    u_idx = spec.cohort_unemployment_index
+    if u_idx is not None and np.asarray(u_idx).shape != (T, T):
+        raise ValueError(f'cohort_unemployment_index has shape {np.asarray(u_idx).shape}, '
+                         f'expected {(T, T)}')
+    _P_emp = {}
+
+    def P_y_by_age(edu_type, j):
+        if u_idx is None:
+            return None
+        if edu_type not in _P_emp:
+            _P_emp[edu_type] = employed_transition_matrix(config, edu_type)
+        u0 = float(config.edu_params[edu_type]['unemployment_rate'])
+        return income_matrices_by_age(_P_emp[edu_type], config.n_y, config.n_h,
+                                      u0 * np.asarray(u_idx[j], dtype=float),
+                                      config.job_finding_rate, config.max_job_separation_rate)
+
     def cohort_config(edu_type, surv, J, lam, j=None):
         extra = {}
         if pen_idx is not None and j is not None:
             extra['pension_replacement_path'] = pension_path(j)
+        if u_idx is not None and j is not None:
+            extra['P_y_by_age_health'] = P_y_by_age(edu_type, j)
         return config._replace(
             education_type=edu_type,
             survival_probs=surv,
@@ -987,15 +1014,18 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
                 model = cls(cohort_config(edu_type, surv_stack[0], J, lam), verbose=False)
                 pen_stack = (None if pen_idx is None
                              else np.stack([pension_path(j) for j in js]))
+                py_stack = (None if u_idx is None
+                            else np.stack([P_y_by_age(edu_type, j) for j in js]))
                 if exact:
                     part, part_mass = model.cross_section_exact(
                         surv_stack, rows=js, chunk_size=chunk_size,
-                        pension_stack=pen_stack)
+                        pension_stack=pen_stack, P_y_stack=py_stack)
                 else:
                     seeds = [seed + j if seed_per_cohort else seed for j in js]
                     part = model.cross_section_batched(surv_stack, seeds, n_sim,
                                                        chunk_size=chunk_size, rows=js,
-                                                       pension_stack=pen_stack)
+                                                       pension_stack=pen_stack,
+                                                       P_y_stack=py_stack)
                     part_mass = None
                 for i, j in enumerate(js):
                     parts[j][(J, lam)] = ([np.asarray(x)[i] for x in part],
@@ -1348,18 +1378,18 @@ def compute_equilibrium_prices(config_data):
     eta_g = prod.get('eta_g', 0.0)
 
     K_g_factor = K_g ** eta_g if (K_g > 0 and eta_g > 0) else 1.0
-
-    # FOC for K: r + delta = alpha * A_tfp * K_g^eta_g * (K/L)^(alpha-1)
-    K_over_L = ((r + delta) / (alpha * A_tfp * K_g_factor)) ** (1.0 / (alpha - 1.0))
-    # FOC for L: w = (1-alpha) * A_tfp * K_g^eta_g * (K/L)^alpha
-    w = (1.0 - alpha) * A_tfp * K_g_factor * K_over_L ** alpha
-    Y_over_L = A_tfp * K_g_factor * K_over_L ** alpha
+    # The tax on gross output paid by firms (fiscal.tau_y) enters both
+    # conditions: (1 - tau_y) alpha A K_g^eta_g (K/L)^(alpha-1) = r + delta and
+    # w = (1 - tau_y)(1 - alpha) A K_g^eta_g (K/L)^alpha (firm_conditions.py).
+    tau_y = float(config_data.get('fiscal', {}).get('tau_y', 0.0) or 0.0)
+    K_over_L, w, Y_over_L = firm_conditions(r, A_tfp, K_g_factor, alpha, delta, tau_y)
 
     return {
-        'w': w,
-        'K_over_L': K_over_L,
-        'Y_over_L': Y_over_L,
+        'w': float(w),
+        'K_over_L': float(K_over_L),
+        'Y_over_L': float(Y_over_L),
         'K_g_factor': K_g_factor,
+        'tau_y': tau_y,
     }
 
 
@@ -1496,9 +1526,11 @@ def load_config(path):
 
     cohort_retirement = None
     cohort_pension_index = None
+    cohort_unemployment_index = None
     if cohort_survival is not None:
         cohort_retirement = base_year_cohort_retirement(raw, T)
         cohort_pension_index = base_year_cohort_pension_index(raw, T)
+        cohort_unemployment_index = base_year_cohort_unemployment_index(raw, T)
 
     # CalibrationSpec
     params = [CalibrationParam(**p) for p in raw['calibration']['params']]
@@ -1529,6 +1561,7 @@ def load_config(path):
         aggregation=sim.get('aggregation', 'exact'),
         cohort_retirement=cohort_retirement,
         cohort_pension_index=cohort_pension_index,
+        cohort_unemployment_index=cohort_unemployment_index,
         backend=sim.get('backend', 'numpy'),
         production=production,
     )
@@ -1611,6 +1644,11 @@ def build_lifecycle_config(raw, w=None):
         kwargs['wage_age_profile'] = np.array(raw['wage_age_profile'])
     kwargs['pension_avg_weight'] = pension_avg_weight_for(
         raw, raw['model'].get('retirement_age', 40))
+    # The lump-sum transfer per adult, fiscal.lump_sum_over_Y times base-year
+    # output, which the A_tfp normalisation sets to one.
+    lump = float(raw.get('fiscal', {}).get('lump_sum_over_Y', 0.0) or 0.0)
+    if lump:
+        kwargs['lump_sum_path'] = np.full(T, lump)
 
     return LifecycleConfig(**kwargs), eq_prices
 
@@ -1634,17 +1672,47 @@ def pension_avg_weight_for(raw, ret_age):
     return (1 - rho ** ret_age) / (ret_age * (1 - rho))
 
 
-def _sidecar_path(raw, key):
-    """Absolute path of transition.<key>, or None when unset or missing."""
-    rel = raw.get('transition', {}).get(key)
+def _sidecar_path(raw, key, section='transition'):
+    """Absolute path of <section>.<key>, or None when unset or missing."""
+    rel = raw.get(section, {}).get(key)
     if not rel:
         return None
     path = rel if os.path.isabs(rel) else \
         os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
     if not os.path.exists(path):
-        print(f"  [load_config] {key} not found: {path}")
+        print(f"  [load_config] {section}.{key} not found: {path}")
         return None
     return path
+
+
+def year_series(raw, key, section, value_key, years, default=None):
+    """The series `value_key` of the npz named by <section>.<key>, by
+    calendar year, at `years` (linear between the file's years, flat outside).
+    None when the file is not configured; `default` broadcast when given."""
+    path = _sidecar_path(raw, key, section)
+    if path is None:
+        return None if default is None else np.full(len(np.atleast_1d(years)), float(default))
+    d = np.load(path)
+    return np.interp(np.asarray(years, dtype=float), d['years'].astype(float), d[value_key])
+
+
+def r_B_path_by_year(raw, years):
+    """Real sovereign rate by calendar year from prices.r_B_file, or None."""
+    return year_series(raw, 'r_B_file', 'prices', 'r_B', years)
+
+
+def unemployment_index_path(raw, years):
+    """Index of the unemployment rate by calendar year (one up to the base
+    year) from transition.unemployment_index_file, or None."""
+    return year_series(raw, 'unemployment_index_file', 'transition', 'index', years)
+
+
+def base_year_cohort_unemployment_index(raw, T):
+    """(T, T) index, row j for the cohort aged 25+j in the base year: its age
+    a falls in year base + a - j. None without an index file."""
+    base = int(raw.get('transition', {}).get('current_year', 2023))
+    rows = [unemployment_index_path(raw, base + np.arange(T) - j) for j in range(T)]
+    return None if rows[0] is None else np.stack(rows)
 
 
 def pension_index_path(raw, years):
@@ -1769,6 +1837,17 @@ def build_olg_transition(config_data, backend='numpy'):
         else:
             print(f"  [build_olg_transition] survival_data_file not found: {surv_path}")
 
+    # Calendar-year inputs over the cohorts' horizon (T_tr periods plus the
+    # T ages of the last entering cohort), by transition period.
+    fiscal = config_data.get('fiscal', {})
+    base_year = int(trans.get('current_year', 2020))
+    years_long = base_year + np.arange(T_tr + lifecycle_config.T)
+    r_B_path = r_B_path_by_year(config_data, years_long)
+    edu_index = year_series(config_data, 'education_file', 'fiscal', 'index', years_long)
+    ft_path = year_series(config_data, 'foreign_transfer_file', 'fiscal', 'transfer_over_Y',
+                          years_long)
+    u_index = unemployment_index_path(config_data, years_long)
+
     # Build OLGTransition
     economy = OLGTransition(
         lifecycle_config=lifecycle_config,
@@ -1781,6 +1860,12 @@ def build_olg_transition(config_data, backend='numpy'):
         economy_type='soe',
         r_star=r,
         r_B=config_data['prices'].get('r_B'),
+        r_B_path=r_B_path,
+        tau_y=float(fiscal.get('tau_y', 0.0) or 0.0),
+        education_over_Y0=float(fiscal.get('education_over_Y0', 0.0) or 0.0),
+        education_index_path=edu_index,
+        foreign_transfer_over_Y=ft_path,
+        unemployment_index_path=u_index,
         pop_growth=ext.get('pop_growth', 0.0),
         birth_year=trans.get('birth_year', 1960),
         current_year=trans.get('current_year', 2020),
@@ -1825,12 +1910,20 @@ def build_olg_transition(config_data, backend='numpy'):
         paths['pension_replacement_path'] = paths['pension_replacement_path'] * pen_index
 
     # G and I_g paths (constant at data ratios × steady-state Y, will be rescaled after first sim)
-    fiscal = config_data.get('fiscal', {})
     paths['G_over_Y'] = fiscal.get('G_over_Y', 0.13)
     paths['I_g_over_Y'] = fiscal.get('I_g_over_Y', 0.03)
     paths['defense_over_Y'] = fiscal.get('defense_over_Y', 0.0)
     paths['other_net_spending_over_Y'] = fiscal.get('other_net_spending_over_Y', 0.0)
     paths['B_over_Y'] = fiscal.get('B_over_Y', 0.0)
+    # The lines of 2026-10-07, by transition period where they are paths
+    paths['tau_y'] = float(fiscal.get('tau_y', 0.0) or 0.0)
+    paths['tau_y_ramp_years'] = int(fiscal.get('tau_y_ramp_years', 10))
+    paths['r_B_path'] = None if r_B_path is None else r_B_path[:T_tr]
+    paths['education_over_Y0'] = float(fiscal.get('education_over_Y0', 0.0) or 0.0)
+    paths['education_index_path'] = None if edu_index is None else edu_index[:T_tr]
+    paths['foreign_transfer_over_Y'] = None if ft_path is None else ft_path[:T_tr]
+    paths['lump_sum_over_Y'] = float(fiscal.get('lump_sum_over_Y', 0.0) or 0.0)
+    paths['unemployment_index_path'] = None if u_index is None else u_index[:T_tr]
 
     return economy, paths, T_tr
 
@@ -1918,9 +2011,14 @@ def compute_fiscal_ratios(panels, spec, config_data):
     # --- Fiscal ratios ---
     fiscal_data = config_data.get('fiscal', {})
     B_over_Y = fiscal_data.get('B_over_Y', 0.0)
-    # Sovereign debt service uses r_B (separate from the firm FOC return r).
-    # Default to r if r_B not specified — preserves prior behavior.
-    r_B = config_data.get('prices', {}).get('r_B', r)
+    # Sovereign debt service uses r_B (separate from the firm FOC return r):
+    # the configured rate path's base-year value when there is one, else the
+    # scalar, else r. Interest cancels out of the primary balance, so this
+    # only affects the reported interest and total-balance lines.
+    _base_year = int(config_data.get('transition', {}).get('current_year', 2023))
+    _rb_path = r_B_path_by_year(config_data, [_base_year])
+    r_B = (float(_rb_path[0]) if _rb_path is not None
+           else config_data.get('prices', {}).get('r_B', r))
 
     tax_revenue = agg['tax_c'] + agg['tax_l'] + agg['tax_p'] + agg['tax_k']
     # Bequest tax: the same line the transition's budget books
@@ -1957,25 +2055,38 @@ def compute_fiscal_ratios(panels, spec, config_data):
         'total_balance_over_Y': (tax_revenue + bequest_tax - expenditure) / Y,
     }
 
-    # --- Full primary balance & baseline closure, pinned at the initial SS ---
+    # --- Full primary balance and the base-year pin of the output tax ---
     # primary_balance_over_Y above is the household-side balance
     # (tax_revenue + bequest_tax - pension - ui - gov_health - transfers)/Y,
-    # interest cancelled out.
-    # The transition's primary balance also nets out the discretionary spending
-    # lines (G, I_g, defense) and the other-net closure residual, and excludes
-    # interest — so add those here for a like-for-like full SS primary balance.
+    # interest cancelled out. The transition's primary balance also carries
+    # the purchases (G, I_g, defence, education), the lump-sum transfer, the
+    # output tax and the transfer from abroad, so they are added here for a
+    # like-for-like full base-year primary balance.
     G_over_Y       = fiscal_data.get('G_over_Y', 0.0)
     I_g_over_Y     = fiscal_data.get('I_g_over_Y', 0.0)
     defense_over_Y = fiscal_data.get('defense_over_Y', 0.0)
-    other_over_Y   = fiscal_data.get('other_net_spending_over_Y', 0.0)
-    discretionary  = G_over_Y + I_g_over_Y + defense_over_Y
+    other_over_Y   = fiscal_data.get('other_net_spending_over_Y', 0.0) or 0.0
+    education_over_Y = float(fiscal_data.get('education_over_Y0', 0.0) or 0.0)
+    lump_over_Y    = float(fiscal_data.get('lump_sum_over_Y', 0.0) or 0.0) / Y
+    tau_y          = float(fiscal_data.get('tau_y', 0.0) or 0.0)
+    base_year      = int(config_data.get('transition', {}).get('current_year', 2023))
+    ft = year_series(config_data, 'foreign_transfer_file', 'fiscal', 'transfer_over_Y',
+                     [base_year])
+    ft_over_Y      = 0.0 if ft is None else float(ft[0])
+    discretionary  = G_over_Y + I_g_over_Y + defense_over_Y + education_over_Y + lump_over_Y
     pb_house       = ratios['primary_balance_over_Y']
-    ratios['primary_balance_full_over_Y'] = pb_house - discretionary - other_over_Y
-    # Closure that pins the FULL SS primary surplus (other=0) to the data target.
-    # other_net_spending is a structural SS constant; the transition takes it as
-    # given, so its t=0 primary balance need not equal the target exactly.
+    ratios['tax_y_over_Y'] = tau_y
+    ratios['foreign_transfer_over_Y'] = ft_over_Y
+    ratios['education_over_Y'] = education_over_Y
+    ratios['lump_sum_over_Y'] = lump_over_Y
+    ratios['primary_balance_full_over_Y'] = (pb_house + tau_y + ft_over_Y
+                                             - discretionary - other_over_Y)
     target = fiscal_data.get('primary_balance_target_over_Y', 0.0195)
-    ratios['closure_other_over_Y'] = pb_house - discretionary - target
+    # The output tax rate that gives the target at these household outcomes
+    # (the pin; the household block itself depends on tau_y through the wage,
+    # so normalize_A_tfp.py iterates on it) and the legacy closure in O.
+    ratios['closure_tau_y'] = tau_y + (target - ratios['primary_balance_full_over_Y'])
+    ratios['closure_other_over_Y'] = pb_house + tau_y + ft_over_Y - discretionary - target
 
     # Compare to data if available
     comparisons = {}

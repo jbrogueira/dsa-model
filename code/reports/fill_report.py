@@ -77,6 +77,19 @@ def _retirement_row(cfg, mod):
             mod.get('retirement_age'), '')
 
 
+def _ft_base_year(cfg):
+    """The transfer from abroad in the base year from fiscal.foreign_transfer_file."""
+    rel = cfg.get('fiscal', {}).get('foreign_transfer_file')
+    if not rel:
+        return None
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', rel)
+    if not os.path.exists(path):
+        return None
+    d = np.load(path)
+    base = int(cfg.get('transition', {}).get('current_year', 2023))
+    return float(np.interp(base, d['years'].astype(float), d['transfer_over_Y']))
+
+
 def params_table(cfg, n0=None, n_inf=None):
     """n0 is the realised population growth of the base year from the
     demographic path and n_inf the terminal rate; the configuration's
@@ -102,8 +115,8 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$\\delta_g$', 'public capital depreciation', prod.get('delta_g'),
          '$I_g/K_g-(\\Gamma-1)$'),
         ('$r$', 'world return on capital', pri.get('r'), ''),
-        ('$r_B$', 'real sovereign rate', pri.get('r_B'),
-         'mean real effective rate, debt projection 2026--60'),
+        ('$r_B$', 'real sovereign rate from 2070', pri.get('r_B'),
+         'data to 2025, debt projection 2026--60, linear to 2\\% by 2070'),
         ('$\\tau_c$', 'consumption tax rate', ext.get('tau_c'), 'effective rate'),
         ('$\\tau_l$', 'labour income tax rate', ext.get('tau_l'), 'effective rate'),
         ('$\\tau_k$', 'capital income tax rate', ext.get('tau_k'), 'effective rate'),
@@ -140,11 +153,24 @@ def params_table(cfg, n0=None, n_inf=None):
     for p in cfg.get('calibration', {}).get('params', []):
         sym, desc, ident = SMM_LABELS.get(p['name'], (p['name'], p.get('path', ''), ''))
         rows_cal.append((sym, desc, th.get(p['name']), ident))
+    fis = cfg.get('fiscal', {})
+    rows_ext += [
+        ('$G/Y$', 'government consumption', fis.get('G_over_Y'),
+         'own wage bill and intermediate consumption, 2023'),
+        ('$D/Y$', 'defence', fis.get('defense_over_Y'), 'ESA purchases, COFOG 02'),
+        ('$I_g/Y$', 'public investment', fis.get('I_g_over_Y'), 'gross fixed capital formation'),
+        ('$e_0$', 'education, 2023', fis.get('education_over_Y0'),
+         'ESA purchases, COFOG 09; follows the school-age population and the wage'),
+        ('$\\lambda$', 'lump-sum transfer per adult, over output', fis.get('lump_sum_over_Y'),
+         'cash and in-kind benefits outside pensions, unemployment and health, 2023'),
+        ('$FT/Y$', 'net transfer from the EU budget, 2023', _ft_base_year(cfg),
+         'general government accounts; 1.0\\% of output from 2027'),
+    ]
     rows_pin = [
         ('$A$', 'total factor productivity', prod.get('A_tfp'),
          'normalisation, $\\hat y=1$'),
-        ('$O/Y$', 'other net spending', cfg['fiscal'].get('other_net_spending_over_Y'),
-         'primary balance in the data'),
+        ('$\\tau_y$', 'tax on gross output, to 2060', fis.get('tau_y'),
+         'primary balance in the data, 2023'),
     ]
     out = ['\\multicolumn{4}{l}{\\itshape Externally set}\\\\']
     for sym, desc, val, src in rows_ext:
@@ -169,9 +195,9 @@ LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
          'B_over_Y': '$B/Y$', 'health_oop_over_Y': 'Out-of-pocket health$/Y$'}
 # Fiscal ratios the model does not target but the data measure. I_g/Y and the
 # household primary balance are out: the first is a policy input, the second
-# has no data counterpart (it excludes G, I_g, defence and the residual O/Y).
-# Interest/Y is out too: the "data" value 0.0312 is r_B x B/Y with both taken
-# from the config (0.019 x 1.64), so the model reproduces it by construction.
+# has no data counterpart (it excludes the purchases and the output tax).
+# Interest/Y is out too: the data value is nominal interest over GDP, the
+# model's line a real rate times the debt ratio; they are not comparable.
 UNTARGETED = ['ui_over_Y']
 # Distributional checks, as (model moment, data key in the config's
 # `untargeted` block). The model side is the disposable measure, since the
@@ -294,24 +320,27 @@ def growth_table(paths, t_stable=None):
     return '\n'.join(out)
 
 
-def projection_table(closure, dsa, paths, budget):
-    """The baseline against the Commission's debt projection, % of output."""
-    years = closure['years']
+def projection_table(debt, paths, budget):
+    """The baseline against the Commission's debt projection, % of output:
+    debt (projection, model), the primary balance (projection, model), the
+    output-tax rate and the model's revenue, pensions, health and education."""
+    years = debt['years']
     Y = np.asarray(paths['Y'], float)
-    proj = {int(y): i for i, y in enumerate(dsa['years'])}
+    tau = debt.get('tau_y_path')
     out = []
     for y in (2025, 2030, 2040, 2050, 2060, 2070, 2100):
         if y > years[-1]:
             continue
         t = int(y - years[0])
-        i = proj.get(y)
-        d_proj = None if i is None else 100 * float(dsa['debt'][i])
-        cells = [fmt(d_proj, 1), fmt(100 * closure['debt'][t], 1),
-                 fmt(100 * closure['primary_balance'][t], 1),
-                 fmt(100 * closure['other_net_over_Y'][t], 1),
+        dp, pp = debt['debt_projection'][t], debt['primary_balance_projection'][t]
+        cells = [fmt(None if np.isnan(dp) else 100 * dp, 1), fmt(100 * debt['debt'][t], 1),
+                 fmt(None if np.isnan(pp) else 100 * pp, 1),
+                 fmt(100 * debt['primary_balance'][t], 1),
+                 fmt(None if tau is None else 100 * float(tau[t]), 1),
                  fmt(100 * float(budget['total_revenue'][t]) / Y[t], 1),
                  fmt(100 * float(budget['pension'][t]) / Y[t], 1),
-                 fmt(100 * float(budget['gov_health'][t]) / Y[t], 1)]
+                 fmt(100 * float(budget['gov_health'][t]) / Y[t], 1),
+                 fmt(100 * float(budget['education'][t]) / Y[t], 1)]
         out.append(f'{y} & ' + ' & '.join(cells) + ' \\\\')
     return '\n'.join(out)
 
@@ -378,10 +407,14 @@ def implied_stats(panels, spec, cfg):
 # tax base, not from the simulation: with L in efficiency units the wage bill
 # is (1-alpha) Y, so the base is 1-alpha and the rate is tau_p itself; only the
 # replacement row is a simulated statistic.
+# Actual social contributions (D.611 + D.613, 11.2% of GDP in 2023; the
+# imputed contributions of civil servants are netted out of the purchase
+# lines), compensation of employees plus mixed income as the base, and the
+# rate on it; the pension at retirement over the last wage from the fiche.
 DATA_COUNTERPART = [
-    ('ssc_rev',     'Social contributions / output',              0.130),
+    ('ssc_rev',     'Social contributions / output',              0.112),
     ('ssc_base',    'Contribution base / output (model: $1-\\alpha$)', 0.570),
-    ('ssc_rate',    'Contribution rate on that base (model: $\\tau^p$)', 0.228),
+    ('ssc_rate',    'Contribution rate on that base (model: $\\tau^p$)', 0.196),
     ('replacement', 'Pension at retirement / last wage',          0.762750),
 ]
 
@@ -403,7 +436,7 @@ def goods_market_residual(paths, cfg, economy, T_tr, budget=None):
     medical spending, the flows the code books satisfy
 
       Gamma_t NFA_p[t+1] - NFA_p[t]
-        = Y + r NFA_p - C - I_priv - G - I_g - D - O - M + PD,
+        = Y + r NFA_p + FT - C - I_priv - G - I_g - D - O - E - M + PD,
 
     where I_priv = Gamma_t K_dom[t+1] - (1-delta) K_dom[t] and PD is the
     primary deficit, which nobody finances in a baseline without a debt
@@ -411,7 +444,9 @@ def goods_market_residual(paths, cfg, economy, T_tr, budget=None):
     households and the government, leaving the government's purchases and the
     unfinanced deficit. The residual returned is
 
-      C - (Y + r NFA_p - I_priv - G - I_g - D - O - M - dNFA_p + PD),
+      C - (Y + r NFA_p + FT - I_priv - G - I_g - D - O - E - M - dNFA_p + PD),
+
+    with FT the transfer from abroad and E education (since 2026-10-07),
 
     every government line read from the budget the run produced, so that a
     spending share not passed to the simulation does not enter through the
@@ -444,10 +479,12 @@ def goods_market_residual(paths, cfg, economy, T_tr, budget=None):
     r = np.asarray(paths.get('r', np.full(len(Y), float(getattr(economy, 'r_star', 0.04) or 0.04))), float)
     nfi = r[:n] * NFA[:n]
     gov_purchases = (line('govt_spending') + line('public_investment')
-                     + line('defense_spending') + line('other_net_spending'))
+                     + line('defense_spending') + line('other_net_spending')
+                     + line('education'))
+    FT = line('foreign_transfer')
     M = line('gov_health') / kappa            # public + out-of-pocket medical spending
     PD = line('primary_deficit')
-    resid = C[:n] - (Y[:n] + nfi - I_priv - gov_purchases - M - dNFA + PD)
+    resid = C[:n] - (Y[:n] + nfi + FT - I_priv - gov_purchases - M - dNFA + PD)
     return {'resource': resid / Y[:n]}
 
 
@@ -625,7 +662,7 @@ def main():
     gammaT_minus_1 = float(G_path[-1] - 1.0)         # Gamma_T - 1, the balanced growth path
 
     paths = None
-    closure = dsa = budget = None
+    debt = budget = None
     if args.run_baseline:
         prod = L['config_data']['production']
         I_g = ((prod.get('delta_g', 0.05) + economy.growth_factors(T_TR) - 1.0)
@@ -635,18 +672,49 @@ def main():
         print(f'baseline transition: T={T_TR}, n_sim={args.n_sim}, backend={args.backend}')
         fisc = L['config_data'].get('fiscal', {})
         # The spending shares go into the simulation so that the budget it
-        # produces carries G, defence and the balancing item; the resource
-        # constraint below is read off that budget, not off the configuration.
-        res = economy.simulate_transition(r_path=tp['r_path'], I_g_path=I_g,
-                                          n_sim=args.n_sim, verbose=False,
-                                          G_over_Y=fisc.get('G_over_Y', 0.0),
-                                          defense_over_Y=fisc.get('defense_over_Y', 0.0),
-                                          other_net_over_Y=fisc.get('other_net_spending_over_Y', 0.0),
-                                          **tax)
+        # produces carries G, defence, education and the lump sum; the
+        # resource constraint below is read off that budget, not off the
+        # configuration. The lump-sum level path and the output tax's
+        # terminal ramp are the baseline's fixed point (baseline_closure.py).
+        from baseline_closure import solve_baseline, debt_from_run
+        economy.household_cache_size = max(economy.household_cache_size, 4)
+        G_growth = economy.growth_factors(T_TR)
+        r_B_full = (np.asarray(tp['r_B_path'], float) if tp.get('r_B_path') is not None
+                    else np.full(T_TR, float(L['config_data']['prices']['r_B'])))
+        last = {}
+
+        def _run(lump, tau):
+            res = economy.simulate_transition(r_path=tp['r_path'], I_g_path=I_g,
+                                              n_sim=args.n_sim, verbose=False,
+                                              G_over_Y=fisc.get('G_over_Y', 0.0),
+                                              defense_over_Y=fisc.get('defense_over_Y', 0.0),
+                                              tau_y_path=tau, lump_sum_path=lump,
+                                              education_over_Y0=tp.get('education_over_Y0', 0.0),
+                                              education_index_path=tp.get('education_index_path'),
+                                              foreign_transfer_over_Y=tp.get('foreign_transfer_over_Y'),
+                                              unemployment_index_path=tp.get('unemployment_index_path'),
+                                              r_B_path=r_B_full,
+                                              **tax)
+            bud = economy.compute_government_budget_path(n_sim=args.n_sim, verbose=False)
+            last['res'], last['bud'] = res, bud
+            return np.asarray(res['Y']), bud
+
+        y_init = None
+        prev = os.path.join(outdir, 'baseline_paths.npz')
+        if os.path.exists(prev):
+            _p = np.load(prev)
+            if len(_p['Y']) >= T_TR:
+                y_init = np.asarray(_p['Y'], float)[:T_TR]
+        fx = solve_baseline(_run, L['config_data'], T_TR, int(economy.current_year),
+                            float(fisc.get('lump_sum_over_Y', 0.0) or 0.0),
+                            float(fisc.get('tau_y', 0.0) or 0.0), r_B_full, G_growth,
+                            Y_init=y_init, ramp_years=int(fisc.get('tau_y_ramp_years', 10)),
+                            tol_Y=1e-4, tol_pb=1e-4, verbose=True,
+                            match_projection=(fisc.get('tau_y_mode', 'constant') == 'projection'))
+        res, bud = last['res'], last['bud']
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
-        budget = economy.compute_government_budget_path(n_sim=args.n_sim, verbose=False)
-        budget = {k: np.asarray(v) for k, v in budget.items()
+        budget = {k: np.asarray(v) for k, v in bud.items()
                   if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}
         # Keep the paths, not just the picture of them. Questions about the
         # baseline -- why a ratio moves, where output turns -- otherwise cost a
@@ -654,27 +722,27 @@ def main():
         np.savez(os.path.join(outdir, 'baseline_paths.npz'),
                  **{k: v for k, v in paths.items()},
                  **{('budget_' + k): v for k, v in budget.items()},
-                 growth_factor=economy.growth_factors(T_TR),
+                 growth_factor=G_growth,
                  delta=float(L['config_data']['production'].get('delta', 0.07)),
-                 base_year=int(economy.current_year))
+                 base_year=int(economy.current_year),
+                 tau_y_path=np.asarray(fx['tau_y_path'], float),
+                 lump_sum_path=np.asarray(fx['lump_sum_path'], float),
+                 r_B_path=r_B_full[:T_TR])
         print('  wrote baseline_paths.npz')
 
-        # Other net spending, the primary balance and debt under the closure
-        # of baseline_closure.py, when a debt projection is configured.
-        from baseline_closure import closure_from_run, load_dsa_projection
-        dsa = load_dsa_projection(L['config_data'])
-        saved = dict(paths, growth_factor=economy.growth_factors(T_TR),
-                     base_year=int(economy.current_year),
+        # Debt from the model's own primary balance (baseline_closure.py).
+        saved = dict(paths, growth_factor=G_growth, base_year=int(economy.current_year),
+                     tau_y_path=fx['tau_y_path'], r_B_path=r_B_full[:T_TR],
                      **{('budget_' + k): v for k, v in budget.items()})
-        closure = closure_from_run(saved, L['config_data'], dsa=dsa)
-        if closure is not None:
-            np.savez(os.path.join(outdir, 'baseline_closure.npz'), **closure)
-            print('  wrote baseline_closure.npz')
-            t60 = int(dsa['years'][-1] - closure['years'][0])
-            print(f"  closure: debt {100 * closure['debt'][t60]:.1f}% of output in "
-                  f"{int(dsa['years'][-1])} (projection {100 * float(dsa['debt'][-1]):.1f}%), "
-                  f"O/Y from {100 * closure['other_net_over_Y'][0]:.1f}% to "
-                  f"{100 * closure['other_net_over_Y'][t60]:.1f}%")
+        debt = debt_from_run(saved, L['config_data'])
+        np.savez(os.path.join(outdir, 'baseline_closure.npz'),
+                 **{k: v for k, v in debt.items() if v is not None})
+        print('  wrote baseline_closure.npz')
+        t70 = debt['terminal_year'] - int(economy.current_year)
+        print(f"  debt {100 * debt['debt'][2]:.1f}% of output in 2025, "
+              f"{100 * debt['debt'][t70]:.1f}% in {debt['terminal_year']}; tau_y "
+              f"{fx['tau_y_path'][0]:.4f} to 2060, {fx['tau_terminal']:.4f} from "
+              f"{debt['terminal_year']}")
 
         # The resource constraint is the one identity that does not cancel a
         # normalisation error: every other check in the repo compares two
@@ -741,13 +809,13 @@ def main():
             ' & {Growth, \\% per year}',
             growth_table(paths, t_stable=t_stable)),
     }
-    if closure is not None:
+    if debt is not None:
         frag['projection_body.tex'] = wrap(
             'l' + 'S[table-format=3.1]' * 2 + 'S[table-format=+2.1]' * 2
-            + 'S[table-format=2.1]' * 3,
-            ' & {Debt, projection} & {Debt} & {Primary balance} & {$O/Y$} & {Revenue}'
-            ' & {Pensions} & {Public health}',
-            projection_table(closure, dsa, paths, budget))
+            + 'S[table-format=2.1]' * 5,
+            ' & {Debt, proj.} & {Debt} & {Balance, proj.} & {Balance} & {$\\tau_y$}'
+            ' & {Revenue} & {Pensions} & {Health} & {Education}',
+            projection_table(debt, paths, budget))
     # Without a baseline transition there is nothing to put in the growth
     # table's trend column or in the transition panels. Writing them anyway
     # destroys the output of a run that did have one, so skip them instead.

@@ -18,6 +18,7 @@ if platform.system() == 'Darwin' and platform.machine() == 'arm64':
 import jax
 import jax.numpy as jnp
 import jax.lax as lax
+import inspect
 import numpy as np
 from functools import partial
 from scipy.linalg import eig
@@ -185,6 +186,7 @@ def compute_budget_jax(
     mean_kappa_working=1.0,
     mean_y_employed=1.0,
     alpha_mult=1.0,
+    lump_sum_t=0.0,
 ):
     """
     Vectorised budget for ALL (n_a, n_y, n_h, n_y_last) states.
@@ -253,7 +255,8 @@ def compute_budget_jax(
     budget = a + after_tax_capital + after_tax_labor - oop_health     # (n_a, n_y, n_h, n_y)
 
     # After-tax bequest lump-sum transfer at age 0 (scalar, non-zero only when caller sets it)
-    budget = budget + bequest_lumpsum
+    # and the lump-sum transfer per adult of the period (untaxed, every age)
+    budget = budget + bequest_lumpsum + lump_sum_t
 
     # Feature #4: schooling child costs
     net_child_cost = (1.0 - education_subsidy_rate) * child_cost_t
@@ -288,7 +291,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
     period_params : dict-like tuple
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t, pension_replacement_t,
          P_h_t, P_y_t, is_retired, survival_t, child_cost_t, in_schooling_t,
-         bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret)
+         bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret, lump_sum_t)
     model_params : dict-like tuple
         (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
          ui_replacement_rate, kappa, beta, gamma,
@@ -310,7 +313,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
     (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
      pension_replacement_t, P_h_t, P_y_t, is_retired,
      survival_t, child_cost_t, in_schooling_t,
-     bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret) = period_params
+     bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret, lump_sum_t) = period_params
 
     (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
      ui_replacement_rate, kappa, beta, gamma,
@@ -347,6 +350,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
         mean_kappa_working=mean_kappa_working,
         mean_y_employed=mean_y_employed,
         alpha_mult=alpha_mult,
+        lump_sum_t=lump_sum_t,
     )
 
     # 2. Consumption candidates: (n_a, n_y, n_h, n_y, n_a_next).
@@ -477,6 +481,7 @@ def _solve_terminal_period_jax(
     mean_kappa_working=1.0,
     mean_y_employed=1.0,
     alpha_mult=1.0,
+    lump_sum_T=0.0,
 ):
     """Solve terminal period: consume everything, a'=0."""
     budget = compute_budget_jax(
@@ -501,6 +506,7 @@ def _solve_terminal_period_jax(
         mean_kappa_working=mean_kappa_working,
         mean_y_employed=mean_y_employed,
         alpha_mult=alpha_mult,
+        lump_sum_t=lump_sum_T,
     )
     c = jnp.maximum(budget / (1.0 + tau_c_T), 1e-10)
 
@@ -559,6 +565,7 @@ def solve_lifecycle_jax(
     mean_kappa_working=1.0,
     mean_y_employed=1.0,
     alpha_mult=1.0,
+    lump_sum_path=None,
 ):
     """
     Full backward induction using jax.lax.scan.
@@ -589,6 +596,10 @@ def solve_lifecycle_jax(
         child_costs = jnp.zeros(T)
     else:
         child_costs = child_cost_profile
+
+    # Lump-sum transfer per adult by age (zero when absent)
+    if lump_sum_path is None:
+        lump_sum_path = jnp.zeros(T)
 
     # P_y for age-health case: (T, n_h, n_y, n_y). Else P_y is (n_y, n_y).
     if P_y_age_health:
@@ -638,6 +649,7 @@ def solve_lifecycle_jax(
         mean_kappa_working=mean_kappa_working,
         mean_y_employed=mean_y_employed,
         alpha_mult=alpha_mult,
+        lump_sum_T=lump_sum_path[T - 1],
     )
 
     # Stack period params for t = T-2 ... 0 (reversed)
@@ -666,6 +678,7 @@ def solve_lifecycle_jax(
         # kappa at the last working age: constant over the lifecycle, stacked so
         # the scan carries it alongside the per-period values.
         jnp.full(ts.shape, wage_age_profile[retirement_age - 1]),
+        lump_sum_path[ts],
     )
 
     # The hours table depends on (nu, phi) only: built once, used at every age.
@@ -675,7 +688,7 @@ def solve_lifecycle_jax(
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t,
-         bequest_t, kappa_wage_t, kappa_wage_ret) = period_params_slice
+         bequest_t, kappa_wage_t, kappa_wage_ret, lump_sum_t) = period_params_slice
 
         model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:]
 
@@ -684,7 +697,7 @@ def solve_lifecycle_jax(
             (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
              pension_replacement_t, P_h_t, P_y_t, is_retired,
              survival_t, child_cost_t, in_schooling_t, bequest_t, kappa_wage_t,
-             kappa_wage_ret),
+             kappa_wage_ret, lump_sum_t),
             model_params_t,
             alpha_mult=alpha_mult,
             hours_table=hours_table,
@@ -740,11 +753,32 @@ _SOLVE_IN_AXES = (
         None,                    # wage_age_profile (shared)
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
         None,                    # alpha_mult (shared across cohorts within one solve sweep)
+        0,                       # lump_sum_path (per-cohort)
 )
+_SOLVE_STATIC = ('T', 'retirement_age', 'tax_progressive', 'schooling_years', 'labor_supply')
 _solve_lifecycle_jax_batched = jax.jit(
     jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES),
-    static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
-                     'labor_supply'),
+    static_argnames=_SOLVE_STATIC,
+)
+
+
+def _axes_override(fn, base_axes, **over):
+    """in_axes tuple `base_axes` of `fn` with the axes of the named
+    parameters replaced (0 = one row per cohort, None = shared)."""
+    names = list(inspect.signature(fn).parameters)
+    axes = list(base_axes)
+    for k, v in over.items():
+        axes[names.index(k)] = v
+    return tuple(axes)
+
+
+# Per-cohort income transition matrices (an unemployment rate that moves by
+# calendar year gives each cohort its own P_y by age): the age-dependent
+# matrix is batched over cohorts instead of shared.
+_SOLVE_IN_AXES_PYC = _axes_override(solve_lifecycle_jax, _SOLVE_IN_AXES, P_y_by_age_health=0)
+_solve_lifecycle_jax_batched_pyc = jax.jit(
+    jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES_PYC),
+    static_argnames=_SOLVE_STATIC,
 )
 
 
@@ -764,7 +798,7 @@ def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
                         wage_age_profile,
                         pension_avg_weight, mean_kappa_working, mean_y_employed,
                         alpha_idx, alpha_mult,
-                        transfer_floor, bequest_lumpsum):
+                        transfer_floor, bequest_lumpsum, lump_sum_path):
     """Period outcomes of a living household in state (i_a, i_y, i_h, i_y_last)
     with fixed effect alpha_idx at lifecycle_age.
 
@@ -856,7 +890,8 @@ def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
     after_tax_labor_l1 = jnp.where(is_retired, pension - tax_l,
                                    gross_l1 - payroll_l1 - inc_tax_l1)
     budget_pre = (a_val + gross_capital - tax_k + after_tax_labor_l1 - oop_m
-                  + jnp.where(lifecycle_age == current_age, bequest_lumpsum, 0.0))
+                  + jnp.where(lifecycle_age == current_age, bequest_lumpsum, 0.0)
+                  + lump_sum_path[lifecycle_age])
     transfer = jnp.where(transfer_floor > 0.0,
                          jnp.maximum(0.0, transfer_floor - budget_pre), 0.0)
 
@@ -895,7 +930,8 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     alpha_mult=1.0,
                     trend_growth=0.0,
                     transfer_floor=0.0,
-                    bequest_lumpsum=0.0):
+                    bequest_lumpsum=0.0,
+                    lump_sum_path=None):
     """
     Single time-step for one agent.
 
@@ -926,7 +962,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
         wage_age_profile,
         pension_avg_weight, mean_kappa_working, mean_y_employed,
         alpha_idx, alpha_mult,
-        transfer_floor, bequest_lumpsum,
+        transfer_floor, bequest_lumpsum, lump_sum_path,
     )
     a_pol_val, c_pol_val, l_pol_val = s['a_pol_val'], s['c_pol_val'], s['l_pol_val']
     a_val, y_val, h_val = s['a_val'], s['y_val'], s['h_val']
@@ -1040,6 +1076,7 @@ def simulate_lifecycle_jax(
     trend_growth=0.0,
     transfer_floor=0.0,
     bequest_lumpsum=0.0,
+    lump_sum_path=None,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
@@ -1066,6 +1103,8 @@ def simulate_lifecycle_jax(
     # Default wage_age_profile to ones
     if wage_age_profile is None:
         wage_age_profile = jnp.ones(T)
+    if lump_sum_path is None:
+        lump_sum_path = jnp.zeros(T)
 
     # Dummy P_y_4d if not provided (for JAX tracing)
     if P_y_4d is None:
@@ -1121,6 +1160,7 @@ def simulate_lifecycle_jax(
             trend_growth=trend_growth,
             transfer_floor=transfer_floor,
             bequest_lumpsum=bequest_lumpsum,
+            lump_sum_path=lump_sum_path,
         )
         xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
@@ -1177,11 +1217,18 @@ _SIMULATE_IN_AXES = (
         None,                    # trend_growth (shared scalar; must be passed positionally)
         None,                    # transfer_floor (shared scalar)
         0,                       # bequest_lumpsum (per-cohort scalar)
+        0,                       # lump_sum_path (per-cohort)
 )
+_SIMULATE_STATIC = ('retirement_age', 'T', 'current_age', 'n_sim', 'tax_progressive',
+                    'P_y_age_health')
 _simulate_lifecycle_jax_batched = jax.jit(
     jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES),
-    static_argnames=('retirement_age', 'T', 'current_age', 'n_sim',
-                     'tax_progressive', 'P_y_age_health'),
+    static_argnames=_SIMULATE_STATIC,
+)
+_SIMULATE_IN_AXES_PYC = _axes_override(simulate_lifecycle_jax, _SIMULATE_IN_AXES, P_y_4d=0)
+_simulate_lifecycle_jax_batched_pyc = jax.jit(
+    jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES_PYC),
+    static_argnames=_SIMULATE_STATIC,
 )
 
 
@@ -1213,6 +1260,7 @@ def exact_age_means_jax(
     trend_growth=0.0,
     transfer_floor=0.0,
     bequest_lumpsum=0.0,
+    lump_sum_path=None,
     return_dist=False,
     panel_rows=None,
 ):
@@ -1253,6 +1301,8 @@ def exact_age_means_jax(
         wage_age_profile = jnp.ones(T)
     if P_y_4d is None:
         P_y_4d = jnp.zeros((T, n_h, n_y, n_y))
+    if lump_sum_path is None:
+        lump_sum_path = jnp.zeros(T)
     survival = jnp.ones((T, n_h)) if survival_probs is None else jnp.asarray(survival_probs)
 
     # State indices on the grid, each of shape (n_alpha, n_a, n_y, n_h, n_y)
@@ -1276,7 +1326,7 @@ def exact_age_means_jax(
                 wage_age_profile,
                 pension_avg_weight, mean_kappa_working, mean_y_employed,
                 alpha_idx, mult,
-                transfer_floor, bequest_lumpsum,
+                transfer_floor, bequest_lumpsum, lump_sum_path,
             )
         flat = jax.vmap(one_state)(A.ravel(), Y.ravel(), H.ravel(), YL.ravel(),
                                    K.ravel(), alpha_mult.ravel())
@@ -1373,10 +1423,19 @@ _EXACT_IN_AXES = (
         None,                    # trend_growth
         None,                    # transfer_floor
         0,                       # bequest_lumpsum (per-cohort scalar)
+        0,                       # lump_sum_path (per-cohort)
         None,                    # return_dist
 )
 _exact_age_means_jax_batched = jax.jit(
     jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES),
+    static_argnames=_EXACT_STATIC,
+)
+# Per-cohort income matrices and initial distributions (the entry-year
+# unemployment rate differs across cohorts).
+_EXACT_IN_AXES_PYC = _axes_override(exact_age_means_jax, _EXACT_IN_AXES,
+                                    P_y_4d=0, initial_dist=0)
+_exact_age_means_jax_batched_pyc = jax.jit(
+    jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES_PYC),
     static_argnames=_EXACT_STATIC,
 )
 
@@ -1412,7 +1471,8 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
                          wage_age_profile, pension_avg_weight,
                          mean_kappa_working, mean_y_employed, bequest_lumpsum,
                          T, retirement_age, current_age, tax_progressive,
-                         schooling_years, labor_supply, P_y_age_health, n_alpha, chunk):
+                         schooling_years, labor_supply, P_y_age_health, n_alpha, chunk,
+                         lump_stack=None, P_y_stack=None):
     """Body of LifecycleModelJAX.cross_section_exact, compiled as one call.
 
     Solves every cohort once per fixed-effect node, as _cross_section does,
@@ -1424,8 +1484,13 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
     bc = lambda x: x if jnp.ndim(x) == 2 else jnp.broadcast_to(x, (C,) + jnp.shape(x))
     r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c = (bc(x) for x in paths)
     w_ret_c = bc(jnp.asarray(w_at_retirement, dtype=jnp.float64))
-
-    solve = jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES)
+    ls_c = bc(jnp.asarray(lump_stack, dtype=jnp.float64))
+    # Per-cohort income matrices (P_y_stack, (C, T, n_h, n_y, n_y)) batch the
+    # age-dependent matrix over cohorts; otherwise one matrix is shared.
+    per_cohort_py = P_y_stack is not None
+    P_y_arg = P_y_stack if per_cohort_py else P_y_4d
+    solve = jax.vmap(solve_lifecycle_jax,
+                     in_axes=_SOLVE_IN_AXES_PYC if per_cohort_py else _SOLVE_IN_AXES)
 
     def solve_node(alpha_mult):
         _, a_b, c_b, l_b = solve(
@@ -1436,19 +1501,23 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
             pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
             transfer_floor, education_subsidy_rate,
             child_cost_profile, schooling_years,
-            surv, P_y_4d,
+            surv, P_y_arg,
             labor_supply, nu, phi, trend_growth,
             jnp.zeros(C),
             wage_age_profile,
             pension_avg_weight, mean_kappa_working, mean_y_employed,
             alpha_mult,
+            ls_c,
         )
         return a_b, c_b, l_b
 
     nodes = [solve_node(alpha_mults[k]) for k in range(n_alpha)]
     a_pol, c_pol, l_pol = (jnp.stack([nd[f] for nd in nodes], axis=1) for f in range(3))
 
-    exact = jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES + (0,))
+    exact_axes = (_axes_override(exact_age_means_jax, _EXACT_IN_AXES, P_y_4d=0)
+                  if per_cohort_py else _EXACT_IN_AXES)
+    exact = jax.vmap(exact_age_means_jax, in_axes=exact_axes + (0,))
+    take_py = (lambda idx: P_y_stack[idx]) if per_cohort_py else (lambda idx: P_y_4d)
     beq_c = jnp.full(chunk, bequest_lumpsum)
     panels, masses = [], []
     for start in range(0, C, chunk):
@@ -1469,13 +1538,14 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
             initial_dist, alpha_grid,
             pension_min_floor, tax_progressive,
             tax_kappa_hsv, tax_eta,
-            P_y_age_health, P_y_4d,
+            P_y_age_health, take_py(idx),
             take(surv),
             wage_age_profile,
             pension_avg_weight, mean_kappa_working, mean_y_employed,
             trend_growth,
             transfer_floor,
             beq_c,
+            take(ls_c),
             False,
             take(rows)[:, None],
         )
@@ -1553,7 +1623,8 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
                    wage_age_profile, pension_avg_weight,
                    mean_kappa_working, mean_y_employed, bequest_lumpsum,
                    T, retirement_age, current_age, n_sim, tax_progressive,
-                   schooling_years, labor_supply, P_y_age_health, n_alpha, chunk):
+                   schooling_years, labor_supply, P_y_age_health, n_alpha, chunk,
+                   lump_stack=None, P_y_stack=None):
     """Body of LifecycleModelJAX.cross_section_batched, compiled as one call.
 
     Solves every cohort once per fixed-effect node (vmapped over the survival
@@ -1566,8 +1637,11 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
     bc = lambda x: x if jnp.ndim(x) == 2 else jnp.broadcast_to(x, (C,) + jnp.shape(x))
     r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c = (bc(x) for x in paths)
     w_ret_c = bc(jnp.asarray(w_at_retirement, dtype=jnp.float64))
-
-    solve = jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES)
+    ls_c = bc(jnp.asarray(lump_stack, dtype=jnp.float64))
+    per_cohort_py = P_y_stack is not None
+    P_y_arg = P_y_stack if per_cohort_py else P_y_4d
+    solve = jax.vmap(solve_lifecycle_jax,
+                     in_axes=_SOLVE_IN_AXES_PYC if per_cohort_py else _SOLVE_IN_AXES)
 
     def solve_node(alpha_mult):
         # The bequest lump sum is 0 in the solve, as in solve(); it enters
@@ -1580,12 +1654,13 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
             pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
             transfer_floor, education_subsidy_rate,
             child_cost_profile, schooling_years,
-            surv, P_y_4d,
+            surv, P_y_arg,
             labor_supply, nu, phi, trend_growth,
             jnp.zeros(C),
             wage_age_profile,
             pension_avg_weight, mean_kappa_working, mean_y_employed,
             alpha_mult,
+            ls_c,
         )
         return a_b, c_b, l_b
 
@@ -1598,7 +1673,9 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
     (i_a, i_y, i_h, i_y_last, avg_earn, n_years,
      alpha_idx_sim, alpha_mult_sim, keys) = sim_inputs
 
-    simulate = jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES)
+    simulate = jax.vmap(simulate_lifecycle_jax,
+                        in_axes=_SIMULATE_IN_AXES_PYC if per_cohort_py else _SIMULATE_IN_AXES)
+    take_py = (lambda idx: P_y_stack[idx]) if per_cohort_py else (lambda idx: P_y_4d)
     beq_c = jnp.full(chunk, bequest_lumpsum)
     pieces = []
     for start in range(0, C, chunk):
@@ -1621,7 +1698,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
             take(avg_earn), take(n_years),
             pension_min_floor, tax_progressive,
             tax_kappa_hsv, tax_eta,
-            P_y_age_health, P_y_4d,
+            P_y_age_health, take_py(idx),
             take(surv),
             wage_age_profile,
             pension_avg_weight, mean_kappa_working, mean_y_employed,
@@ -1629,6 +1706,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
             trend_growth,
             transfer_floor,
             beq_c,
+            take(ls_c),
         )
         # Each output is (chunk, T_sim, n_sim); keep row rows[c] of cohort c.
         local = np.arange(stop - start)
@@ -1698,6 +1776,7 @@ class LifecycleModelJAX:
         self.tax_eta = float(config.tax_eta)
         self.transfer_floor = float(config.transfer_floor)
         self.bequest_lumpsum = float(config.bequest_lumpsum)
+        self.lump_sum_path = jnp.array(self._np_model.lump_sum_path)
         self.education_subsidy_rate = float(config.education_subsidy_rate)
         self.schooling_years = int(config.schooling_years)
         self.child_cost_profile = jnp.array(config.child_cost_profile)
@@ -1797,6 +1876,7 @@ class LifecycleModelJAX:
                 mean_kappa_working=self.mean_kappa_working,
                 mean_y_employed=self.mean_y_employed,
                 alpha_mult=alpha_mult,
+                lump_sum_path=self.lump_sum_path,
             )
             V_list.append(np.asarray(V))
             a_list.append(np.asarray(a_policy))
@@ -1984,6 +2064,7 @@ class LifecycleModelJAX:
             trend_growth=self.trend_growth,
             transfer_floor=float(self.transfer_floor),
             bequest_lumpsum=float(self.bequest_lumpsum),
+            lump_sum_path=self.lump_sum_path,
         )
 
         # Convert all outputs to numpy arrays (23-tuple: panel, alpha_idx_panel, transfer_sim)
@@ -2032,6 +2113,7 @@ class LifecycleModelJAX:
             trend_growth=self.trend_growth,
             transfer_floor=float(self.transfer_floor),
             bequest_lumpsum=float(self.bequest_lumpsum),
+            lump_sum_path=self.lump_sum_path,
             return_dist=bool(return_dist),
         )
         if return_dist:
@@ -2075,6 +2157,7 @@ class LifecycleModelJAX:
             trend_growth=self.trend_growth,
             transfer_floor=float(self.transfer_floor),
             bequest_lumpsum=float(self.bequest_lumpsum),
+            lump_sum_path=self.lump_sum_path,
             panel_rows=jnp.asarray(rows),
         )
         return _exact_panel_to_numpy(panel, mass)
@@ -2089,8 +2172,29 @@ class LifecycleModelJAX:
             raise ValueError(f'pension_stack has shape {pen.shape}, expected {(C, int(self.T))}')
         return pen
 
+    def _lump_stack(self, lump_stack, C):
+        """Lump-sum paths of the C cohorts: this model's path for all of them,
+        or one (T,) row per cohort."""
+        if lump_stack is None:
+            return self.lump_sum_path
+        ls = jnp.asarray(lump_stack, dtype=jnp.float64)
+        if ls.shape != (C, int(self.T)):
+            raise ValueError(f'lump_stack has shape {ls.shape}, expected {(C, int(self.T))}')
+        return ls
+
+    def _P_y_stack(self, P_y_stack, C):
+        """Per-cohort income matrices by age, (C, T, n_h, n_y, n_y), or None
+        when every cohort shares this model's matrix."""
+        if P_y_stack is None:
+            return None
+        P = jnp.asarray(P_y_stack, dtype=jnp.float64)
+        want = (C, int(self.T), int(self.n_h), int(self.n_y), int(self.n_y))
+        if P.shape != want:
+            raise ValueError(f'P_y_stack has shape {P.shape}, expected {want}')
+        return P
+
     def cross_section_exact(self, survival_stack, rows=None, chunk_size=None,
-                            pension_stack=None):
+                            pension_stack=None, lump_stack=None, P_y_stack=None):
         """One state-level panel row per cohort, for cohorts that differ only
         in survival and, with pension_stack, in their replacement-rate path:
         the exact counterpart of cross_section_batched().
@@ -2134,13 +2238,15 @@ class LifecycleModelJAX:
             tax_progressive=bool(self.tax_progressive),
             schooling_years=int(self.schooling_years),
             labor_supply=bool(self.labor_supply),
-            P_y_age_health=bool(self.P_y_age_health),
+            P_y_age_health=bool(self.P_y_age_health or P_y_stack is not None),
             n_alpha=int(self.n_alpha), chunk=chunk,
+            lump_stack=self._lump_stack(lump_stack, C),
+            P_y_stack=self._P_y_stack(P_y_stack, C),
         )
         return _exact_panel_to_numpy(panel, mass)
 
     def cross_section_batched(self, survival_stack, seeds, n_sim, chunk_size=None,
-                              rows=None, pension_stack=None):
+                              rows=None, pension_stack=None, lump_stack=None, P_y_stack=None):
         """One panel row per cohort, for cohorts that differ only in survival
         and, with pension_stack, in their replacement-rate path.
 
@@ -2191,8 +2297,10 @@ class LifecycleModelJAX:
             tax_progressive=bool(self.tax_progressive),
             schooling_years=int(self.schooling_years),
             labor_supply=bool(self.labor_supply),
-            P_y_age_health=bool(self.P_y_age_health),
+            P_y_age_health=bool(self.P_y_age_health or P_y_stack is not None),
             n_alpha=int(self.n_alpha), chunk=chunk,
+            lump_stack=self._lump_stack(lump_stack, C),
+            P_y_stack=self._P_y_stack(P_y_stack, C),
         )
         return tuple(np.asarray(x) for x in out)
 

@@ -34,7 +34,7 @@ Pre-computed calibration values for Greece. Single row.
 | Government coverage of medical costs | 66.20% | `kappa` | Step 1 |
 
 **Notes:**
-- **Unemployment rates by education.** The spreadsheet's 16.45%, 15.80% and 10.05% are the means of the quarterly rates for ages 15-64 over 2019Q1-2024Q4 (Eurostat `lfsq_urgaed`). Since 2026-10-05 the config uses the 2023 annual rates for ages 25-64, the model's working ages (Eurostat `lfsa_urgaed`, geo EL, both sexes, dataset updated 2026-09-10): 12.3% (ISCED 0-2), 11.6% (ISCED 3-4), 7.7% (ISCED 5-8). The total for the same group and year is 10.2%, which is the `untargeted.unemployment_rate` entry. The quarterly means for 2023 are 12.25%, 11.65% and 7.68%.
+- **Unemployment rates by education.** The spreadsheet's 16.45%, 15.80% and 10.05% are the means of the quarterly rates for ages 15-64 over 2019Q1-2024Q4 (Eurostat `lfsq_urgaed`). Since 2026-10-05 the config uses the 2023 annual rates for ages 25-64, the model's working ages (Eurostat `lfsa_urgaed`, geo EL, both sexes, dataset updated 2026-09-10): 12.3% (ISCED 0-2), 11.6% (ISCED 3-4), 7.7% (ISCED 5-8). The total for the same group and year is 10.2%, which is the `untargeted.unemployment_rate` entry. The quarterly means for 2023 are 12.25%, 11.65% and 7.68%. Since 2026-10-07 the rates follow the index of `data/unemployment_index_GR.npz` by calendar year (`build_unemployment_path_GR.py`).
 - **Education shares.** The spreadsheet's 23.43%, 47.05% and 29.52% are the 2019-2024 mean for ages 15-64 (Eurostat `edat_lfse_03`, population by educational attainment). Since 2026-10-05 the config uses 2023 shares for ages 25-84, the model's population: 29.14% (ISCED 0-2), 41.17% (ISCED 3-4), 29.69% (ISCED 5-8). Eurostat's labour force survey tables stop at age 74, so the figure combines two sources. Ages 25-74: the 2023 survey shares, 24.36%, 43.90% and 31.74% (`lfsa_pgaed`, counts in thousands 1643.6, 2961.9, 2141.4). Ages 75-84: the 2021 census (`cens_21ae_r2`, Greece, five-year age groups), each single age a in 2023 taking the shares of the census group that contains age a - 2, weighted by the 2023 population by age of `data/demography_GR.npz`; this gives 68.68%, 18.59% and 12.73%. The two parts are weighted by the model's 2023 population (ages 75-84 are 10.78% of ages 25-84). The census records lower attainment than the survey at the same ages in 2021: for ages 25-64 the low share is 25.9% in the census and 20.2% in the survey, for ages 65-69 it is 51.6% and 49.4%. In 2023 the survey shares are 18.9%, 46.7% and 34.3% for ages 25-64.
 - Capital share (0.503) and depreciation (0.285) from the spreadsheet are unusually high. Calibration uses standard values instead: alpha=0.33, delta=0.07.
 - `mu_y` values are in EUR levels. Need to convert to log income or normalise relative to mean.
@@ -195,9 +195,12 @@ Public debt/GDP is **1.6428** in 2023 and 1.5417 in 2024; the base year is 2023,
 so `fiscal.B_over_Y` = 1.6428 is the right vintage and the 2024 figure is not.
 Interest payments/GDP is **0.0339** in 2023 (0.0297 in 2019, 0.0348 in 2024).
 `fiscal.interest_over_Y` had been overwritten with the model-implied
-r_B × B/Y = 0.019 × 1.64 = 0.0312; it is restored to the data value. The model's
-interest bill sits below the data because r_B = 1.9% is the implicit rate
-averaged over 2012–24, under the rate realised in 2023.
+r_B × B/Y = 0.019 × 1.64 = 0.0312; it is restored to the data value.
+`prices.r_B` is a real rate; the path by year is in `data/r_B_path_GR.npz`
+(`build_r_B_path_GR.py`): the data's real effective rate to 2024, a proxy for
+2025, the Commission's projection over 2026-60, 2% from 2070.
+`fiscal.interest_over_Y` (0.0339) is nominal interest over GDP in 2023 and is
+not comparable with the model's real interest line.
 
 **Minimum pension floor `b_min` (`external_params.pension_min_floor`), calibrated
 2026-10-01.** The paper's pension is `PENS = max(rho * ybar, b_min)`, so `b_min` is
@@ -581,3 +584,11 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 
 7. ~~**LIS access**: compute var(log earnings) by age from the Greek EU-SILC cross-section for direct `rho_y`/`sigma_y` identification~~ — **Done 2026-05-08**, see §2.1. Consumption Gini from the same source is still open.
 8. **Financial wealth moments (excl. housing)**: obtain financial wealth Gini and zero-financial-wealth fraction from HFCS published tables (A3/A4) or microdata. The model has no housing asset, so current net wealth targets (Gini=0.58, zero-wealth=1.1%) overstate asset equality.
+
+**Data files added 2026-10-07 (budget restructure).**
+- `data/r_B_path_GR.npz` (`build_r_B_path_GR.py`): the real sovereign rate by calendar year, 1900-2400: the data's real effective rate in 2023 (-4.1%) and 2024 (-1.1%), a proxy for 2025 (-1.0%, the DSA file's 2026 nominal rate deflated by 2025 deflator growth), the DSA projection's real effective rate 2026-2060, linear to 2.0% over 2061-2070, 2.0% after.
+- `data/unemployment_index_GR.npz` (`build_unemployment_path_GR.py`): the 25-64 unemployment rate relative to 2023 by calendar year: Eurostat `lfsa_urgaed` outturns 2024-25 (9.5%, 8.3%), the Spring 2026 forecast for 2026-27 (8.3%, 7.9% for ages 15-74, scaled by the 2023 ratio 0.919), linear to the 2024 Ageing Report's 2050 and 2055 rates (6.6%, 6.5% for ages 20-64, scaled by 0.844), constant after; raw API responses in `data/eurostat_raw/`.
+- `data/school_age_GR.npz` (`build_school_age_GR.py`): population aged 5-24 over population aged 25-84, EUROPOP2023 baseline, relative to 2023 (0.971 in 2030, 0.888 in 2040, 0.908 in 2050, 0.964 in 2060, 1.008 in 2100), held outside 2022-2100; the driver of the education line.
+- `data/foreign_transfer_GR.npz` (`build_foreign_transfer_GR.py`): the general government's net receipts from the EU budget, % of GDP: 1.9 (2023), 1.8 (2024), 2.7 (2025 and 2026), 1.0 from 2027 (the pre-RRF level, a judgement about the next financial framework).
+- `data/eu_transfers_GR.npz` (`build_eu_transfers_GR.py`): all EU budget payments to Greece plus RRF grants less the national contribution, % of GDP, 2014-2025 from the Commission's spending-and-revenue workbook (3.5 in 2023); payments to farmers and firms included, so not government revenue; a reference series.
+- `data/gov_accounts_GR.json` (`build_gov_accounts_GR.py`): Eurostat `gov_10a_main`, `gov_10a_taxag`, `gov_10a_exp` for Greece 2019-2025, the ESA items and COFOG purchases of BUDGET_ALIGNMENT_PLAN.md section 2 with the model line each maps to; the report's benchmark table.
