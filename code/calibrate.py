@@ -933,9 +933,15 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
     # rate times the cohort's unemployment index along its diagonal (one up to
     # the base year, so the entry-year rate and the initial draw are unchanged).
     u_idx = spec.cohort_unemployment_index
-    if u_idx is not None and np.asarray(u_idx).shape != (T, T):
-        raise ValueError(f'cohort_unemployment_index has shape {np.asarray(u_idx).shape}, '
-                         f'expected {(T, T)}')
+    if u_idx is not None:
+        u_idx = np.asarray(u_idx, dtype=float)
+        if u_idx.shape[0] >= T and u_idx.shape[1] >= T:
+            # Row j, age a is year base + a - j whatever the horizon, so a
+            # model shrunk to T ages takes the leading block.
+            u_idx = u_idx[:T, :T]
+        else:
+            raise ValueError(f'cohort_unemployment_index has shape {u_idx.shape}, '
+                             f'expected at least {(T, T)}')
     _P_emp = {}
 
     def P_y_by_age(edu_type, j):

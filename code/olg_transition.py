@@ -2526,6 +2526,15 @@ class OLGTransition:
         self._active_tau_y_path = self._as_period_path(
             tau_y_path if tau_y_path is not None else self.tau_y, self.T_transition)
         _ls = lump_sum_path if lump_sum_path is not None else self.lump_sum_path
+        if _ls is None:
+            # No level path given: the household's configured transfer by age
+            # (lump_sum_over_Y times base-year output, constant) applies in
+            # every period, so a transition run from the configuration pays
+            # the same transfer the calibration cross-section does.
+            _cfg_ls = getattr(self.lifecycle_config, 'lump_sum_path', None)
+            _cfg_ls = np.zeros(1) if _cfg_ls is None else np.asarray(_cfg_ls, dtype=float)
+            if np.any(_cfg_ls != 0.0):
+                _ls = float(_cfg_ls[0])
         self._active_lump_sum_path = self._as_period_path(_ls, self.T_transition)
         self._active_foreign_transfer_over_Y = (foreign_transfer_over_Y
                                                 if foreign_transfer_over_Y is not None

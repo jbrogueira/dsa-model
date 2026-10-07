@@ -3251,7 +3251,9 @@ class TestCrossRoutineLevels:
             education_shares={'medium': 1.0}, backend='numpy',
             alpha=raw['production']['alpha'], delta=raw['production']['delta'],
             A=raw['production']['A_tfp'], economy_type='soe',
-            r_star=spec.r, pop_growth=0.0)
+            r_star=spec.r, pop_growth=0.0,
+            # the calibration's wage embeds the output tax (firm_conditions)
+            tau_y=float(raw.get('fiscal', {}).get('tau_y', 0.0) or 0.0))
         T_tr = 2
         res = olg.simulate_transition(np.full(T_tr, spec.r), n_sim=self.N_SIM,
                                       verbose=False)
@@ -3276,7 +3278,9 @@ class TestCrossRoutineLevels:
             education_shares={'medium': 1.0}, backend='numpy',
             alpha=raw['production']['alpha'], delta=raw['production']['delta'],
             A=raw['production']['A_tfp'], economy_type='soe',
-            r_star=spec.r, pop_growth=0.0)
+            r_star=spec.r, pop_growth=0.0,
+            # the calibration's wage embeds the output tax (firm_conditions)
+            tau_y=float(raw.get('fiscal', {}).get('tau_y', 0.0) or 0.0))
         olg.T_transition = 2
         frac = olg._alive_fraction(0)
         assert 0.0 < frac < 1.0, f'living share {frac} is not a share'
