@@ -12,7 +12,7 @@
 
 \sisetup{table-align-text-post=false}
 \newcommand{\rundir}{../output/calibration_growth}
-\newcommand{\fiscaldir}{../output/fiscal_2026-10-06_ret_annual}
+\newcommand{\fiscaldir}{../output/fiscal_2026-10-08}
 % Fallbacks so the template compiles before any run exists; header.tex
 % overrides them with the values of the run \rundir points at.
 \newcommand{\runlabel}{\np}\newcommand{\gval}{\np}\newcommand{\nval}{\np}
@@ -30,7 +30,7 @@
 \title{\vspace{-1.6cm}Balanced-growth calibration: Greece}
 \author{}
 \date{\small $g=\gval$,\; $n_0=\nval$,\; $n_\infty=\nTval$,\;
-      $r_B=\rBval$,\; $\Gamma_0-1=\Gammaval$,\; $\Gamma_T-1=\GammaTval$}
+      $r_{B,t\ge 2070}=\rBval$,\; $\Gamma_0-1=\Gammaval$,\; $\Gamma_T-1=\GammaTval$}
 
 \begin{document}
 \maketitle
@@ -47,7 +47,20 @@
 \item Preferences are $\log c-\nu\ell^{1+\varphi}/(1+\varphi)$. The period is
   a year.
 \item Households hold domestic capital and foreign assets at the world return
-  $r$. Government debt is held by official creditors at the real rate $r_B$.
+  $r$. Government debt is held by official creditors at the real rate
+  $r_{B,t}$: the data's real effective rate to 2025, the Commission's
+  projection over 2026--60 and 2\% from 2070.
+\item Firms pay a tax $\tau_y$ on gross output, so that
+  $(1-\tau_y)\alpha Y/K=r+\delta$ and $w=(1-\tau_y)(1-\alpha)Y/L$. It stands
+  for the taxes on production and the other revenue the model has no line
+  for, net of the spending it has no line for. The rate is set in 2023 to the
+  outturn primary balance and held to 2060.
+\item Every adult receives a lump-sum transfer, the same at every age and
+  education level and untaxed, worth $\lambda$ of output per person: the
+  cash and in-kind benefits outside pensions, unemployment and health.
+\item The government buys education, with the number of pupils from
+  EUROPOP2023 and the cost per pupil moving with the wage, and receives the
+  net transfer from the EU budget.
 \item TFP $A$ is set so that $\hat y=1$ in 2023, so ratios to output read as
   levels.
 \item Wealth sits on a grid of 100 nodes from 0 to 50 times output per person,
@@ -66,14 +79,36 @@ Sources for the parameters not taken straight from a published table:
 \begin{itemize}
 \item $K_g/Y$: the IMF ICSD public capital stock for 2019, carried to 2023 by
   perpetual inventory with national-accounts public investment and real GDP.
-\item $\delta_g$: estimated from the same stock over 2000--2019; within 0.001
-  of $I_g/K_g-(\Gamma_0-1)$.
-\item $r_B$: a real rate, the 2026--60 mean of the real effective interest
-  rate in the Commission's debt projection for Greece, which deflates the
-  nominal effective rate on the stock by GDP deflator growth (Spring 2026
-  forecast, Debt Sustainability Monitor layout). The past gives the same
-  number: the implicit nominal rate averaged 1.9\% over 2012--24 and deflator
-  growth 0.9\%.
+\item $\delta_g$: $I_g/K_g-(\Gamma_0-1)$ at the 2023 investment share, which
+  keeps public capital per person constant; the perpetual-inventory estimate
+  from the same stock over 2000--2019 is 0.002 lower.
+\item $r_B$: a real rate by year. For 2023 and 2024 the data's real effective
+  rate, interest payments over the previous year's debt deflated by GDP
+  deflator growth ($-4.1$ and $-1.1$\%); for 2025 the projection's 2026
+  nominal rate deflated by 2025 deflator growth ($-1.0$\%); over 2026--60
+  the real effective rate of the Commission's debt projection for Greece
+  (Spring 2026 forecast, Debt Sustainability Monitor layout): $-1.1$\% in
+  2026, $-0.6$\% in 2030, 1.7\% in 2040, 1.6\% in 2050 and 1.2\% in 2060;
+  linear to 2\% over 2061--70, the Monitor's long-run real rate on market
+  debt; 2\% after.
+\item $\tau_y$: the rate that gives the outturn primary balance of 2023
+  (1.95\% of GDP) at the calibrated household block, solved together with
+  $A$. From 2061 it moves linearly over ten years to the rate at which the
+  debt ratio in 2080 equals its 2070 value, and stays there.
+\item $G/Y$, $D/Y$, $I_g/Y$, $e_0$, $\lambda$ and the pension and health
+  targets: general government accounts 2023 (Eurostat \texttt{gov\_10a\_main},
+  \texttt{gov\_10a\_exp}), purchases net of the imputed contributions of
+  civil servants. Own wage bill and intermediate consumption outside
+  defence, health and education 7.0\% of GDP; defence 1.66\%; gross fixed
+  capital formation 4.0\%; education 2.6\%; cash benefits other than
+  pensions and unemployment benefits plus transfers in kind outside health
+  3.5\%; pensions 14.0\% (old age, survivors and disability, the Ageing
+  Report's concept); public health 5.3\% of a total of 8.4\%; actual social
+  contributions 11.2\%.
+\item Net transfer from the EU budget: current and capital transfers
+  received from EU institutions less own resources paid, 1.9\% of GDP in
+  2023, 1.8\% in 2024, 2.7\% in 2025 and 2026 (Recovery and Resilience
+  Facility grants), 1.0\% from 2027, the level before the Facility.
 \item $b_{min}$: the national pension, \EUR{413.76} a month from January
   2023, over output per person aged 25--84 (\EUR{224.7}bn of GDP over 7.56
   million people, \EUR{29{,}722} each). The amount is from the legislation
@@ -83,11 +118,12 @@ Sources for the parameters not taken straight from a published table:
   old-age, early or disability pension, 63.8 in 2022 against a statutory 67.
   To 2070 it follows the Ageing Report's projection (country fiche, Table 4):
   65.5 in 2030, 66.4 in 2040, 66.6 in 2050, 67.4 in 2060 and 67.9 in 2070,
-  linear in between. After 2070 it rises one for one with life expectancy at
-  65 (men and women averaged, EUROPOP2023), the link of Law 4336/2015, and
-  reaches 70.3 in 2100. A cohort retires at the age in force when it gets
-  there: 67.7 for the cohort entering in 2023, 69.9 for the one entering in
-  2050. The model is annual, so each cohort is split between the two whole
+  linear in between. After 2070 it rises by 0.75 of the change in life
+  expectancy at 65 (men and women averaged, EUROPOP2023), the ratio of the
+  fiche's rise in the effective age (4.1 years) to its rise in the statutory
+  age (5.5 years) over 2022--70, and reaches 69.7 in 2100. A cohort retires
+  at the age in force when it gets there: 67.7 for the cohort entering in
+  2023, 69.4 for the one entering in 2050. The model is annual, so each cohort is split between the two whole
   ages around its average, in the proportions that reproduce it.
 \item Pension index: the replacement rate in year $t$ is $\rho^{pens}$ times
   an index equal to one in 2023. The index is the Ageing Report's average
@@ -98,7 +134,13 @@ Sources for the parameters not taken straight from a published table:
   Households know the path from entry, as they know their cohort's retirement
   age and survival rates.
 \item Unemployment rates by education: 2023, ages 25--64 (Eurostat
-  \texttt{lfsa\_urgaed}).
+  \texttt{lfsa\_urgaed}). Each rate follows an index by calendar year: the
+  2024 and 2025 outturns for ages 25--64 (9.5 and 8.3\% against 10.2\% in
+  2023), the Spring 2026 forecast for 2026--27 (8.3 and 7.9\% for ages
+  15--74, scaled by the 2023 ratio of the two age groups), a linear path to
+  the 2024 Ageing Report's 2050 rate (6.6\% for ages 20--64, scaled to
+  5.6\%) and 5.5\% from 2055. The separation rate of each year gives every
+  cohort its own income process by age, known from entry.
 \item Education shares: the population aged 25--84 in 2023, from the labour
   force survey for ages 25--74 (\texttt{lfsa\_pgaed}) and the 2021 census for
   ages 75--84 (\texttt{cens\_21ae\_r2}).
@@ -206,96 +248,100 @@ life expectancy at 65, in years.}
 \noindent\footnotesize
 Aggregates (Figure~\ref{fig:aggregates}):
 \begin{itemize}
-\item Domestic capital and hours move with output: the world return fixes
-  $K^{dom}/L$ and public capital per person is constant.
-\item Private investment is $I_t=\Gamma_t K^{dom}_{t+1}-(1-\delta)K^{dom}_t$.
-  It is plotted as a 5-year centred moving average: as the change in a stock
-  some 15 times larger, it magnifies the stock's year-to-year movement about
-  20-fold.
-\item Household wealth is $A=K^{dom}+NFA$.
-\item All movement comes from the age structure and the rising retirement
-  age.
-\item Output per person bottoms out at 0.87 of its 2023 level in 2051 and
-  recovers to 1.06 by 2100 on the rising retirement age.
-\item Real growth averages 0.65\% a year over 2026--60 and 0.20\% in
-  2041--50, when the retirement age rises only 0.2 years over the decade
-  while the working-age population shrinks.
+\item Domestic capital and hours move with output while the output tax is
+  constant: the world return fixes $K^{dom}/L$ and public capital per person
+  is constant. The tax's fall after 2060 raises the capital-output ratio by
+  7\% and the wage by 11\%.
+\item Private investment is $I_t=\Gamma_t K^{dom}_{t+1}-(1-\delta)K^{dom}_t$,
+  plotted as a 5-year centred moving average.
+\item Household wealth is $A=K^{dom}+NFA+B$; the figure's $NFA$ is household
+  foreign assets, $A-K^{dom}$.
+\item Output per person rises 2.4\% between 2025 and 2030 as unemployment
+  falls from 8.3 to 7.0\%, falls with the age structure to 0.88 of its 2023
+  level in 2051, and recovers to 1.09 by 2070 and 1.12 by 2100 on the rising
+  retirement age and the lower output tax.
+\item Real growth averages 0.64\% a year over 2026--60: 1.8\% in 2026--30,
+  0.6\% in 2031--40, 0.1\% in 2041--50 and 0.7\% in 2051--60, against 1.0,
+  0.9, 1.2 and 1.2\% in the Commission's projection. The yearly path moves
+  by up to a percentage point around its trend as cohorts of different size
+  reach the retirement age; the figure shows a 5-year centred mean.
 \end{itemize}
 
 \noindent Government budget (Figure~\ref{fig:fiscal}, Table~\ref{tab:projection}):
 \begin{itemize}
-\item Tax rates, $G/Y$ and defence$/Y$ are fixed. Pensions follow the index
-  and the number of retirees. Health spending and the tax bases follow the
-  age structure.
-\item Other net spending $O$ stands for the government spending and revenue
-  the model does not describe: everything in the primary balance other than
-  pensions, unemployment benefits, the minimum income, public health,
-  government consumption, defence, public investment and the four taxes. No
-  household pays or receives it. It is negative because the revenue it stands
-  in for exceeds the spending.
-\item $O$ is set so that the primary balance equals its 2023 value in the
-  data (1.95\% of output), the Commission's projection over 2024--60, and
-  from 2061 the balance that holds the debt ratio at its 2060 value.
+\item Tax rates, $G/Y$, defence$/Y$ and $I_g$ per person are fixed. Pensions
+  follow the index and the number of retirees. Health spending and the tax
+  bases follow the age structure; unemployment benefits fall with the
+  unemployment rate. Education follows the school-age population and the
+  wage. The lump-sum transfer is $\lambda$ of each year's output per person.
+\item The output tax at 5.74\% of output to 2060 carries the revenue and the
+  spending the model does not describe. The primary balance is the model's
+  own; the Commission's projection is a comparison.
 \item Debt is the end-of-year stock over the year's output,
-  $d_t=d_{t-1}(1+r_B)/(1+g_t)-pb_t+sfa_t$ from 1.64 in 2023, with
-  $g_t=\Gamma_{t-1}\hat y_t/\hat y_{t-1}-1$.
-\item The stock-flow adjustment $sfa$ is the change in debt not explained by
-  the deficit. It is set to reproduce the debt ratios of 2024 (154.2\%) and
-  2025 (146.1\%). Over 2026--60 it is the projection's (0.8--1.1\% of output
-  a year to 2032, interest on the official loans whose payment is deferred).
-  After 2060 it is zero.
-\item Debt falls to 136.9\% in 2030 and 129.1\% in 2040, rises to 134.6\% in
-  2050 and settles at 125.8\% from 2060. The projection reaches 103.4\% in
-  2060 (Figure~\ref{fig:projection}).
+  $d_t=d_{t-1}(1+r_{B,t})/(1+g_t)-pb_t+sfa_t$ from 1.64 in 2023, with
+  $g_t=\Gamma_{t-1}\hat y_t/\hat y_{t-1}-1$. The years 2024 and 2025 are
+  history: their ratios are the data's (154.2\%) and the projection's
+  starting value (146.1\%), and the flow that reconciles each with the
+  recursion is recorded as that year's stock-flow adjustment, $-5.7$ and
+  $-1.5$\% of output. The model has neither the real growth of those years
+  (2.1\% a year) nor their real rates ($-1.1$ and about $-1.0$\%). Over
+  2026--60 the adjustment is the projection's (0.8--1.1\% of output a year
+  to 2032, interest on the official loans whose payment is deferred). After
+  2060 it is zero.
+\item The primary balance is 2.0\% of output in 2023 by construction, 3.4\%
+  in 2025 and between 2.4 and 3.9\% in every year to 2060. Debt falls to
+  120\% in 2030, 95\% in 2040, 82\% in 2050 and 57\% in 2060; the projection
+  has 124, 111, 111 and 103\%.
+\item From 2061 the tax rate moves linearly to $-0.98$\% in 2070, the rate
+  at which the debt ratio in 2080 equals its 2070 value, 39\%, and stays
+  there. The balance is $-0.3$\% of output in 2070 and 1.7\% in 2100; the
+  ratio is 20\% in 2100 and below zero by 2150.
 \end{itemize}
 
 \noindent Why the debt paths differ:
 \begin{itemize}
-\item The rate. $r_B$ is the 2026--60 mean of the projection's real effective
-  rate. The projection's rate is a path: $-0.65$\% on average over 2026--32,
-  when the nominal rate on the official loans is below deflator growth, and
-  1.47\% over 2033--60. With debt at 140\% of output, the early difference
-  adds about 2.4 points a year to the model's ratio. $r_B$ does not enter
-  the household problem, so the debt recursion could use the projection's
-  path instead; the model's ratio would then be 115.5\% in 2040, 127.3\% in
-  2050 and 122.6\% in 2060.
-\item Growth. $g$ is productivity growth per worker, not output growth.
-  Output growth is $(1+g)(1+n_t)\hat y_{t+1}/\hat y_t-1$: over 2026--60,
-  1.70\% ($g$) $-0.75$\% (population aged 25--84) $-0.29$\% (hours per
-  person) $=0.65$\%, against 1.08\% in the projection; in 2041--50, 1.70
-  $-0.83-0.65=0.20$\% against 1.17\%. The productivity assumption is the
-  Ageing Report's in both. The difference is employment: the Report has the
-  employment rate of 20--64-year-olds rising from 66\% in 2022 to 74\% in
-  2050 and 75\% in 2070, so employment falls much less than the working-age
-  population. About half of the rise is unemployment, from 12.4\% of the
-  labour force in 2022 to 6.5\% from 2060; the other half is the
-  participation of 55--74-year-olds, which the rising retirement age
-  delivers (country fiche, Table 3). In the model the retirement age follows
-  the fiche, participation and unemployment rates stay at their 2023
-  values, and hours per person fall with the age structure.
+\item The balance. Replacing the model's primary balance over 2026--60 with
+  the Commission's, everything else as in the model, puts debt at 122\% in
+  2060 instead of 57\%. The Commission holds the structural balance before
+  the cost of ageing at 2.3\% of GDP, with a constant revenue ratio, and adds
+  the Ageing Report's spending paths. The model's revenue rises from 40.6 to
+  42.7\% of output by 2050 (consumption tax +1.7 points, capital income tax
+  +0.9, bequest tax +0.4), pensions stay at or below their 2023 share
+  (14.0\% in 2023, 13.8\% in 2050), and health rises 1.9 points.
+\item Growth. Replacing the model's output growth with the projection's puts
+  debt at 44\% in 2060 instead of 57\%: 0.64\% a year against 1.08\%. The
+  productivity assumption is the Ageing Report's in both, and the model's
+  unemployment rate follows the Report's long-run path. The difference is the
+  participation of 55--74-year-olds, which the Report raises beyond what the
+  retirement age delivers, and hours per person, which fall with the age
+  structure.
+\item The rate. The model uses the projection's real effective rate year by
+  year over 2026--60, so the rate contributes nothing to the gap in that
+  period.
+\item With the Commission's balance, growth and rate the recursion
+  reproduces the projection's 103.4\% in 2060.
 \end{itemize}
 
 \noindent Spending, revenue and the balance (Figure~\ref{fig:fiscal}, Table~\ref{tab:projection}):
 \begin{itemize}
-\item Pensions fall from 16.0\% of output in 2023 to 14.2\% in 2030, because
-  the index falls faster than the number of retirees grows. They climb back
-  to 15.9\% in 2050 as the large cohorts retire, then fall to 13.2\% in 2060
-  and 10.3\% in 2070 once the index settles and the retirement age keeps
-  rising.
-\item The Ageing Report has 14.5\% of GDP in 2022, 12.7\% in 2030, 14.0\% in
-  2050 and 12.0\% in 2070, on the Ageing Working Group definition. The
-  model's level is the national-accounts 16\% of 2023.
-\item Public health spending rises from 5.4\% to 7.5\% of output by 2050,
-  with the unit cost by age growing at the trend.
-\item Revenue rises from 35.0\% to 38.5\% of output by 2050, mostly
-  consumption tax: households save more for their lower pensions, wealth
-  rises from 4.0 to 5.3 times output, and the consumption it finances is
-  taxed.
-\item The primary balance before $O$ is $-6.9$\% of output in 2023, $-4.9$\%
-  in 2030 and $-5.6$\% in 2050. So $O/Y$ goes from $-8.9$\% in 2023
-  ($-11.2$\% in 2025) to $-7.2$\% in 2030, $-6.2$\% in 2040 and $-5.4$\% in
-  2060, then up to $+0.5$\% by 2100 as pensions keep falling. A primary
-  deficit of about 0.8\% of output holds debt at 126\%.
+\item Pensions fall from 14.0\% of output in 2023 to 12.1\% in 2030, because
+  the index falls faster than the number of retirees grows, climb to 13.8\%
+  in 2050 as the large cohorts retire, and fall to 11.8\% in 2060 and 8.4\%
+  in 2070. The Ageing Report has 14.5\% of GDP in 2022, 12.7\% in 2030,
+  14.0\% in 2050, 12.7\% in 2060 and 12.0\% in 2070. The model's 2070 value
+  is 3.6 points lower: the model has no one over 84, and its retirement age
+  keeps rising after 2070.
+\item Public health spending rises from 5.3\% of output to 7.2\% by 2050,
+  with the unit cost by age growing at the trend; the Ageing Report has
+  +0.6 points by 2040, with unit costs growing with GDP per capita.
+\item Education moves between 2.4 and 2.8\% of output with the school-age
+  population; unemployment benefits fall from 0.6 to 0.3\%.
+\item Revenue is 40.6\% of output in 2023: consumption tax 9.2, labour
+  income tax 6.6, contributions 11.2, capital income tax 3.6, bequest tax
+  2.4, output tax 5.7, EU transfer 1.9. Spending is 38.6\%: pensions 14.0,
+  health 5.3, unemployment benefits and the floor 0.6, government
+  consumption 7.0, defence 1.7, investment 4.0, education 2.6, the lump-sum
+  transfer 3.5.
 \item The projection's growth (Figure~\ref{fig:projection}) is the forecast
   to 2027 and potential growth after. The model has no cycle.
 \end{itemize}
@@ -315,8 +361,8 @@ detrended per-capita output, consumption and household wealth, 2023 = 1.
   {\figbox{Figure: government accounts --- run \texttt{reports/baseline\_figures.py}.}{6cm}}
 \caption{\label{fig:fiscal}Baseline, no policy change: government accounts as
 shares of output. \emph{Top}: revenue and spending by line. \emph{Bottom
-left}: the primary balance and the balance before other net spending.
-\emph{Bottom right}: debt at the end of the year over the same year's output.}
+left}: the primary balance and the output tax rate. \emph{Bottom right}: debt
+at the end of the year over the same year's output.}
 \end{figure}
 
 \begin{figure}[htbp]\centering
@@ -325,8 +371,8 @@ left}: the primary balance and the balance before other net spending.
   {\figbox{Figure: projection --- run \texttt{reports/baseline\_figures.py}.}{6cm}}
 \caption{\label{fig:projection}The baseline against the Commission's debt
 projection for Greece (Spring 2026 forecast, 2025--60). \emph{Top left}:
-end-of-year debt over output. \emph{Top right}: the primary balance and other
-net spending. \emph{Bottom left}: public pensions over output, with the 2024
+end-of-year debt over output. \emph{Top right}: the primary balance, the
+output tax rate and the projection's balance. \emph{Bottom left}: public pensions over output, with the 2024
 Ageing Report's projection. \emph{Bottom right}: real output growth, the
 baseline as a 5-year centred mean.}
 \end{figure}
@@ -355,17 +401,19 @@ Design:
 \item Labour-tax financing: $\tau_l$ rises by a constant $\Delta\tau_l$ from
   2023, set so that in 2202, the last year of the horizon, either the debt
   ratio or net foreign assets over output are back at their baseline values.
-\item Other net spending stays at its baseline share of output; the
-  stock-flow adjustment stays at its baseline level.
+\item The output-tax path, the lump-sum transfer per adult, the transfer from
+  the EU budget and the stock-flow adjustment stay at the baseline's;
+  education is priced at each run's own wage.
 \item The policy is announced in 2023. The wealth each cohort holds that year
   is the same as in the baseline.
 \item Net foreign assets are household foreign assets less government debt.
 \item The cumulative multiplier is the sum of the output response over the
   sum of the spending increase, both as aggregate flows over the horizon.
 \item In Table~\ref{tab:fiscal}, debt is at the end of the year over the
-  year's output; the baseline has 126\% from 2060 on and net foreign assets
-  of $-0.37$ of output in 2200. The 2023--32 column is the mean deviation
-  over those years.
+  year's output. The baseline's ratio is 39\% over 2070--80, 20\% in 2100 and
+  $-172$\% in 2200 (the output tax stays at its 2070 rate while the balance
+  turns positive again); its net foreign assets are 2.7 times output in
+  2200. The 2023--32 column is the mean deviation over those years.
 \end{itemize}
 
 \noindent Government consumption (Figure~\ref{fig:G}):
@@ -373,31 +421,31 @@ Design:
 \item Debt-financed, it leaves output, consumption and hours exactly where
   they were. It enters neither utility nor production, and the debt is held
   abroad, so no household budget changes. The multiplier is zero.
-\item The debt ratio climbs to 207\% of output in 2060 and 339\% in 2200.
-\item Bringing the ratio back to 126\% by 2202 takes $\Delta\tau_l=4.18$
-  percentage points. Hours and output fall 0.8\% in 2023 and 0.4\% on average
-  over 2023--32, and are back at the baseline by 2050. Consumption is 3.2\%
-  below the baseline in 2023 and 4.8\% below in 2100; wealth is 4.5\% below
-  in 2100.
-\item Returning net foreign assets to their baseline ratio instead takes 4.67
-  points and leaves the debt ratio at 102\% in 2200.
+\item The debt ratio climbs to 145\% of output in 2060 and 275\% in 2200.
+\item Bringing the ratio back to the baseline's by 2202 takes
+  $\Delta\tau_l=4.18$ percentage points. Hours and output fall 1.2\% in 2023
+  and 0.5\% on average over 2023--32, and are 0.2\% below the baseline in
+  2050 and 0.1\% in 2100. Consumption is 2.8\% below the baseline in 2023
+  and 4.6\% below in 2100.
+\item Returning net foreign assets to their baseline ratio instead takes 4.41
+  points and leaves the debt ratio 25 points below the baseline's in 2200.
 \end{itemize}
 
 \noindent Public investment (Figure~\ref{fig:Ig}):
 \begin{itemize}
 \item Public capital per person rises from 0.70 of 2023 output to 0.99 in
-  2050 and 1.05 in 2100.
-\item Debt-financed, output is 1.3\% below the baseline in 2023, because
-  households expect higher wages and work less now. It is above the baseline
-  from 2026, 2.7\% in 2050 and 3.0\% in 2100. Consumption is 1.2\% above the
-  baseline in 2023 and 3.1\% above in 2100.
-\item The cumulative multiplier is 0.20 over 2023--32 and 1.49 over the
+  2050 and 1.04 in 2100.
+\item Debt-financed, output is 1.6\% below the baseline in 2023, because
+  households expect higher wages and work less now. It is 0.4\% above the
+  baseline on average over 2023--32, 2.8\% in 2050 and 2.9\% in 2100.
+  Consumption is 1.6\% above the baseline in 2023 and 3.0\% above in 2100.
+\item The cumulative multiplier is 0.21 over 2023--32 and 1.57 over the
   horizon.
-\item The debt ratio reaches 203\% in 2060 and 299\% in 2200.
-\item The labour-tax rules need 3.42 points (debt target) and 3.83 points
-  (net-foreign-asset target). Output is 1.6\% below the baseline in 2023
-  under both and 2.8--2.9\% above in 2050. Consumption ends 0.9\% and 1.4\%
-  below in 2100.
+\item The debt ratio reaches 137\% in 2060 and 169\% in 2200.
+\item The labour-tax rules need 3.18 points (debt target) and 3.36 points
+  (net-foreign-asset target). Output is 2.0\% below the baseline in 2023
+  under both and 2.7\% above in 2050. Consumption ends 0.6\% and 0.9\% below
+  in 2100.
 \end{itemize}
 
 \begin{table}[htbp]\centering\footnotesize

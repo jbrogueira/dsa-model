@@ -12,9 +12,9 @@ $\alpha$ & private capital share & 0.3300 &  \\
 $\delta$ & private capital depreciation & 0.0500 &  \\
 $\eta_g$ & public capital elasticity & 0.0500 &  \\
 $K_g/Y$ & public capital ratio & 0.7030 & IMF ICSD \\
-$\delta_g$ & public capital depreciation & 0.0428 & $I_g/K_g-(\Gamma-1)$ \\
+$\delta_g$ & public capital depreciation & 0.0448 & $I_g/K_g-(\Gamma-1)$ \\
 $r$ & world return on capital & 0.0400 &  \\
-$r_B$ & real sovereign rate & 0.0105 & mean real effective rate, debt projection 2026--60 \\
+$r_B$ & real sovereign rate from 2070 & 0.0200 & data to 2025, debt projection 2026--60, linear to 2\% by 2070 \\
 $\tau_c$ & consumption tax rate & 0.1818 & effective rate \\
 $\tau_l$ & labour income tax rate & 0.1000 & effective rate \\
 $\tau_k$ & capital income tax rate & 0.2236 & effective rate \\
@@ -22,7 +22,7 @@ $b_{min}$ & minimum pension, 2023 & 0.1671 & national pension, L.4387/2016; foll
 $\underline{c}$ & consumption floor (means-tested) & 0.0807 & guaranteed minimum income \\
 $\tau^{beq}$ & tax on accidental bequests & 1.0000 &  \\
 $f$ & job-finding probability & 0.4400 & Eurostat \texttt{une\_ltu\_a} \\
-$\kappa$ & public share of medical spending & 0.6620 & Eurostat \texttt{hlth\_sha11\_hf} \\
+$\kappa$ & public share of medical spending & 0.6310 & Eurostat \texttt{hlth\_sha11\_hf} \\
 $T$ & model ages (real ages 25--84) & {60} &  \\
 $R_{2022}$ & average effective retirement age, 2022 & 63.8000 & 2024 Ageing Report; its projection to 2070 \\
 $u_{low}$ & unemployment rate, low education & 0.1230 & Eurostat \texttt{lfsa\_urgaed}, 2023, ages 25--64 \\
@@ -31,17 +31,23 @@ $u_{high}$ & unemployment rate, high education & 0.0770 &  \\
 $\omega_{low}$ & population share, low education & 0.2914 & survey 2023 (ages 25--74), 2021 census (75--84) \\
 $\omega_{medium}$ & population share, medium education & 0.4117 &  \\
 $\omega_{high}$ & population share, high education & 0.2969 &  \\
+$G/Y$ & government consumption & 0.0700 & own wage bill and intermediate consumption, 2023 \\
+$D/Y$ & defence & 0.0166 & ESA purchases, COFOG 02 \\
+$I_g/Y$ & public investment & 0.0400 & gross fixed capital formation \\
+$e_0$ & education, 2023 & 0.0260 & ESA purchases, COFOG 09; follows the school-age population and the wage \\
+$\lambda$ & lump-sum transfer per adult, over output & 0.0350 & cash and in-kind benefits outside pensions, unemployment and health, 2023 \\
+$FT/Y$ & net transfer from the EU budget, 2023 & 0.0190 & general government accounts; 1.0\% of output from 2027 \\
 \midrule
 \multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
-$\nu$ & labour disutility weight & 12.4663 & average hours \\
-$\beta$ & discount factor & 0.9991 & $A/Y$ \\
-$\tau_p$ & payroll tax rate & 0.1940 & payroll revenue$/Y$ \\
-$\rho^{pens}$ & pension replacement rate & 0.2323 & pensions$/Y$ \\
-$m^{good}$ & medical cost scale & 0.0902 & public health$/Y$ \\
-$\rho^{ui}$ & UI replacement rate & 0.0746 & UI$/Y$ \\
+$\nu$ & labour disutility weight & 11.5971 & average hours \\
+$\beta$ & discount factor & 0.9986 & $A/Y$ \\
+$\tau_p$ & payroll tax rate & 0.1774 & payroll revenue$/Y$ \\
+$\rho^{pens}$ & pension replacement rate & 0.2164 & pensions$/Y$ \\
+$m^{good}$ & medical cost scale & 0.0928 & public health$/Y$ \\
+$\rho^{ui}$ & UI replacement rate & 0.0795 & UI$/Y$ \\
 \midrule
 \multicolumn{4}{l}{\itshape Set outside the SMM}\\
-$A$ & total factor productivity & 1.4453 & normalisation, $\hat y=1$ \\
-$O/Y$ & other net spending & -0.0886 & primary balance in the data \\
+$A$ & total factor productivity & 1.4699 & normalisation, $\hat y=1$ \\
+$\tau_y$ & tax on gross output, to 2060 & 0.0574 & primary balance in the data, 2023 \\
 \bottomrule
 \end{tabular}
