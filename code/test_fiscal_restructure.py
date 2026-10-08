@@ -279,3 +279,21 @@ class TestDebtMatchingRate:
         assert np.allclose(fx['tau_y_path'], 0.0595)
         assert fx['tau_terminal'] == 0.0595
         assert np.isfinite(fx['window_residual'])          # reported, not solved
+
+    def test_debt_match_without_terminal_rule_holds_the_2026_rate_after_2060(self):
+        import json
+        import os
+        from baseline_closure import solve_baseline
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), 'calibration_input_GR.json')))
+        T_tr, base = 180, 2023
+
+        def run(lump, tau):
+            return np.ones(T_tr), {'total_revenue': 0.3665 + 0.7 * np.asarray(tau), 'total_spending': np.full(T_tr, 0.386)}
+
+        fx = solve_baseline(run, raw, T_tr, base, 0.035, 0.0595, np.full(T_tr, 0.02), np.full(T_tr, 1.017),
+                            verbose=False, match_debt_year=2060, first_mid_year=2026, terminal_rule=False, max_iter=20)
+        tau = fx['tau_y_path']
+        assert np.allclose(tau[:2026 - base], 0.0595)
+        assert np.allclose(tau[2026 - base:], fx['tau_mid'])          # one step, constant after
+        d = fx['debt']
+        assert abs(d['debt'][2060 - base] - d['debt_projection'][2060 - base]) < 2e-3

@@ -219,10 +219,10 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     wage). The ramp then starts from the 2060 rate. The default, a constant
     rate to 2060, is the baseline of the report.
 
-    With terminal_rule False the rate is tau_base (or tau_mid) through the
-    whole horizon and only the lump-sum path (and tau_mid, if matched) is
-    iterated: no terminal adjustment, and the window residual is reported
-    but not solved.
+    With terminal_rule False there is no terminal adjustment: the rate after
+    2060 stays at tau_mid (with match_debt_year) or at tau_base, only the
+    lump-sum path (and tau_mid, if matched) is iterated, and the window
+    residual is reported but not solved.
 
     With match_debt_year set, the rate is tau_base through first_mid_year - 1
     and a constant tau_mid from first_mid_year to 2060, solved by a secant so
@@ -261,6 +261,8 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
         lump = float(lump_sum_over_Y) * centred_mean(Y_prev, lump_smooth_years)
         if match_debt:
             tau_fixed[t_mid0:] = tau_mid
+            if not terminal_rule:
+                tau_T = tau_mid          # no adjustment: the 2026-60 rate holds after 2060
         tau = tau_y_path(T_tr, base_year, tau_fixed, tau_T, ramp_years)
         Y, budget = run(lump, tau)
         Y = np.asarray(Y, dtype=float)[:T_tr]
