@@ -715,7 +715,8 @@ def main():
                             match_projection=(fisc.get('tau_y_mode', 'constant') == 'projection'),
                             match_debt_year=(int(fisc.get('tau_y_debt_year', 2060))
                                              if fisc.get('tau_y_mode', 'constant') == 'debt' else None),
-                            first_mid_year=int(fisc.get('tau_y_first_year', 2026)))
+                            first_mid_year=int(fisc.get('tau_y_first_year', 2026)),
+                            terminal_rule=(fisc.get('tau_y_mode', 'constant') != 'pinned_throughout'))
         res, bud = last['res'], last['bud']
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}

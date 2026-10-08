@@ -201,7 +201,7 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
                    step_max=0.03, tau_bounds=(-0.10, 0.60), tol_tau=5e-4,
                    match_projection=False, lump_smooth_years=5,
                    match_debt_year=None, first_mid_year=2026, tau_mid_init=None,
-                   tol_debt=2e-3):
+                   tol_debt=2e-3, terminal_rule=True):
     """Fixed point of the baseline over the lump-sum level path and the
     terminal output-tax rate.
 
@@ -218,6 +218,11 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     line; a fixed point over full transitions, since the path moves the
     wage). The ramp then starts from the 2060 rate. The default, a constant
     rate to 2060, is the baseline of the report.
+
+    With terminal_rule False the rate is tau_base (or tau_mid) through the
+    whole horizon and only the lump-sum path (and tau_mid, if matched) is
+    iterated: no terminal adjustment, and the window residual is reported
+    but not solved.
 
     With match_debt_year set, the rate is tau_base through first_mid_year - 1
     and a constant tau_mid from first_mid_year to 2060, solved by a secant so
@@ -267,7 +272,7 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
         W = debt['window_years']
         # A horizon that ends at or before the terminal year (a test run) has
         # no ramp to solve: only the lump-sum path is iterated.
-        update_tau = not np.isnan(resid)
+        update_tau = terminal_rule and not np.isnan(resid)
         if not update_tau:
             resid = 0.0
         dY = float(np.max(np.abs(Y - Y_prev) / Y))
@@ -287,7 +292,8 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
         out = {'lump_sum_path': lump, 'tau_y_path': tau, 'tau_terminal': tau_T, 'Y': Y,
                'budget': budget, 'debt': debt, 'iterations': k,
                'projection_gap': proj_gap, 'tau_mid': tau_mid if match_debt else None,
-               'debt_gap_at_match': mid_resid if match_debt else None}
+               'debt_gap_at_match': mid_resid if match_debt else None,
+               'window_residual': debt['window_residual']}
         if verbose:
             t70 = debt['terminal_year'] - base_year
             print(f'  baseline fixed point {k}: tau_y^T = {tau_T:.5f}, debt ratio change over '
@@ -324,7 +330,7 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
             tau_mid = float(np.clip(tau_mid + step_m, tau_bounds[0], tau_bounds[1]))
         if not update_tau:
             Y_prev = Y
-            continue
+            continue      # tau_mid was updated above
         # Secant on the window residual (first step at the a-priori slope,
         # -0.7 per year of the window); a slope of the wrong sign or a step
         # beyond step_max falls back to the a-priori slope or the bound.

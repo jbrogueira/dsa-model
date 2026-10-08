@@ -263,3 +263,19 @@ class TestDebtMatchingRate:
         assert np.allclose(tau[2026 - base:2061 - base], fx['tau_mid'])
         # the terminal window still holds
         assert abs(d['window_residual']) < 1e-3 * d['window_years'] + 1e-6
+
+    def test_pinned_rate_throughout_keeps_the_rate(self):
+        import json
+        import os
+        from baseline_closure import solve_baseline
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), 'calibration_input_GR.json')))
+        T_tr, base = 180, 2023
+
+        def run(lump, tau):
+            return np.ones(T_tr), {'total_revenue': 0.3665 + 0.7 * np.asarray(tau), 'total_spending': np.full(T_tr, 0.386)}
+
+        fx = solve_baseline(run, raw, T_tr, base, 0.035, 0.0595, np.full(T_tr, 0.02), np.full(T_tr, 1.017),
+                            verbose=False, terminal_rule=False, max_iter=6)
+        assert np.allclose(fx['tau_y_path'], 0.0595)
+        assert fx['tau_terminal'] == 0.0595
+        assert np.isfinite(fx['window_residual'])          # reported, not solved
