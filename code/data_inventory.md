@@ -13,10 +13,10 @@ Pre-computed calibration values for Greece. Single row.
 | Field | Value | Maps to | Used for |
 |-------|-------|---------|----------|
 | Effective retirement age | 58.6 | `retirement_age` | Step 1 (external) |
-| Consumption tax (effective) | 18.18% | `tau_c` | Step 1 |
-| Labour income tax (EC ITR, incl. SSC) | 40.58% | **Do not use directly** — see decomposition below | Step 1 |
+| Consumption tax (effective) | 18.18% | `tau_c` | Step 1 (implicit tax rate on consumption, DG TAXUD Taxation Trends Table 79, mean 2019-2023 of 17.8, 17.5, 18.0, 19.8, 17.8) |
+| Labour income tax (EC ITR, incl. SSC; Taxation Trends Table 80, mean 2019-2023) | 40.58% | **Do not use directly** — see decomposition below | Step 1 |
 | SSC effective rate | 38.34% | **Component of ITR** — see decomposition below | Step 1 |
-| Capital income tax (effective) | 22.36% | `tau_k` | Step 1 |
+| Capital income tax (effective) | 22.36% | `tau_k` | Step 1 (NOT an implicit rate on capital: Taxation Trends Table 83, effective average tax rate of large corporations, source KPMG, mean 2019-2023 of 23.5, 23.5, 21.6, 21.6, 21.6; applied in the model to the return on all household wealth) |
 | Pension replacement rate | 76.275% | `pension_replacement_default` | Step 1 |
 | UI wage replacement rate | 9.45% | `ui_replacement_rate` | Step 1 |
 | Pop. share: less than upper secondary | 23.43% | `education_shares['low']` | Step 1 |
@@ -593,3 +593,15 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 - `data/foreign_transfer_GR.npz` (`build_foreign_transfer_GR.py`): the general government's net receipts from the EU budget, % of GDP: 1.9 (2023), 1.8 (2024), 2.7 (2025 and 2026), 1.0 from 2027 (the pre-RRF level, a judgement about the next financial framework).
 - `data/eu_transfers_GR.npz` (`build_eu_transfers_GR.py`): all EU budget payments to Greece plus RRF grants less the national contribution, % of GDP, 2014-2025 from the Commission's spending-and-revenue workbook (3.5 in 2023); payments to farmers and firms included, so not government revenue; a reference series.
 - `data/gov_accounts_GR.json` (`build_gov_accounts_GR.py`): Eurostat `gov_10a_main`, `gov_10a_taxag`, `gov_10a_exp` for Greece 2019-2025, the ESA items and COFOG purchases of BUDGET_ALIGNMENT_PLAN.md section 2 with the model line each maps to; the report's benchmark table.
+
+
+## Raw extracts added 2026-10-08 (data/eurostat_raw/, Eurostat dissemination API, JSON-stat)
+
+- `lfsa_pgaed_EL_2023.json`: population by educational attainment, Greece, 2023, ages 25-74, thousands (ED0-2 1643.6, ED3_4 2961.9, ED5-8 2141.4), the survey part of `education_shares`; dataset of 2026-09-10.
+- `demo_mlifetable_EL_px.json`: life table, Greece, both sexes, probability of surviving (PROBSURV), all ages, 1960-2024 (dataset of 2026-09-25); the on-disk counterpart of the "Survival rates" sheet of DATA_GR.xlsx used by `build_survival_GR.py`.
+- `lfsa_ewhun2_EL_2023.json`: average number of usual weekly hours of work, employed persons 15-64, all activities, Greece, 2023: 40.9 hours, the `average_hours` target (0.41 of a 100-hour endowment; the workbook's code 102 has 40.95).
+- `lfst_hhnhtych_EL.json`: number of private households, Greece, 2021-2023 (4,123 thousand in 2021, 4,093 in 2023).
+- `nasa_10_f_bs_EL_S14_S15.json`: financial balance sheet of households and NPISH, Greece, 2021-2023, non-consolidated: 2023 financial assets EUR 333.8 bn, liabilities 110.0 bn, net 223.8 bn = 1.00 of GDP.
+- Wealth-output target: `A_over_Y` = 4.0 has no series behind it. Counterparts: HFCS 2021 mean net wealth EUR 132.7k x 4,123k households / 2021 GDP EUR 184.6 bn = 2.96 (includes housing); net financial wealth 2023 = 1.00 of GDP. A decision on the target is pending (2026-10-08).
+- `demo_pjan_EL_T_2022_2025.json`, `demo_gind_EL_2020_2024.json`, `demo_mlexpec_EL_2020_2024.json`, `demo_find_EL_2020_2024.json`, `cens_21ae_r2_EL_T.json`: the demographic comparison table of the report (`reports/demography_table.py`) and the census part of `education_shares`.
+- The Commission debt projection in `data/dsa_projection_GR.npz` is NOT a published Commission file: it is `data/2026-09-28_GR_DSA_Spring_Forecast_2026_v1.xlsx`, a projection in the Debt Sustainability Monitor layout on the Spring 2026 forecast prepared at the ESM (co-author), built by `build_dsa_projection_GR.py`.
