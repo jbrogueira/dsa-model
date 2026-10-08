@@ -116,7 +116,7 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$K_g/Y$', 'public capital ratio', prod.get('K_g'), 'IMF ICSD'),
         ('$\\delta_g$', 'public capital depreciation', prod.get('delta_g'),
          '$I_g/K_g-(\\Gamma-1)$'),
-        ('$r$', 'world return on capital', pri.get('r'), 'assumption'),
+        ('$r$', 'world return on capital', pri.get('r'), 'Glomm, Jung and Tran (2018), Greek calibration: 4.0; 4.5\\% in the OECD survey of Greece 2011'),
         ('$r_B$', 'real sovereign rate from 2070', pri.get('r_B'),
          'data to 2025, debt projection 2026--60, linear to 2\\% by 2070'),
         ('$\\tau_c$', 'consumption tax rate', ext.get('tau_c'), 'implicit tax rate on consumption, DG Taxation and Customs Union, Taxation Trends, mean 2019--23'),

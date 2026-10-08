@@ -1,0 +1,65 @@
+{
+ "source": "DG TAXUD, National Tax List edition 2026 (NTL edition 2026 web.xlsx), sheet EL and sheet 2026 PIT split; downloaded 2026-10-08",
+ "url": "https://taxation-customs.ec.europa.eu/taxation/economic-analysis-taxation/data-taxation-trends_en",
+ "unit": "EUR million",
+ "gdp_2023_nama_10_gdp": 224686.2,
+ "lines_2023": {
+  "D51B income taxes on corporations (total, incl. shipowners 210)": 6087,
+  "D51A C02 taxes on interest and other taxes on individuals (KIH)": 589,
+  "D51A C01 income taxes on individuals (SPLIT1)": 12232,
+  "PIT split capital share EL 2023": 0.1304,
+  "capital share of PIT": 1595.1
+ },
+ "series_2019_2021_2022_2023_2024": {
+  "D51B": [
+   3482,
+   3163,
+   4628,
+   6087,
+   7111
+  ],
+  "D51A_C02": [
+   347,
+   348,
+   344,
+   589,
+   760
+  ],
+  "D51A_C01": [
+   10266,
+   9916,
+   10646,
+   12232,
+   14167
+  ],
+  "PIT_split_capital": [
+   0.0804,
+   0.1188,
+   0.1302,
+   0.1304,
+   0.1358
+  ],
+  "D59A current taxes on capital": [
+   1326,
+   1261,
+   1425,
+   1464,
+   1495
+  ],
+  "recurrent taxes on immovable property RP": [
+   4462,
+   4338,
+   4450,
+   4438,
+   4446
+  ],
+  "inheritance and gift taxes": [
+   244,
+   198,
+   232,
+   225,
+   236
+  ]
+ },
+ "target_tax_k_over_Y_2023": 0.03681
+}

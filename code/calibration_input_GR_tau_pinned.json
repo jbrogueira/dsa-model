@@ -393,7 +393,7 @@
         "path": "tau_k_default",
         "lower": 0.05,
         "upper": 0.6,
-        "initial": 0.2236
+        "initial": 0.31
       }
     ],
     "targets": [
@@ -435,8 +435,8 @@
       },
       {
         "name": "tax_k_over_Y",
-        "value": 0.027,
-        "weight": 1371.742,
+        "value": 0.03681,
+        "weight": 737.96,
         "compute_key": "tax_k_over_Y"
       }
     ],
