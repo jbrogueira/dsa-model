@@ -167,7 +167,7 @@ def main():
     # ---------------------------------------------------------------- table ---
     def cell(d, y, k, f):
         v = d.get(y, {}).get(k)
-        return '{\\textemdash}' if v is None or (isinstance(v, float) and np.isnan(v)) else f % v
+        return '{--}' if v is None or (isinstance(v, float) and np.isnan(v)) else f % v
     rows = []
     def block(title, d, items):
         rows.append('\\addlinespace\\multicolumn{%d}{@{}l}{\\emph{%s}}\\\\' % (len(YEARS) + 1, title))
@@ -198,7 +198,7 @@ def main():
         ('Share of 85--99 in 65--99, \\%', 'sh85_m', '%.1f'), ('Cohort entering at 25, thousand', 'a25', '%.1f'),
         ('Life expectancy at 65, men and women averaged', 'e65', '%.1f'),
         ('Retired per non-retired person', 'rw', '%.2f'), ('Retirement age, years', 'ret', '%.1f')])
-    head = ('\\begin{tabular}{@{}l' + 'S[table-format=5.1]' * len(YEARS) + '@{}}\n\\toprule\n & '
+    head = ('\\begin{tabular}{@{}l' + 'S[table-format=5.2]' * len(YEARS) + '@{}}\n\\toprule\n & '
             + ' & '.join('{%d}' % y for y in YEARS) + ' \\\\\n\\midrule\n')
     body = head + '\n'.join(rows) + '\n\\bottomrule\n\\end{tabular}\n'
     os.makedirs(args.outdir, exist_ok=True)

@@ -806,7 +806,7 @@ def main():
                                                    for m in cfg.get('calibration', {}).get('targets', [])}
                           | {m.get('name') for m in cfg.get('calibration', {}).get('targets', [])})),
         'age_body.tex': wrap(
-            'lS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]',
+            'lS[table-format=+1.4]S[table-format=+1.4]S[table-format=+1.4]',
             ' & {Data, 2023} & {Model, $t=0$} & {Model, terminal}',
             age_table(shares_from_weights(w_data) if w_data is not None else None,
                       shares_from_weights(w_model_t0) if w_model_t0 is not None else None,
@@ -819,7 +819,7 @@ def main():
     }
     if debt is not None:
         frag['projection_body.tex'] = wrap(
-            'l' + 'S[table-format=3.1]' * 2 + 'S[table-format=+2.1]' * 2
+            'l' + 'S[table-format=+3.1]' * 2 + 'S[table-format=+2.1]' * 2
             + 'S[table-format=2.1]' * 5,
             ' & {Debt, proj.} & {Debt} & {Balance, proj.} & {Balance} & {$\\tau_y$}'
             ' & {Revenue} & {Pensions} & {Health} & {Education}',

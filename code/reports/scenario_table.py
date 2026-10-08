@@ -51,10 +51,10 @@ def main():
 
     def cell(arr, y, f='%.1f', scale=100.0):
         if arr is None:
-            return '{\\textemdash}'
+            return '{--}'
         t = y - by
         if t < 0 or t >= len(arr) or not np.isfinite(arr[t]):
-            return '{\\textemdash}'
+            return '{--}'
         return f % (scale * arr[t])
     rows = []
     rows.append('\\multicolumn{%d}{@{}l}{\\emph{Debt, end of year over output, \\%%}}\\\\' % (len(YEARS) + 1))

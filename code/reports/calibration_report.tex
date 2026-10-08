@@ -6,7 +6,7 @@
 \renewcommand{\topfraction}{.95}\renewcommand{\bottomfraction}{.95}
 \renewcommand{\textfraction}{.05}\renewcommand{\floatpagefraction}{.9}
 \usepackage{booktabs,graphicx,amsmath,amstext,siunitx,textcomp,enumitem}
-\usepackage{url}\urlstyle{same}
+\usepackage{xurl}\urlstyle{same}
 \setlist[itemize]{leftmargin=1.1em,topsep=2pt,itemsep=3pt,parsep=0pt,partopsep=0pt}
 \newcommand{\EUR}[1]{\texteuro#1}
 \usepackage[labelfont=bf,font=small,skip=4pt]{caption}
@@ -298,7 +298,7 @@ life expectancy at 65, in years.}
 \begin{table}[htbp]\centering\footnotesize
 \caption{\label{tab:demography_short}Demographic statistics: data, projection
 and model}\vspace{-2pt}
-\tabinput{demography_short_body.tex}
+{\setlength{\tabcolsep}{3.5pt}\tabinput{demography_short_body.tex}}
 \begin{minipage}{\linewidth}\vspace{3pt}\scriptsize
 Data: Eurostat, population on 1 January and period life tables. Projection:
 EUROPOP2023 baseline, the population behind the 2024 Ageing Report; the
@@ -390,16 +390,17 @@ Aggregates (Figure~\ref{fig:aggregates}):
 \item With the Commission's balance, growth and rate the recursion
   reproduces the projection's 103.4\% in 2060.
 \item Unemployment. Holding the rate at its 2023 level, 10.2\%, in every
-  year, with the same parameters and the same rules, lowers the balance by
-  0.3\% of output a year (benefits 0.2--0.3 points higher, output 2--3\%
-  lower) and raises the 2060 ratio by 18 points; the terminal output tax is
-  then 1.3\% instead of 0.8\%.
+  year, with the same parameters and the same rule, the output tax that
+  fits the 2060 projection is 4.94\% of output instead of 4.35: benefits
+  are 0.2--0.3 points of output higher, output is 3\% lower and growth over
+  2026--60 is 0.69\% a year instead of 0.82, so the same debt path needs
+  0.6 point of output more revenue a year.
 \end{itemize}
 
 \begin{table}[htbp]\centering\footnotesize
 \caption{\label{tab:scenarios}Debt, the primary balance and the output tax by
 scenario, against the Commission's projection}\vspace{-2pt}
-\tabinput{scenarios_body.tex}
+{\setlength{\tabcolsep}{3.5pt}\tabinput{scenarios_body.tex}}
 \begin{minipage}{\linewidth}\vspace{3pt}\scriptsize
 Debt at the end of the year over the year's output. The baseline holds the
 2023 rate through 2025 and, from 2026, the constant rate at which the 2060
@@ -472,7 +473,7 @@ held throughout.}
 \caption{Baseline and the Commission's projection, \% of output. Debt at the
 end of the year over the same year's output}\vspace{-2pt}
 \label{tab:projection}
-\tabinput{projection_body.tex}
+{\setlength{\tabcolsep}{3.5pt}\tabinput{projection_body.tex}}
 \end{table}
 
 \clearpage
@@ -551,7 +552,7 @@ Design:
 \begin{table}[htbp]\centering\footnotesize
 \caption{Policy experiments: responses by financing rule}\vspace{-2pt}
 \label{tab:fiscal}
-\fiscalinput{fiscal_body.tex}
+{\setlength{\tabcolsep}{3.5pt}\fiscalinput{fiscal_body.tex}}
 \end{table}
 
 \begin{figure}[htbp]\centering
@@ -579,7 +580,7 @@ under the three financing rules; panels as in Figure~\ref{fig:G}.}
 \begin{table}[htbp]\centering\scriptsize
 \caption{\label{tab:demography}Demographic statistics in full: observed
 since 2022, the projection, the Ageing Report fiche, and the model}\vspace{-2pt}
-\tabinput{demography_body.tex}
+{\setlength{\tabcolsep}{3.5pt}\tabinput{demography_body.tex}}
 \begin{minipage}{\linewidth}\vspace{4pt}\scriptsize\setlength{\parskip}{2pt}
 Sources, all read on 2026-10-08 from the Eurostat dissemination API
 (\url{https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/}),

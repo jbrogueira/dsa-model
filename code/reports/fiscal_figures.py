@@ -111,7 +111,7 @@ def table(R, G, base_year):
             nfa = (np.asarray(s['counterfactual']['NFA'], float)
                    / np.asarray(s['counterfactual']['Y'], float))
             adj = s.get('adjustment_scalar')
-            cells = ['{\\textemdash}' if adj is None else fmt(100 * adj, 2, True),
+            cells = ['{--}' if adj is None else fmt(100 * adj, 2, True),
                      fmt(dY[t(2023)], 1, True), fmt(dY[t(2023):t(2033)].mean(), 1, True),
                      fmt(dY[t(2050)], 1, True), fmt(dY[t(2100)], 1, True),
                      fmt(dC[t(2100)], 1, True),
@@ -140,7 +140,7 @@ def main():
                      plt, args.last_year)
     body = table(R, G, base_year)
     colspec = ('@{}l' + 'S[table-format=+1.2]' + 'S[table-format=+1.1]' * 5
-               + 'S[table-format=3.0]' * 2 + 'S[table-format=+1.2]@{}')
+               + 'S[table-format=+3.0]' * 2 + 'S[table-format=+1.2]@{}')
     head = (' & {$\\Delta\\tau_l$, pp} & \\multicolumn{4}{c}{Output, \\% from baseline}'
             ' & {$C$, \\%} & \\multicolumn{2}{c}{Debt / output, \\%} & {$NFA/Y$} \\\\\n'
             '\\cmidrule(lr){3-6}\\cmidrule(lr){8-9}\n'
