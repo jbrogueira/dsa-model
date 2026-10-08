@@ -19,16 +19,17 @@
   },
   "_derived": {
     "theta": {
-      "nu": 11.961381280804977,
-      "beta": 0.9951326104662334,
-      "tau_p": 0.1777404466413583,
-      "pension_replacement_default": 0.18320419738567062,
-      "m_good": 0.08399820975136206,
-      "ui_replacement_rate": 0.07922824370209779
+      "nu": 11.455798965636404,
+      "beta": 0.9927586673313438,
+      "tau_p": 0.1796096940226985,
+      "pension_replacement_default": 0.1852716222305677,
+      "m_good": 0.08395794573828527,
+      "ui_replacement_rate": 0.24133339727681788,
+      "tau_k": 0.31089527027027
     },
     "theta_metadata": {
-      "calibration_date": "2026-10-08T07:07:30",
-      "source_report": "output/calibration/calibration_GR_20261008_070730.md"
+      "calibration_date": "2026-10-08T15:27:34",
+      "source_report": "output/calibration/calibration_GR_20261008_152734.md"
     }
   },
   "prices": {
@@ -39,7 +40,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.52671889,
+    "A_tfp": 1.53072262,
     "K_g": 0.703,
     "eta_g": 0.05,
     "delta_g": 0.04316
@@ -331,7 +332,7 @@
     "education_file": "../data/school_age_GR.npz",
     "lump_sum_over_Y": 0.035,
     "foreign_transfer_file": "../data/foreign_transfer_GR.npz",
-    "tau_y": 0.059504,
+    "tau_y": 0.069292,
     "tau_y_ramp_years": 10,
     "pensions_over_Y": 0.14,
     "ui_over_Y": 0.006,
@@ -355,49 +356,49 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 11.961381280804977
+        "initial": 11.437797963378143
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 0.9951326104662334
+        "initial": 0.9923469073671556
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.1777404466413583
+        "initial": 0.17774044664142913
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.18320419738567062
+        "initial": 0.1833207439748214
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.08399820975136206
+        "initial": 0.084051138147757
       },
       {
         "name": "ui_replacement_rate",
         "path": "ui_replacement_rate",
         "lower": 0.01,
         "upper": 0.6,
-        "initial": 0.07922824370209779
+        "initial": 0.2387896573421843
       },
       {
         "name": "tau_k",
         "path": "tau_k_default",
         "lower": 0.05,
         "upper": 0.6,
-        "initial": 0.31
+        "initial": 0.3108952702702703
       }
     ],
     "targets": [
