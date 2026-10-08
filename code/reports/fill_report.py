@@ -170,7 +170,7 @@ def params_table(cfg, n0=None, n_inf=None):
     rows_pin = [
         ('$A$', 'total factor productivity', prod.get('A_tfp'),
          'normalisation, $\\hat y=1$'),
-        ('$\\tau_y$', 'tax on gross output, 2023 pin, held through 2025', fis.get('tau_y'),
+        ('$\\tau_y$', 'tax on gross output, 2023 pin to 2025', fis.get('tau_y'),
          'primary balance in the data, 2023'),
     ]
     out = ['\\multicolumn{4}{l}{\\itshape Externally set}\\\\']
