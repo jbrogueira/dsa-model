@@ -6,6 +6,7 @@
 \renewcommand{\topfraction}{.95}\renewcommand{\bottomfraction}{.95}
 \renewcommand{\textfraction}{.05}\renewcommand{\floatpagefraction}{.9}
 \usepackage{booktabs,graphicx,amsmath,amstext,siunitx,textcomp,enumitem}
+\usepackage{url}\urlstyle{same}
 \setlist[itemize]{leftmargin=1.1em,topsep=2pt,itemsep=3pt,parsep=0pt,partopsep=0pt}
 \newcommand{\EUR}[1]{\texteuro#1}
 \usepackage[labelfont=bf,font=small,skip=4pt]{caption}
@@ -105,13 +106,18 @@ Sources for the parameters not taken straight from a published table:
   3.5\%; pensions 14.0\% (old age, survivors and disability, the Ageing
   Report's concept); public health 5.3\% of a total of 8.4\%; actual social
   contributions 11.2\%.
+\item Health cost by age: the Ageing Report's per-capita public health
+  spending by five-year age group for the EU14 (2024 Ageing Report, Graph
+  I.2.2), each group at its midpoint from 27 to 97, linear between midpoints,
+  flat outside, normalised to a population-weighted mean of one over the 2023
+  cross-section. The level is $m$, set in the SMM.
 \item Net transfer from the EU budget: current and capital transfers
   received from EU institutions less own resources paid, 1.9\% of GDP in
   2023, 1.8\% in 2024, 2.7\% in 2025 and 2026 (Recovery and Resilience
   Facility grants), 1.0\% from 2027, the level before the Facility.
 \item $b_{min}$: the national pension, \EUR{413.76} a month from January
-  2023, over output per person aged 25--84 (\EUR{224.7}bn of GDP over 7.56
-  million people, \EUR{29{,}722} each). The amount is from the legislation
+  2023, over output per person aged 25--99 (\EUR{224.7}bn of GDP over 7.92
+  million people, \EUR{28{,}353} each). The amount is from the legislation
   and the 2024 Ageing Report country fiche; Eurostat reports only aggregate
   pension spending.
 \item Retirement age: the average effective age at which people start an
@@ -141,9 +147,9 @@ Sources for the parameters not taken straight from a published table:
   the 2024 Ageing Report's 2050 rate (6.6\% for ages 20--64, scaled to
   5.6\%) and 5.5\% from 2055. The separation rate of each year gives every
   cohort its own income process by age, known from entry.
-\item Education shares: the population aged 25--84 in 2023, from the labour
+\item Education shares: the population aged 25--99 in 2023, from the labour
   force survey for ages 25--74 (\texttt{lfsa\_pgaed}) and the 2021 census for
-  ages 75--84 (\texttt{cens\_21ae\_r2}).
+  ages 75--99 (\texttt{cens\_21ae\_r2}).
 \end{itemize}
 
 \begin{table}[!htbp]\centering\footnotesize
@@ -184,21 +190,41 @@ Sources for the parameters not taken straight from a published table:
   stationary population. A stationary population with the same dependency
   ratio would miss the large cohorts about to retire, which drive the
   projected rise in the ratio.
-\item Each cohort faces the survival rates of its own birth year.
+\item Each cohort faces the survival rates of its own birth year: the
+  historical life table to 2023 (Eurostat \texttt{demo\_mlifetable}) and the
+  EUROPOP2023 mortality assumption from 2024. The historical table ends in an
+  open group at 85, so ages 85--99 before 2024 carry the 2022 assumption;
+  those entries concern ages a cohort has already passed and enter no
+  decision.
 \item From 2023, survival and the size of entering cohorts follow the
   EUROPOP2023 baseline to 2100, in the baseline and in every experiment.
   After 2100 mortality stays at its 2100 level and the growth of entering
-  cohorts goes to zero by 2120. The age distribution is constant from 2179 on.
-\item Matched exactly: the population aged 25--84, every year; the 2023 age
-  distribution, at every age; death rates by year and age.
+  cohorts goes to zero by 2120. The age distribution is constant from 2194 on.
+\item The size of each entering cohort, measured for the cohorts alive in
+  2023 and projected to 2100, is smoothed with a centred five-year moving
+  average in logs. Adjacent single-year cohorts in the Greek age pyramid
+  differ by 5\% on average and by up to 24\% at the oldest ages, and every
+  budget line priced by cohort would otherwise jump with whichever cohort
+  enters, retires or dies in a given year.
+\item Matched: death rates by year and age, exactly; the population aged
+  25--99, within 0.3\% in every year to 2100; the 2023 age distribution, up
+  to the smoothing.
 \item Missed: the age composition after 2023, because net migration at ages
   26--84 is replaced by a change in the cohort entering at 25, so the model
   has too many prime-age and old people until the 2050s and too few after
-  (persons aged 65--84 per person aged 25--64: 0.69 in 2050 and 0.48 in 2080,
-  against 0.66 and 0.52 in the projection); people under 25 and over 84 (the
-  85+ group is 4\% of the population in 2023 and 10\% in 2100); what has
+  (persons aged 65--99 per person aged 25--64: 0.88 in 2050 and 0.70 in 2080,
+  against 0.82 and 0.72 in the projection); people under 25 and over 99 (the
+  100+ group is 0.04\% of the population in 2023 and 0.5\% in 2100); what has
   happened since 2022 (recorded births in 2023--24 are 11--14\% below the
   projection's).
+\item Table~\ref{tab:demography} sets the projection against the data since
+  2022. On 1 January 2025 the population was 10.37 million, 0.5\% above
+  the projection, because net migration was 30 thousand in 2023 and 54
+  thousand in 2024 against the projection's 5 and $-2$; live births in
+  2023--24 were 10--12\% below the projection's; life expectancy at 65 in
+  2024 was 18.7 years for men and 21.8 for women, 0.5 and 0.3 below the
+  assumption. The old-age ratio on 1 January 2025, 40.9 per 100, is the
+  projection's.
 \item Net migration at every age is put into the cohort entering at 25
   (Figure~\ref{fig:demography}, top left). It is negative until the 2050s,
   hence the fall in 2024 and the movements through the 2030s.
@@ -209,12 +235,11 @@ Sources for the parameters not taken straight from a published table:
   77.8 thousand births for 2023 and 2024 against 71.2 and 68.3 recorded, so
   the cohorts entering from 2049 on are 10--14\% larger than recorded births
   imply.
-\item The dip in 2084--90 is the exit at 85 of the small 2024--29 cohorts.
-\item The share aged 65--84 rises from 0.26 to 0.41 by 2050 as the cohorts
-  born in the 1960s and 1970s retire. Persons aged 65--84 per person aged
-  25--64 peak at 0.69 in 2051, from 0.36 in 2023. The retired per non-retired
-  person peak at 0.60 and fall to 0.29 by 2100, below today's value, because
-  the retirement age rises and people above 84 are outside the model.
+\item The share aged 65--99 rises from 0.30 to 0.47 by 2050 as the cohorts
+  born in the 1960s and 1970s retire. Persons aged 65--99 per person aged
+  25--64 peak at 0.91 in 2056, from 0.43 in 2023. The retired per non-retired
+  person rise from 0.46 to 0.80 in 2055 and fall back to 0.49 by 2100,
+  because the retirement age rises.
 \item Because the 2023 population is not stationary, the economy is in
   transition even with no policy change. Prices do not move: the return is
   set abroad and the wage follows from it. Ageing reaches households through
@@ -236,12 +261,60 @@ Sources for the parameters not taken straight from a published table:
   {\includegraphics[width=\linewidth]{\rundir/demography.pdf}}
   {\figbox{Figure: demographics --- run \texttt{reports/baseline\_figures.py}.}{6cm}}
 \caption{\label{fig:demography}Demographic inputs, 2023--2120. \emph{Top
-left}: the population aged 25--84 and the cohort entering at 25, 2023 = 1.
-\emph{Top right}: shares of the population aged 25--84. \emph{Bottom left}:
-persons aged 65--84 per person aged 25--64, and retired per non-retired
+left}: the population aged 25--99 and the cohort entering at 25, 2023 = 1.
+\emph{Top right}: shares of the population aged 25--99. \emph{Bottom left}:
+persons aged 65--99 per person aged 25--64, and retired per non-retired
 person. \emph{Bottom right}: the average effective retirement age and 65 plus
 life expectancy at 65, in years.}
 \end{figure}
+
+\begin{table}[htbp]\centering\scriptsize
+\caption{\label{tab:demography}Demographic statistics: observed since 2022,
+the projection, and the model}\vspace{-2pt}
+\tabinput{demography_body.tex}
+\begin{minipage}{\linewidth}\vspace{4pt}\scriptsize\setlength{\parskip}{2pt}
+Sources, all read on 2026-10-08 from the Eurostat dissemination API
+(\url{https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/}),
+raw JSON kept under \texttt{data/eurostat\_raw/} and
+\texttt{data/europop2023\_raw/}; table built by
+\texttt{reports/demography\_table.py}.
+
+Observed: population on 1 January by single year of age, Greece, both sexes
+(\texttt{demo\_pjan}, dataset of 2026-09-25,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/table?lang=en});
+live births, deaths and net migration plus statistical adjustment
+(\texttt{demo\_gind}, indicators LBIRTH, DEATH, CNMIGRAT, dataset of
+2026-09-30,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_gind/default/table?lang=en});
+period life expectancy at 65 by sex (\texttt{demo\_mlexpec}, age Y65,
+dataset of 2026-09-25,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_mlexpec/default/table?lang=en});
+total fertility rate (\texttt{demo\_find}, TOTFERRT, dataset of 2026-09-30,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_find/default/table?lang=en}).
+
+EUROPOP2023 baseline (BSL): population on 1 January by single year of age
+(\texttt{proj\_23np},
+\url{https://ec.europa.eu/eurostat/databrowser/view/proj_23np/default/table?lang=en});
+net migration by age, summed (\texttt{proj\_23nanmig},
+\url{https://ec.europa.eu/eurostat/databrowser/view/proj_23nanmig/default/table?lang=en});
+life expectancy at 65 from the assumed mortality rates by age and sex
+(\texttt{proj\_23naasmr}, computed in \texttt{build\_retirement\_age\_GR.py}).
+
+Ageing Report: European Commission, 2024 Ageing Report, country fiche for
+Greece (December 2023), Table 2 ``Main demographic variables evolution'',
+section 2.1; publication page
+\url{https://economy-finance.ec.europa.eu/publications/2024-ageing-report-economic-and-budgetary-projections-eu-member-states-2022-2070_en}.
+The fiche's old-age dependency ratio is persons 65+ per 100 aged 20--64; its
+population and life expectancy are EUROPOP2023's.
+
+Model: \texttt{data/demography\_GR.npz} (\texttt{build\_demography\_GR.py}):
+the 2023 cross-section is EUROPOP2023's at ages 25--99 up to the smoothing
+of cohort sizes, later years are entering cohorts carried by EUROPOP2023
+survival, and the entering cohort absorbs the projection's net migration at
+all ages. Retired per non-retired person and the retirement age follow
+\texttt{data/retirement\_age\_GR.npz}.
+\end{minipage}
+\end{table}
 
 \section*{Baseline transition}\vspace{-0.2cm}
 

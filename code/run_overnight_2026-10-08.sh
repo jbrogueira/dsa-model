@@ -26,7 +26,7 @@ mkdir -p output/calibration "$OUT" "$REPORT_OUT" "$CF_OUT"
 stamp() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 
 echo "[$(stamp)] === 1. scale loop ==="
-SMM_EXTRA="--tol 1e-5 --method least_squares" NORM_EXTRA="--tol 2e-4 --tol-pb 2e-4 --max-iter 20" \
+SMM_EXTRA="--tol 1e-5 --method least_squares" NORM_EXTRA="--tol 1e-3 --tol-pb 2e-4 --max-iter 20" \
   bash run_scale_loop.sh "$CFG" 2>&1 | tee output/scale_loop_2026-10-08.log
 grep -q "SCALE LOOP DONE" output/scale_loop_2026-10-08.log \
   || { echo "[$(stamp)] OVERNIGHT FAILED: scale loop"; exit 1; }

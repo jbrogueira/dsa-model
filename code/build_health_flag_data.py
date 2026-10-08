@@ -12,7 +12,7 @@ companion npz with the population age-share matrix:
     ratios.
   * "Population by age" — Eurostat population on 1 January, single year of age,
     Greece.  Used for data population age shares over the model age range
-    (real ages 25-84 = model ages 0..T-1).
+    (real ages 25-99 = model ages 0..T-1).
 
 The data age-cost index Abar_data_t = sum_j s^d_{j,t} a(j) uses the SAME age
 profile a(j) the model uses (m_age_profile in the config), so the demographics
@@ -27,13 +27,14 @@ Output columns (data/health_flag_GR.csv), one row per year with health data:
     che_gdp                               CHE / GDP         (total health share)
     oop_gdp                               OOP / GDP
     Abar_data                             data age-cost index (model a(j))
-    pop_2584                              population aged 25-84 (persons)
+    pop_model_ages                        population at the model's ages, 25-99 (persons)
 
 Companion data/health_flag_age_shares_GR.npz:
     year (n,), model_age (T,), real_age (T,), share (n, T)  data age shares s^d_{j,t}
 """
 import argparse
 import json
+import re
 import numpy as np
 import openpyxl
 
@@ -82,19 +83,31 @@ def read_gdp(wb):
 
 
 def read_population(wb, n_ages, real_age0=25):
-    """Population by age: year col1, age a in col (3+a). Model age j -> real age
-    real_age0+j -> column 3 + real_age0 + j.  Returns {year: np.array(n_ages)}."""
+    """Population by age: year in column 1, single ages by header label ("Less
+    than 1 year", "1 year", "2 years", ...; the sheet interleaves empty flag
+    columns after age 85, so columns are found by label, not by position).
+    Model age j -> real age real_age0+j.  Returns {year: np.array(n_ages)}."""
     ws = wb["Population by age"]
     rows = list(ws.iter_rows(values_only=True))
     hdr_i = next(i for i, r in enumerate(rows)
                  if r and any(isinstance(c, str) and "Less than 1" in c for c in r))
-    col0 = 3 + real_age0                       # column of the first model age
+    col = {}
+    for j, lab in enumerate(rows[hdr_i]):
+        if not isinstance(lab, str):
+            continue
+        if "Less than 1" in lab:
+            col[0] = j
+        else:
+            m = re.fullmatch(r"(\d+) years?", lab.strip())
+            if m:
+                col[int(m.group(1))] = j
+    cols = [col[real_age0 + j] for j in range(n_ages)]
     pop = {}
     for r in rows[hdr_i + 1:]:
         y = _as_year(r[1])
         if y is None:
             continue
-        vals = r[col0:col0 + n_ages]
+        vals = [r[c] if c < len(r) else None for c in cols]
         if all(isinstance(v, (int, float)) for v in vals):
             pop[y] = np.array([float(v) for v in vals])
     return pop
@@ -139,12 +152,12 @@ def main():
             che_gdp=h["che"] / g,
             oop_gdp=(h["oop"] / g) if np.isfinite(h["oop"]) else np.nan,
             Abar_data=Abar,
-            pop_2584=float(p.sum()),
+            pop_model_ages=float(p.sum()),
         ))
 
     cols = ["year", "gov_health_meur", "che_meur", "oop_meur", "gdp_meur",
             "kappa_data", "gov_health_gdp", "che_gdp", "oop_gdp",
-            "Abar_data", "pop_2584"]
+            "Abar_data", "pop_model_ages"]
     with open(args.out_csv, "w") as f:
         f.write(",".join(cols) + "\n")
         for r in rows_out:

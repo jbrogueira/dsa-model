@@ -108,7 +108,7 @@ population age-share matrix in `data/health_flag_age_shares_GR.npz`), all from
 - **Nominal GDP** — Greece, bn euro ("Input" sheet), the /GDP denominator.
 - **Population age shares** — Eurostat population on 1 January by single year of
   age, Greece ("Population by age" sheet), mapped to the model age range (real
-  ages 25-84 = model ages 0..T-1); `Abar^d` uses the model's `a(j)`.
+  ages 25-99 = model ages 0..T-1); `Abar^d` uses the model's `a(j)`.
 
 Window 2009-2022(3) spans the austerity coverage collapse (`kappa^d` falls from
 0.69 in 2010 to 0.58 in 2014), the natural stress test for the residual.
