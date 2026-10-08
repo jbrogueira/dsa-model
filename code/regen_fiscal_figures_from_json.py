@@ -28,30 +28,38 @@ import matplotlib.pyplot as plt
 from fiscal_experiments import compare_scenarios, debt_fan_chart, _nfa_ca_paths
 
 # Same panel definitions as run_fiscal_figures.py (kept in sync manually).
-MACRO_VARS = ['Y', 'K_domestic', 'L', 'C', 'B_gdp_path', 'A', 'A_gdp', 'NFA_gdp', 'K_g_Y']
+MACRO_VARS = ['Y', 'C', 'K_domestic', 'L', 'w', 'B_gdp_path', 'A', 'A_gdp', 'NFA_gdp',
+              'K_g_Y', 'tau_l']
 MACRO_LABELS = {
     'Y':          'Output (Y)',
-    'K_domestic': 'Domestic capital (K)',
-    'L':          'Labour (L)',
     'C':          'Consumption (C)',
+    'K_domestic': 'Domestic capital (K)',
+    'L':          'Labour, efficiency units (L)',
+    'w':          'Wage rate (w)',
     'B_gdp_path': 'Debt / GDP (B/Y)',
     'A':          'Household wealth (A)',
     'A_gdp':      'Household wealth / Y (A/Y)',
     'NFA_gdp':    'Net foreign assets / Y (NFA/Y)',
     'K_g_Y':      'Public capital / Y (K_g/Y)',
+    'tau_l':      'Labour income tax rate',
 }
+
 PRICE_VARS   = ['w', 'r']
 PRICE_LABELS = {'w': 'Wage rate (w)', 'r': 'Interest rate (r)'}
+
 FISCAL_VARS = [
-    'primary_deficit_gdp',
+    'primary_deficit_gdp', 'total_revenue_gdp', 'total_spending_gdp',
     'tax_l_gdp', 'tax_c_gdp', 'tax_p_gdp', 'tax_k_gdp',
-    'ui_gdp', 'pension_gdp', 'govt_spending', 'public_investment',
+    'ui_gdp', 'pension_gdp', 'govt_spending', 'public_investment_gdp',
+    'gov_health_gdp', 'oop_health_gdp', 'medical_total_gdp', 'transfers_gdp',
     'defense_spending', 'other_net_spending',
     'tax_y_gdp', 'foreign_transfer', 'education', 'lump_sum',
     'interest_payments',
 ]
 FISCAL_LABELS = {
     'primary_deficit_gdp': 'Primary deficit / Y',
+    'total_revenue_gdp': 'Revenue / Y',
+    'total_spending_gdp': 'Primary spending / Y',
     'tax_l_gdp':         'Labour tax / Y',
     'tax_c_gdp':         'Consumption tax / Y',
     'tax_p_gdp':         'Payroll tax / Y',
@@ -59,7 +67,11 @@ FISCAL_LABELS = {
     'ui_gdp':            'UI benefits / Y',
     'pension_gdp':       'Pensions / Y',
     'govt_spending':     'Govt spending (G)',
-    'public_investment': 'Public investment (I_g)',
+    'public_investment_gdp': 'Public investment / Y (I_g/Y)',
+    'gov_health_gdp':    'Government health spending / Y',
+    'oop_health_gdp':    'Household health spending / Y',
+    'medical_total_gdp': 'Total medical spending / Y',
+    'transfers_gdp':     'Means-tested transfers / Y',
     'defense_spending':  'Defense',
     'other_net_spending':'Other net spending',
     'tax_y_gdp':         'Output tax / Y',
@@ -214,15 +226,13 @@ def regen(json_path, output_dir, shocks=None, r_b=None):
         g = data[shock]
         p = shock.lower() + '_'
         title_suffix = f'({shock} shock)'
+        base_year = _p.get('base_year')
 
-        spec = [('baseline',        'baseline'),
-                ('debt_financed',   f'{shock} shock (debt)'),
-                ('tax_financed',    f'{shock} shock (τ_l, debt target)'),
-                ('nfa_constrained', f'{shock} shock (τ_l, NFA@T)')]
+        spec = [(k, lbl.format(shock=shock)) for k, lbl in SCENARIO_LABELS.items()]
         present = [(k, lbl) for k, lbl in spec if k in g]
         missing = [k for k, _ in spec if k not in g]
         if missing:
-            print(f"[{shock}] WARNING: scenarios absent from JSON, skipped: {missing}")
+            print(f"[{shock}] scenarios absent from the JSON, skipped: {missing}")
         results = [_rebuild_result(g[k], lbl, r_b=r_b, growth_factor=growth_factor)
                    for k, lbl in present]
         labels  = [lbl for _, lbl in present]
@@ -233,23 +243,23 @@ def regen(json_path, output_dir, shocks=None, r_b=None):
         compare_scenarios(res_base, *cfs,
             variables=MACRO_VARS, var_labels=MACRO_LABELS,
             title=f'Macro Overview {title_suffix}',
-            output_dir=output_dir, filename=f'{p}macro_overview.png')
+            output_dir=output_dir, filename=f'{p}macro_overview.png', base_year=base_year)
         plt.close('all')
 
         compare_scenarios(res_base, *cfs,
             variables=PRICE_VARS, var_labels=PRICE_LABELS,
             title=f'Prices — SOE sanity check {title_suffix}',
-            output_dir=output_dir, filename=f'{p}prices_sanity.png')
+            output_dir=output_dir, filename=f'{p}prices_sanity.png', base_year=base_year)
         plt.close('all')
 
         compare_scenarios(res_base, *cfs,
             variables=FISCAL_VARS, var_labels=FISCAL_LABELS,
             title=f'Fiscal Decomposition {title_suffix}',
-            output_dir=output_dir, filename=f'{p}fiscal_decomp.png')
+            output_dir=output_dir, filename=f'{p}fiscal_decomp.png', base_year=base_year)
         plt.close('all')
 
         debt_fan_chart(results, labels,
-            output_dir=output_dir, filename=f'{p}debt_fan_chart.png')
+            output_dir=output_dir, filename=f'{p}debt_fan_chart.png', base_year=base_year)
         plt.close('all')
 
 
@@ -257,7 +267,10 @@ SCENARIO_LABELS = {
     'baseline':        'baseline',
     'debt_financed':   '{shock} shock (debt)',
     'tax_financed':    '{shock} shock (τ_l, debt target)',
+    'tax_financed_window': '{shock} shock (τ_l over the cut, debt target)',
     'nfa_constrained': '{shock} shock (τ_l, NFA@T)',
+    'debt_financed_kappa_only': '{shock} shock, coverage only (debt)',
+    'debt_financed_m_only': '{shock} shock, medical spending only (debt)',
 }
 
 

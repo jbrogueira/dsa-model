@@ -630,8 +630,11 @@ def solve_lifecycle_jax(
 
     m_grid_base = m_grid_path[0]
 
+    # Coverage kappa: a scalar or a path by age (T,).
+    kappa_path = jnp.broadcast_to(jnp.asarray(kappa, dtype=jnp.float64), (T,))
+
     model_params = (a_grid, y_grid, h_grid, m_grid_base, P_y, w_at_retirement,
-                    ui_replacement_rate, kappa, beta, gamma,
+                    ui_replacement_rate, kappa_path[0], beta, gamma,
                     pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
                     transfer_floor, education_subsidy_rate, P_y_age_health,
                     labor_supply, nu, phi, trend_growth,
@@ -647,7 +650,7 @@ def solve_lifecycle_jax(
         r_path[T - 1], w_path[T - 1],
         tau_c_path[T - 1], tau_l_path[T - 1], tau_p_path[T - 1], tau_k_path[T - 1],
         pension_replacement_path[T - 1],
-        ui_replacement_rate, kappa, is_retired_T, gamma,
+        ui_replacement_rate, kappa_path[T - 1], is_retired_T, gamma,
         pension_min_floor=pension_min_floor,
         tax_progressive=tax_progressive,
         tax_kappa_hsv=tax_kappa_hsv,
@@ -697,6 +700,7 @@ def solve_lifecycle_jax(
         lump_sum_path[ts],
         # UI eligibility probability; no draw when next period is retired
         jnp.where(ts + 1 < retirement_age, ui_eligibility_prob, 1.0),
+        kappa_path[ts],
     )
 
     # The hours table depends on (nu, phi) only: built once, used at every age.
@@ -707,9 +711,10 @@ def solve_lifecycle_jax(
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t,
          bequest_t, kappa_wage_t, kappa_wage_ret, lump_sum_t,
-         ui_elig_t) = period_params_slice
+         ui_elig_t, kappa_t) = period_params_slice
 
-        model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:-1] + (ui_elig_t,)
+        model_params_t = (model_params[:3] + (m_grid_t,) + model_params[4:7] + (kappa_t,)
+                          + model_params[8:-1] + (ui_elig_t,))
 
         V_t, a_pol_t, c_pol_t, l_pol_t = solve_period_jax(
             V_next,
@@ -801,6 +806,21 @@ _solve_lifecycle_jax_batched_pyc = jax.jit(
     static_argnames=_SOLVE_STATIC,
 )
 
+# Transition variants: coverage kappa (C, T) and medical spending m_grid
+# (C, T, n_h) per cohort, since both can move with calendar time. The base
+# tuples stay as they are for the calibration cross-section, which shares a
+# scalar kappa and one m_grid across cohorts.
+_SOLVE_IN_AXES_TR = _axes_override(solve_lifecycle_jax, _SOLVE_IN_AXES, m_grid=0, kappa=0)
+_solve_lifecycle_jax_batched_tr = jax.jit(
+    jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES_TR),
+    static_argnames=_SOLVE_STATIC,
+)
+_SOLVE_IN_AXES_TR_PYC = _axes_override(solve_lifecycle_jax, _SOLVE_IN_AXES_PYC, m_grid=0, kappa=0)
+_solve_lifecycle_jax_batched_tr_pyc = jax.jit(
+    jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES_TR_PYC),
+    static_argnames=_SOLVE_STATIC,
+)
+
 
 # ---------------------------------------------------------------------------
 # Phase 2: JAX simulation
@@ -868,8 +888,9 @@ def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
 
     # Health expenditure — m_grid is (T, n_h) now
     m_val = m_grid[lifecycle_age, i_h]
-    oop_m = (1.0 - kappa) * m_val
-    gov_m = kappa * m_val
+    kappa_a = kappa[lifecycle_age]       # coverage by age, (T,)
+    oop_m = (1.0 - kappa_a) * m_val
+    gov_m = kappa_a * m_val
 
     # Taxes
     r_t = r_path[lifecycle_age]
@@ -1134,6 +1155,7 @@ def simulate_lifecycle_jax(
         wage_age_profile = jnp.ones(T)
     if lump_sum_path is None:
         lump_sum_path = jnp.zeros(T)
+    kappa = jnp.broadcast_to(jnp.asarray(kappa, dtype=jnp.float64), (T,))
 
     # Dummy P_y_4d if not provided (for JAX tracing)
     if P_y_4d is None:
@@ -1261,6 +1283,18 @@ _simulate_lifecycle_jax_batched_pyc = jax.jit(
     jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES_PYC),
     static_argnames=_SIMULATE_STATIC,
 )
+# Transition variants with kappa and m_grid per cohort (see _SOLVE_IN_AXES_TR).
+_SIMULATE_IN_AXES_TR = _axes_override(simulate_lifecycle_jax, _SIMULATE_IN_AXES, m_grid=0, kappa=0)
+_simulate_lifecycle_jax_batched_tr = jax.jit(
+    jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES_TR),
+    static_argnames=_SIMULATE_STATIC,
+)
+_SIMULATE_IN_AXES_TR_PYC = _axes_override(simulate_lifecycle_jax, _SIMULATE_IN_AXES_PYC,
+                                          m_grid=0, kappa=0)
+_simulate_lifecycle_jax_batched_tr_pyc = jax.jit(
+    jax.vmap(simulate_lifecycle_jax, in_axes=_SIMULATE_IN_AXES_TR_PYC),
+    static_argnames=_SIMULATE_STATIC,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1335,6 +1369,7 @@ def exact_age_means_jax(
         P_y_4d = jnp.zeros((T, n_h, n_y, n_y))
     if lump_sum_path is None:
         lump_sum_path = jnp.zeros(T)
+    kappa = jnp.broadcast_to(jnp.asarray(kappa, dtype=jnp.float64), (T,))
     survival = jnp.ones((T, n_h)) if survival_probs is None else jnp.asarray(survival_probs)
 
     # State indices on the grid, each of shape (n_alpha, n_a, n_y, n_h, n_y)
@@ -1478,6 +1513,30 @@ _EXACT_IN_AXES_PYC = _axes_override(exact_age_means_jax, _EXACT_IN_AXES,
                                     P_y_4d=0, initial_dist=0)
 _exact_age_means_jax_batched_pyc = jax.jit(
     jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES_PYC),
+    static_argnames=_EXACT_STATIC,
+)
+# Transition variants with kappa and m_grid per cohort (see _SOLVE_IN_AXES_TR).
+_EXACT_IN_AXES_TR = _axes_override(exact_age_means_jax, _EXACT_IN_AXES, m_grid=0, kappa=0)
+_exact_age_means_jax_batched_tr = jax.jit(
+    jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES_TR),
+    static_argnames=_EXACT_STATIC,
+)
+_EXACT_IN_AXES_TR_PYC = _axes_override(exact_age_means_jax, _EXACT_IN_AXES_PYC, m_grid=0, kappa=0)
+_exact_age_means_jax_batched_tr_pyc = jax.jit(
+    jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES_TR_PYC),
+    static_argnames=_EXACT_STATIC,
+)
+# State-level cross-sections of a batch of transition cohorts, each at its own
+# ages (panel_rows (C, R)): distribution_stats.py.
+_EXACT_PANEL_IN_AXES_TR = _axes_override(exact_age_means_jax, _EXACT_IN_AXES_TR, panel_rows=0)
+_exact_panel_jax_batched_tr = jax.jit(
+    jax.vmap(exact_age_means_jax, in_axes=_EXACT_PANEL_IN_AXES_TR),
+    static_argnames=_EXACT_STATIC,
+)
+_EXACT_PANEL_IN_AXES_TR_PYC = _axes_override(exact_age_means_jax, _EXACT_IN_AXES_TR_PYC,
+                                             panel_rows=0)
+_exact_panel_jax_batched_tr_pyc = jax.jit(
+    jax.vmap(exact_age_means_jax, in_axes=_EXACT_PANEL_IN_AXES_TR_PYC),
     static_argnames=_EXACT_STATIC,
 )
 
@@ -1800,6 +1859,7 @@ class LifecycleModelJAX:
         self.retirement_age = self._np_model.retirement_age
         self.ui_replacement_rate = self._np_model.ui_replacement_rate
         self.kappa = self._np_model.kappa
+        self.kappa_path = jnp.array(self._np_model.kappa_path)  # coverage by age, (T,)
 
         # Convert grids and processes to JAX arrays
         self.a_grid = jnp.array(self._np_model.a_grid)
@@ -1902,7 +1962,7 @@ class LifecycleModelJAX:
                 self.r_path, self.w_path,
                 self.tau_c_path, self.tau_l_path, self.tau_p_path, self.tau_k_path,
                 self.pension_replacement_path,
-                self.ui_replacement_rate, self.kappa,
+                self.ui_replacement_rate, self.kappa_path,
                 self.beta, self.gamma,
                 self.T, self.retirement_age,
                 pension_min_floor=self.pension_min_floor,
@@ -2092,7 +2152,7 @@ class LifecycleModelJAX:
             self.w_path, self.w_at_retirement,
             self.tau_c_path, self.tau_l_path, self.tau_p_path, self.tau_k_path,
             self.r_path, self.pension_replacement_path,
-            self.ui_replacement_rate, self.kappa,
+            self.ui_replacement_rate, self.kappa_path,
             self.retirement_age, self.T, self.current_age,
             n_sim, subkey,
             initial_i_a, initial_i_y, initial_i_h, initial_i_y_last,
@@ -2146,7 +2206,7 @@ class LifecycleModelJAX:
             self.w_path, self.w_at_retirement,
             self.tau_c_path, self.tau_l_path, self.tau_p_path, self.tau_k_path,
             self.r_path, self.pension_replacement_path,
-            self.ui_replacement_rate, self.kappa,
+            self.ui_replacement_rate, self.kappa_path,
             self.retirement_age, self.T, self.current_age,
             jnp.array(self._np_model._initial_distribution()), self.alpha_grid,
             pension_min_floor=self.pension_min_floor,
@@ -2191,7 +2251,7 @@ class LifecycleModelJAX:
             self.w_path, self.w_at_retirement,
             self.tau_c_path, self.tau_l_path, self.tau_p_path, self.tau_k_path,
             self.r_path, self.pension_replacement_path,
-            self.ui_replacement_rate, self.kappa,
+            self.ui_replacement_rate, self.kappa_path,
             self.retirement_age, self.T, self.current_age,
             jnp.array(self._np_model._initial_distribution()), self.alpha_grid,
             pension_min_floor=self.pension_min_floor,

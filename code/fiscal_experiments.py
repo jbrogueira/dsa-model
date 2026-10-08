@@ -43,7 +43,7 @@ from scipy.optimize import minimize_scalar
 
 _PRE_TP_KEYS = ('r_path', 'w_path', 'tau_l_path', 'tau_c_path', 'tau_p_path',
                 'tau_k_path', 'pension_replacement_path',
-                'lump_sum_path')
+                'lump_sum_path', 'kappa_path', 'm_scale_path')
 
 
 def _nice_ylim(ax, min_span=0.01):
@@ -92,6 +92,16 @@ class FiscalScenario:
     delta_tau_k_path:    Optional[np.ndarray] = None   # Δ capital income tax
     delta_tau_p_path:    Optional[np.ndarray] = None   # Δ payroll tax
     delta_pension_path:  Optional[np.ndarray] = None   # Δ pension replacement rate
+    delta_kappa_path:    Optional[np.ndarray] = None   # Δ health coverage kappa
+    delta_m_scale_path:  Optional[np.ndarray] = None   # Δ multiplier on medical spending
+
+    # ── Timing ───────────────────────────────────────────────────────────────
+    # Period t_s in which the shock and its financing become known (an
+    # unanticipated shock; 0 is the start of the transition). Households
+    # alive at t_s follow the baseline before t_s and re-optimise from their
+    # t_s state. The delta paths and the adjustment profile should be zero
+    # before t_s.
+    shock_period: int = 0
 
     # ── Financing instrument ─────────────────────────────────────────────────
     # 'debt'          : B_path is the residual (no iteration on agent problems)
@@ -203,6 +213,14 @@ def back_loaded(T: int, n_delay: int) -> np.ndarray:
     """psi_t = 0 for first n_delay periods, then 1."""
     n_delay = max(0, min(n_delay, T))
     return np.concatenate([np.zeros(n_delay), np.ones(T - n_delay)])
+
+
+def window_profile(T: int, start: int, n: int) -> np.ndarray:
+    """psi_t = 1 for start <= t < start + n, else 0: an instrument that moves
+    only over a window."""
+    psi = np.zeros(T)
+    psi[max(0, int(start)):max(0, int(start) + int(n))] = 1.0
+    return psi
 
 
 def exponential_convergence(T: int, half_life: float) -> np.ndarray:
@@ -632,6 +650,25 @@ def _apply_shock(scenario: FiscalScenario,
     cf['education_over_Y0'] = base_paths.get('education_over_Y0')
     cf['education_Y0'] = base_paths.get('education_Y0')
 
+    # Health coverage and medical spending by period: the baseline paths plus
+    # the shock. Both stay None (the configured scalars) without a baseline
+    # path and without a shock.
+    for key, dkey, base_default in (('kappa_path', 'delta_kappa_path', None),
+                                    ('m_scale_path', 'delta_m_scale_path', 1.0)):
+        b = _base(key)
+        d = getattr(scenario, dkey)
+        if d is None:
+            cf[key] = b
+            continue
+        if b is None:
+            if base_default is None:
+                raise ValueError(f"{dkey} needs base_paths['{key}'] (the baseline coverage path)")
+            b = np.full(T, base_default)
+        cf[key] = b + _shock(d)
+    if cf.get('kappa_path') is not None and np.any(cf['kappa_path'] <= 0.0):
+        raise ValueError("coverage kappa must stay positive")
+    cf['shock_period'] = int(scenario.shock_period)
+
     # Apply financing instrument adjustment
     fin = scenario.financing
     if fin == 'tau_l':
@@ -697,6 +734,9 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
         education_Y0=cf.get('education_Y0'),
         foreign_transfer_over_Y=cf.get('foreign_transfer_over_Y'),
         unemployment_index_path=cf.get('unemployment_index_path'),
+        kappa_path=cf.get('kappa_path'),
+        m_scale_path=cf.get('m_scale_path'),
+        shock_period=int(cf.get('shock_period', 0)),
         n_sim=n_sim,
         verbose=verbose,
         recompute_bequests=recompute_bequests,
@@ -704,6 +744,29 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
     )
     budget = olg.compute_government_budget_path(n_sim=n_sim, verbose=verbose)
     return macro, budget
+
+
+def _check_pre_shock(scenario: FiscalScenario, base_macro: dict, base_budget: dict,
+                     cf_macro: dict, cf_budget: dict, rtol: float = 1e-8) -> None:
+    """Before an unanticipated shock in t_s the counterfactual is the baseline:
+    the primary deficit through t_s - 1 and household wealth through t_s (the
+    assets carried into t_s were chosen before the shock). The stitched
+    baseline policies and common random numbers give this by construction, so
+    a difference is an error in the stitching."""
+    t_s = int(scenario.shock_period)
+    if t_s <= 0:
+        return
+    checks = (('primary_deficit', np.asarray(base_budget['primary_deficit'])[:t_s],
+               np.asarray(cf_budget['primary_deficit'])[:t_s]),
+              ('A', np.asarray(base_macro['A'])[:t_s + 1],
+               np.asarray(cf_macro['A'])[:t_s + 1]))
+    for name, b, c in checks:
+        scale = max(float(np.max(np.abs(b))), 1e-12)
+        gap = float(np.max(np.abs(c - b))) / scale
+        if gap > rtol:
+            raise RuntimeError(
+                f"scenario {scenario.name!r}: {name} differs from the baseline before the "
+                f"shock in period {t_s} (relative gap {gap:.2e}); the MIT stitching failed")
 
 
 def _nfa_ca_paths(macro: dict, growth_factor=1.0) -> tuple:
@@ -804,6 +867,7 @@ def run_debt_financed(olg, scenario: FiscalScenario, base_paths: dict,
         pre_transition_paths=pre_tp,
     )
 
+    _check_pre_shock(scenario, base_macro, base_budget, cf_macro, cf_budget)
     B_path = compute_debt_path(
         cf_budget['primary_deficit'], r_B_path, B_initial=scenario.B_initial,
         growth_factor=G_growth, adjustment_path=ext_paths
@@ -1082,6 +1146,7 @@ def run_tax_financed(olg, scenario: FiscalScenario, base_paths: dict,
         cf_macro['K_g'] = olg.K_g_path
     if olg.NFA_path is not None:
         cf_macro['NFA'] = olg.NFA_path
+    _check_pre_shock(scenario, base_macro, base_budget, cf_macro, cf_budget)
 
     # Correct NFA: NFA = A - K_domestic - B  (simulate_transition returns A - K_domestic)
     if cf_macro.get('NFA') is not None:
@@ -1347,13 +1412,17 @@ def _baseline_settings(n_post, n_sim, recompute_bequests) -> dict:
 
 
 def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
-                 recompute_bequests: bool = False, verbose: bool = False) -> dict:
+                 recompute_bequests: bool = False, verbose: bool = False,
+                 shock_period: int = 0) -> dict:
     """Run the no-shock baseline once and attach its results to a copy of base_paths.
 
     The returned dict carries 'base_macro', 'base_budget', 'w_path' and
     '_pre_transition_paths'. Passing it to run_fiscal_scenario() for scenarios
     with the same n_post, n_sim and recompute_bequests reuses this baseline
     instead of re-running it for every scenario.
+
+    shock_period is the largest t_s of the scenarios that follow: the cohort
+    models of every cohort born before it are kept for the MIT stitching.
     """
     base_paths = _with_default_paths(olg, base_paths)
     if '_pre_transition_paths' in base_paths:
@@ -1405,12 +1474,12 @@ def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
         olg._mit_baseline_cache = {}
         for edu_type, models_dict in olg.birth_cohort_solutions.items():
             for bp, model in models_dict.items():
-                if bp < 0:
+                if bp < max(int(shock_period), 0):
                     olg._mit_baseline_cache[(edu_type, bp)] = model
         # The later-retiring parts of split cohorts, keyed as solve_cohort_problems keys them.
         for edu_type, models_dict in (getattr(olg, 'birth_cohort_later', None) or {}).items():
             for bp, model in models_dict.items():
-                if bp < 0:
+                if bp < max(int(shock_period), 0):
                     olg._mit_baseline_cache[(edu_type, bp, 'later')] = model
         # Set the pre_tp id so the cache is not invalidated
         olg._mit_pre_tp_id = id(pre_tp)
@@ -1418,7 +1487,69 @@ def run_baseline(olg, base_paths: dict, n_post: int = 0, n_sim: int = 500,
     base_paths['base_macro'] = base_macro
     base_paths['base_budget'] = base_budget
     base_paths['_baseline_settings'] = _baseline_settings(n_post, n_sim, recompute_bequests)
+    base_paths['_baseline_shock_period'] = int(shock_period)
     return base_paths
+
+
+# ---------------------------------------------------------------------------
+# Health-coverage shock
+# ---------------------------------------------------------------------------
+
+def health_cut_paths(base: dict, d_gov_gdp: float, d_hh_gdp: float,
+                     t_s: int, n_years: int, T: int, Y_eval=None) -> dict:
+    """Coverage and medical-spending paths of a temporary cut in public health
+    spending over periods t_s ... t_s + n_years - 1.
+
+    With g0 and o0 the baseline averages over the window of government and
+    household health spending over output (o0 = g0 (1 - kappa0) / kappa0),
+    the constant coverage kappa1 and multiplier mu1 on the level of medical
+    spending solve
+
+        kappa1 mu1 (g0 + o0)       = g0 + d_gov_gdp
+        (1 - kappa1) mu1 (g0 + o0) = o0 + d_hh_gdp,
+
+    so mu1 = (g0 + o0 + d_gov + d_hh) / (g0 + o0) and
+    kappa1 = (g0 + d_gov) / (g0 + o0 + d_gov + d_hh). The conditions are linear
+    in the window averages, so the targets hold exactly on baseline output.
+    d_hh_gdp = -d_gov_gdp gives a cut in coverage only (mu1 = 1).
+
+    With Y_eval (an output path, e.g. a counterfactual's), the levels are
+    set so that the spending of the counterfactual over Y_eval meets the
+    targets: mu1 = (g0 + o0 + d_gov + d_hh) / mean(M / Y_eval) over the
+    window, M the baseline's total medical spending; kappa1 is unchanged.
+
+    base : the dict returned by run_baseline (base_budget, base_macro and the
+        baseline coverage path kappa_path).
+
+    Returns {'delta_kappa_path', 'delta_m_scale_path' (both (T,), zero
+    outside the window), 'kappa0', 'kappa1', 'mu1', 'g0', 'o0'}.
+    """
+    t_s, n_years = int(t_s), int(n_years)
+    win = slice(t_s, t_s + n_years)
+    Y = np.asarray(base['base_macro']['Y'], dtype=float)
+    gov = np.asarray(base['base_budget']['gov_health'], dtype=float)
+    kappa_base = np.asarray(base['kappa_path'], dtype=float)
+    kappa0 = float(kappa_base[t_s])
+    if np.any(np.abs(kappa_base[win] - kappa0) > 1e-12):
+        raise ValueError("the baseline coverage is not constant over the window")
+    g0 = float(np.mean(gov[win] / Y[win]))
+    o0 = g0 * (1.0 - kappa0) / kappa0
+    if Y_eval is None:
+        mu1 = (g0 + o0 + d_gov_gdp + d_hh_gdp) / (g0 + o0)
+    else:
+        M_over_Y = np.mean(gov[win] / kappa0 / np.asarray(Y_eval, dtype=float)[win])
+        mu1 = (g0 + o0 + d_gov_gdp + d_hh_gdp) / M_over_Y
+    kappa1 = (g0 + d_gov_gdp) / (g0 + o0 + d_gov_gdp + d_hh_gdp)
+    if not (0.0 < kappa1 <= 1.0) or mu1 <= 0.0:
+        raise ValueError(f"targets ({d_gov_gdp:+.4f}, {d_hh_gdp:+.4f}) imply kappa1 = {kappa1:.4f}, "
+                         f"mu1 = {mu1:.4f} at baseline shares g0 = {g0:.4f}, o0 = {o0:.4f}")
+    d_kappa = np.zeros(T)
+    d_mu = np.zeros(T)
+    d_kappa[win] = kappa1 - kappa0
+    d_mu[win] = mu1 - 1.0
+    return {'delta_kappa_path': d_kappa, 'delta_m_scale_path': d_mu,
+            'kappa0': kappa0, 'kappa1': float(kappa1), 'mu1': float(mu1),
+            'g0': g0, 'o0': float(o0)}
 
 
 # ---------------------------------------------------------------------------
@@ -1521,8 +1652,12 @@ def compare_scenarios(
     filename: Optional[str] = None,
     output_dir: str = 'output',
     T_balance: Optional[int] = None,
+    base_year: Optional[int] = None,
 ) -> plt.Figure:
     """Side-by-side line plots comparing base vs. counterfactual paths.
+
+    With base_year the horizontal axis is the calendar year (period 0 is
+    base_year) and the plot ends in 2070.
 
     Parameters
     ----------
@@ -1548,7 +1683,10 @@ def compare_scenarios(
     all_axes  = axes.flat
 
     T = len(base.cf_macro['Y'])
+    if base_year is not None:
+        T = min(T, 2070 - int(base_year) + 1)
     periods = np.arange(T)
+    x_axis = periods + (int(base_year) if base_year is not None else 0)
 
     # Auto-detect T_balance from counterfactuals if not supplied
     if T_balance is None:
@@ -1600,13 +1738,13 @@ def compare_scenarios(
             series = _get_series(result, key)
             if series is None:
                 continue
-            ax.plot(periods, series[:T], label=label,
+            ax.plot(x_axis, series[:T], label=label,
                     color=colours[i % len(colours)], linewidth=1.8,
                     marker='o' if i == 0 else None, markersize=3)
         ax.set_title(var_labels.get(key, key), fontweight='bold')
-        ax.set_xlabel('Period')
-        ax.set_xticks(periods[::5])
-        if T_balance is not None:
+        ax.set_xlabel('Year' if base_year is not None else 'Period')
+        ax.set_xticks(x_axis[::5] if base_year is None else x_axis[::10])
+        if T_balance is not None and T_balance < T:
             ax.axvline(T_balance, color='grey', linewidth=1.0, linestyle='--',
                        label=f'T_balance={T_balance}')
         ax.legend(fontsize=8)
@@ -1697,24 +1835,28 @@ def debt_fan_chart(
     save: bool = True,
     filename: Optional[str] = None,
     output_dir: str = 'output',
+    base_year: Optional[int] = None,
 ) -> plt.Figure:
-    """Plot B/Y paths for multiple scenarios — standard DSA output."""
+    """Plot B/Y paths for multiple scenarios — standard DSA output. With
+    base_year the axis is the calendar year, to 2070."""
     import os
     fig, ax = plt.subplots(figsize=(10, 6))
     colours = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     for i, (result, label) in enumerate(zip(scenarios, labels)):
         T = len(result.cf_macro['Y'])
+        if base_year is not None:
+            T = min(T, 2070 - int(base_year) + 1)
         B_gdp = result.B_gdp_path[:T]
-        ax.plot(np.arange(T), B_gdp * 100.0,
+        ax.plot(np.arange(T) + (int(base_year) if base_year is not None else 0), B_gdp * 100.0,
                 label=label, color=colours[i % len(colours)], linewidth=2,
                 marker='o' if i == 0 else None, markersize=3)
 
     ax.axhline(y=60.0, color='black', linestyle='--', alpha=0.4, label='60% reference')
-    ax.set_xlabel('Period')
+    ax.set_xlabel('Year' if base_year is not None else 'Period')
     ax.set_ylabel('Debt / GDP (%)')
     ax.set_title('Debt Sustainability Analysis — Fan Chart', fontweight='bold')
-    ax.set_xticks(np.arange(0, T, 5))
+    ax.set_xticks(np.arange(0, T, 5) + (int(base_year) if base_year is not None else 0))
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()

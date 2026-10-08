@@ -23,7 +23,11 @@ each with the recursion is recorded as that year's stock-flow adjustment.
 Over 2026-2060 the adjustment is the projection's (the deferred interest on
 the official loans to 2032); after 2060 it is zero.
 
-Output tax. tau_y is constant at its base-year value through 2060 and moves
+Output tax. tau_y is at its base-year value through 2025. From
+fiscal.tau_y_first_year (2026) to 2060 it is the base-year value, or, with
+fiscal.tau_y_mode "debt" (the GR configuration), one constant rate set so that
+the debt ratio of fiscal.tau_y_debt_year (2060) equals the projection's
+(solve_baseline(match_debt_year=)). It then moves
 linearly over the following fiscal.tau_y_ramp_years (ten: 2061-2070) to the
 rate that holds the debt ratio at its 2070 value over the following ten
 years, d_2080 = d_2070, and stays there. (The one-year condition

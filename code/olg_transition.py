@@ -338,6 +338,9 @@ class OLGTransition:
         self._active_other_net_over_Y = None
         self._active_tau_y_path = None
         self._active_lump_sum_path = None
+        self._active_kappa_path = None
+        self._active_m_scale_path = None
+        self._active_shock_period = 0
         self._active_foreign_transfer_over_Y = None
         self._active_education = (0.0, None, None)   # (e_0, index path, Y_ref)
 
@@ -558,6 +561,10 @@ class OLGTransition:
         pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
         w_at_rets = jnp.array([m.w_at_retirement for m in model_list])
         ls_paths = jnp.stack([m.lump_sum_path for m in model_list])
+        # Coverage and medical spending by age, per cohort (they move with
+        # calendar time in the health experiments)
+        kappa_paths = jnp.stack([m.kappa_path for m in model_list])
+        m_grids = jnp.stack([m.m_grid for m in model_list])
 
         # Pass all args positionally to match vmap in_axes. With age-dependent
         # income matrices every cohort carries its own (the unemployment path),
@@ -565,8 +572,9 @@ class OLGTransition:
         per_cohort_py = bool(ref.P_y_age_health)
         P_y_4d_arg = None
         py_stack = jnp.stack([m.P_y_4d for m in model_list]) if per_cohort_py else None
-        from lifecycle_jax import _solve_lifecycle_jax_batched_pyc
-        solve_batched = _solve_lifecycle_jax_batched_pyc if per_cohort_py else _solve_lifecycle_jax_batched
+        from lifecycle_jax import _solve_lifecycle_jax_batched_tr, _solve_lifecycle_jax_batched_tr_pyc
+        solve_batched = (_solve_lifecycle_jax_batched_tr_pyc if per_cohort_py
+                         else _solve_lifecycle_jax_batched_tr)
         bequest_lumpsums = jnp.array([float(models_dict[b].bequest_lumpsum)
                                       for b in birth_periods])
         # Per-cohort survival schedules (in_axes=0). Cohorts may have distinct
@@ -587,12 +595,12 @@ class OLGTransition:
         # indices over the full grid (Phase 8.5b), so the solve must supply
         # matching per-alpha policies.
         def _solve_chunk(alpha_mult_jax, w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c, beq_c,
-                         surv_c, ls_c, *py_c):
+                         surv_c, ls_c, kap_c, mg_c, *py_c):
             return solve_batched(
-                ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                ref.a_grid, ref.y_grid, ref.h_grid, mg_c,
                 ref.P_y_2d, ref.P_h,
                 w_at_c, r_c, w_c, tc_c, tl_c, tp_c, tk_c, pen_c,
-                ref.ui_replacement_rate, ref.kappa,
+                ref.ui_replacement_rate, kap_c,
                 ref.beta, ref.gamma,
                 ref.T, ref.retirement_age,
                 ref.pension_min_floor, ref.tax_progressive,
@@ -611,7 +619,8 @@ class OLGTransition:
 
         batched_arrays = (w_at_rets, r_paths, w_paths,
                           tau_c_paths, tau_l_paths, tau_p_paths, tau_k_paths,
-                          pension_paths, bequest_lumpsums, surv_paths, ls_paths) \
+                          pension_paths, bequest_lumpsums, surv_paths, ls_paths,
+                          kappa_paths, m_grids) \
             + ((py_stack,) if per_cohort_py else ())
 
         # Where the results are kept: host arrays (the default; frees device
@@ -694,6 +703,8 @@ class OLGTransition:
                  model.w_at_retirement, model.bequest_lumpsum,
                  surv if surv is not None else (),
                  getattr(model, 'lump_sum_path', ()),
+                 # coverage and medical spending by age
+                 model.kappa_path, model.m_grid,
                  # the income matrices, which differ across cohorts under an
                  # unemployment path
                  model.P_y)
@@ -784,6 +795,8 @@ class OLGTransition:
             pension_paths = jnp.stack([m.pension_replacement_path for m in model_list])
             beq_lumps = jnp.array([float(getattr(m, 'bequest_lumpsum', 0.0)) for m in model_list])
             ls_paths = jnp.stack([m.lump_sum_path for m in model_list])
+            kappa_paths = jnp.stack([m.kappa_path for m in model_list])
+            m_grids = jnp.stack([m.m_grid for m in model_list])
 
             # Pre-compute per-cohort initial conditions and PRNG keys
             # (replicates LifecycleModelJAX.simulate() setup per cohort)
@@ -890,9 +903,10 @@ class OLGTransition:
             per_cohort_py = bool(ref.P_y_age_health)
             P_y_4d_sim = None
             py_stack_sim = jnp.stack([m.P_y_4d for m in model_list]) if per_cohort_py else None
-            from lifecycle_jax import _simulate_lifecycle_jax_batched_pyc
-            simulate_batched = (_simulate_lifecycle_jax_batched_pyc if per_cohort_py
-                                else _simulate_lifecycle_jax_batched)
+            from lifecycle_jax import (_simulate_lifecycle_jax_batched_tr,
+                                       _simulate_lifecycle_jax_batched_tr_pyc)
+            simulate_batched = (_simulate_lifecycle_jax_batched_tr_pyc if per_cohort_py
+                                else _simulate_lifecycle_jax_batched_tr)
 
             # Per-cohort survival schedules (in_axes=0 in the batched simulate kernel).
             _ones_surv = jnp.ones((ref.T, self.n_h))
@@ -912,6 +926,7 @@ class OLGTransition:
                 surv_paths_sim,
                 beq_lumps,
                 ls_paths,
+                kappa_paths, m_grids,
             ) + ((py_stack_sim,) if per_cohort_py else ())
 
             # Cohorts with different retirement ages cannot share a batch (the
@@ -940,17 +955,18 @@ class OLGTransition:
                     (cw, cwret, ctau_c, ctau_l, ctau_p, ctau_k, cr, cpen,
                      ckeys,
                      ci_a, ci_y, ci_h, ci_y_last, cavg, cn_yr,
-                     calpha_idx, calpha_mult, csurv, cbeq, cls) = sliced[:20]
-                    cpy = sliced[20] if per_cohort_py else P_y_4d_sim
+                     calpha_idx, calpha_mult, csurv, cbeq, cls,
+                     ckappa, cmg, *cpy_l) = sliced
+                    cpy = cpy_l[0] if per_cohort_py else P_y_4d_sim
 
                     chunk_results = simulate_batched(
                         ca_pol, cc_pol, cl_pol,
-                        ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                        ref.a_grid, ref.y_grid, ref.h_grid, cmg,
                         ref.P_y_2d, ref.P_h,
                         cw, cwret,
                         ctau_c, ctau_l, ctau_p, ctau_k,
                         cr, cpen,
-                        ref.ui_replacement_rate, ref.kappa,
+                        ref.ui_replacement_rate, ckappa,
                         gref.retirement_age, ref.T, ref.current_age,
                         n_sim, ckeys,
                         ci_a, ci_y, ci_h, ci_y_last,
@@ -1028,7 +1044,7 @@ class OLGTransition:
         model}), one vmapped call per chunk of each retirement group.
         Returns {birth_period: (T, 23) array}."""
         import jax.numpy as jnp
-        from lifecycle_jax import _exact_age_means_jax_batched, _exact_age_means_jax_batched_pyc
+        from lifecycle_jax import _exact_age_means_jax_batched_tr, _exact_age_means_jax_batched_tr_pyc
 
         out = {}
         for group in self._retirement_groups(models):
@@ -1036,7 +1052,8 @@ class OLGTransition:
             # Per-cohort income matrices and initial distributions under an
             # unemployment path; shared otherwise.
             per_cohort_py = bool(ref.P_y_age_health)
-            exact_batched = _exact_age_means_jax_batched_pyc if per_cohort_py else _exact_age_means_jax_batched
+            exact_batched = (_exact_age_means_jax_batched_tr_pyc if per_cohort_py
+                             else _exact_age_means_jax_batched_tr)
             if (float(ref.transfer_floor) > 0.0
                     and int(getattr(ref.config, 'schooling_years', 0) or 0) > 0):
                 raise NotImplementedError(
@@ -1061,13 +1078,13 @@ class OLGTransition:
                 res = exact_batched(
                     stack(lambda m: m.a_policy_alpha), stack(lambda m: m.c_policy_alpha),
                     stack(lambda m: m.l_policy_alpha),
-                    ref.a_grid, ref.y_grid, ref.h_grid, ref.m_grid,
+                    ref.a_grid, ref.y_grid, ref.h_grid, stack(lambda m: m.m_grid),
                     ref.P_y_2d, ref.P_h,
                     stack(lambda m: m.w_path), jnp.array([m.w_at_retirement for m in ms]),
                     stack(lambda m: m.tau_c_path), stack(lambda m: m.tau_l_path),
                     stack(lambda m: m.tau_p_path), stack(lambda m: m.tau_k_path),
                     stack(lambda m: m.r_path), stack(lambda m: m.pension_replacement_path),
-                    ref.ui_replacement_rate, ref.kappa,
+                    ref.ui_replacement_rate, stack(lambda m: m.kappa_path),
                     ref.retirement_age, ref.T, ref.current_age,
                     init_arg, ref.alpha_grid,
                     ref.pension_min_floor, ref.tax_progressive,
@@ -1478,9 +1495,22 @@ class OLGTransition:
                           pre_transition_paths=None,
                           verbose=False,
                           lump_sum_path=None,
-                          unemployment_index_path=None):
+                          unemployment_index_path=None,
+                          kappa_path=None,
+                          m_scale_path=None,
+                          shock_period=0):
         """
         Solve lifecycle problems for all cohorts given full price paths.
+
+        kappa_path, m_scale_path : health coverage and the multiplier on the
+        level of medical spending by calendar period (full length, like
+        lump_sum_path); None keeps the configured scalar kappa and m.
+
+        shock_period : the period t_s in which the counterfactual paths become
+        known (MIT shock). Every cohort alive at t_s keeps the policies of the
+        baseline (pre_transition_paths) at the ages it lived before t_s and is
+        re-solved from age t_s - birth_period on. 0 is the shock at the start
+        of the transition.
         
         Key indexing:
         - r_path, w_path, etc. are indexed by CALENDAR TIME (0 to T_transition + T - 1)
@@ -1558,6 +1588,8 @@ class OLGTransition:
             _base_r_ext = _extend_path(pre_transition_paths.get('r_path'), self.T)
             _base_w_ext = _extend_path(pre_transition_paths.get('w_path'), self.T)
             _base_ls_ext = _extend_path(pre_transition_paths.get('lump_sum_path'), self.T)
+            _base_kappa_ext = _extend_path(pre_transition_paths.get('kappa_path'), self.T)
+            _base_ms_ext = _extend_path(pre_transition_paths.get('m_scale_path'), self.T)
             if _base_w_ext is None or _base_r_ext is None:
                 warnings.warn(
                     "pre_transition_paths has no 'w_path' or 'r_path': the MIT "
@@ -1567,7 +1599,13 @@ class OLGTransition:
         else:
             _base_tau_c_ext = _base_tau_l_ext = _base_tau_p_ext = \
                 _base_tau_k_ext = _base_pension_ext = _base_r_ext = _base_w_ext = None
-            _base_ls_ext = None
+            _base_ls_ext = _base_kappa_ext = _base_ms_ext = None
+        shock_period = int(shock_period)
+        if shock_period < 0:
+            raise ValueError(f"shock_period = {shock_period} < 0")
+        if shock_period > 0 and pre_transition_paths is None:
+            raise ValueError("shock_period > 0 needs pre_transition_paths (the baseline "
+                             "that households follow before the shock)")
         # The unemployment index over the cohorts' horizon (one before t = 0),
         # the same in the baseline and in every counterfactual.
         _unemp_full = (self._as_period_path(unemployment_index_path, self.T_transition + self.T)
@@ -1597,6 +1635,10 @@ class OLGTransition:
                 cohort_tau_k = _extract_cohort_path(tau_k_path, birth_period, self.T, default=0.0, pre_value=_pv('tau_k_path'))
                 cohort_pension = _extract_cohort_path(pension_replacement_path, birth_period, self.T, default=0.4, pre_value=_pv('pension_replacement_path'))
                 cohort_ls = _extract_cohort_path(lump_sum_path, birth_period, self.T, default=0.0, pre_value=_pv('lump_sum_path'))
+                cohort_kappa = (None if kappa_path is None else _extract_cohort_path(
+                    kappa_path, birth_period, self.T, pre_value=_pv('kappa_path')))
+                cohort_ms = (None if m_scale_path is None else _extract_cohort_path(
+                    m_scale_path, birth_period, self.T, pre_value=_pv('m_scale_path')))
                 u_rates, cohort_P_y = self._cohort_unemployment(edu_type, birth_period, _unemp_full)
 
                 # A cohort split between two retirement ages solves both problems;
@@ -1630,6 +1672,8 @@ class OLGTransition:
                         pension_replacement_path=cohort_pension,
                         bequest_lumpsum=bequest_ls,
                         lump_sum_path=cohort_ls,
+                        kappa_path=cohort_kappa,
+                        m_scale_path=cohort_ms,
                         **cohort_feature_kwargs,
                     )
                 
@@ -1642,8 +1686,8 @@ class OLGTransition:
                     # post-t=0 counterfactual tax into ages 0…pre-1.  Fix: solve a pure
                     # baseline lifecycle model (NumPy, cached) and copy its policy functions
                     # for ages 0…pre-1 so that simulated assets at t=0 equal the baseline.
-                    if pre_transition_paths is not None and birth_period < 0:
-                        pre = -birth_period
+                    if pre_transition_paths is not None and birth_period < shock_period:
+                        pre = shock_period - birth_period
                         bcs_key = ((edu_type, birth_period) if part == 0
                                    else (edu_type, birth_period, 'later'))
                         if bcs_key not in self._mit_baseline_cache:
@@ -1666,6 +1710,14 @@ class OLGTransition:
                             base_cohort_ls = _extract_cohort_path(
                                 _base_ls_ext if _base_ls_ext is not None else lump_sum_path,
                                 birth_period, self.T, default=0.0)
+                            # Coverage and medical spending of the baseline; the
+                            # configured scalars when the baseline has no path.
+                            base_cohort_kappa = (None if _base_kappa_ext is None else
+                                                 _extract_cohort_path(_base_kappa_ext,
+                                                                      birth_period, self.T))
+                            base_cohort_ms = (None if _base_ms_ext is None else
+                                              _extract_cohort_path(_base_ms_ext,
+                                                                   birth_period, self.T))
                             # MIT baseline must use baseline feature values, not the
                             # (possibly mutated) counterfactual ones.  Currently only
                             # transfer_floor can be mutated on lifecycle_config by
@@ -1685,6 +1737,8 @@ class OLGTransition:
                                 pension_replacement_path=base_cohort_pension,
                                 bequest_lumpsum=bequest_ls,
                                 lump_sum_path=base_cohort_ls,
+                                kappa_path=base_cohort_kappa,
+                                m_scale_path=base_cohort_ms,
                                 **base_feature_kwargs,
                             )
                             if self.backend == 'jax':
@@ -1774,14 +1828,17 @@ class OLGTransition:
         # are LifecycleModelJAX instances deferred to _solve_cohorts_jax_batched.
         if self.backend == 'jax' and pre_transition_paths is not None:
             stitch = [((e, bp), birth_cohort_solutions[e][bp])
-                      for e in self.education_shares for bp in range(min_birth_period, 0)]
+                      for e in self.education_shares
+                      for bp in range(min_birth_period, min(shock_period, max_birth_period + 1))]
             stitch += [((e, bp, 'later'), m) for e in self.education_shares
-                       for bp, m in birth_cohort_later[e].items() if bp < 0]
+                       for bp, m in birth_cohort_later[e].items() if bp < shock_period]
             for bcs_key, jax_m in stitch:
                 if bcs_key not in self._mit_baseline_cache:
-                    continue
+                    raise RuntimeError(
+                        f"no baseline model for cohort {bcs_key}: its ages before the "
+                        f"shock (t_s = {shock_period}) cannot be held at the baseline")
                 base_m = self._mit_baseline_cache[bcs_key]
-                pre = -bcs_key[1]
+                pre = shock_period - bcs_key[1]
                 # Stitch the per-alpha arrays too: the batched simulate
                 # reads *_policy_alpha, so stitching the scalar arrays
                 # alone never reaches the simulation.
@@ -2339,6 +2396,13 @@ class OLGTransition:
         # above, so a positive floor is a closed circuit (since 2026-10-02).
         total_spending = (total_ui + total_pension + total_gov_health + total_transfers
                           + G_t + I_g_t + defense_t + other_t + education_t + lump_t)
+        # Memo lines (not outlays): total medical spending and the households'
+        # part of it. Every household alive at t faces the coverage of t, so
+        # M_t = gov_health_t / kappa_t.
+        kappa_t = _at(self._active_kappa_path,
+                      default=float(getattr(self.lifecycle_config, 'kappa', 1.0)))
+        medical_total = total_gov_health / kappa_t if kappa_t > 0.0 else float('nan')
+        oop_health = medical_total - total_gov_health
         total_revenue = total_revenue + tax_y_t + foreign_t
         total_revenue_with_borrowing = total_revenue + new_borrowing
         primary_deficit = total_spending - total_revenue
@@ -2353,6 +2417,9 @@ class OLGTransition:
             "ui": total_ui,
             "pension": total_pension,
             "gov_health": total_gov_health,
+            "oop_health": oop_health,
+            "medical_total": medical_total,
+            "kappa": kappa_t,
             "transfers": total_transfers,
             "govt_spending": G_t,
             "public_investment": I_g_t,
@@ -2477,7 +2544,10 @@ class OLGTransition:
                            recompute_bequests=False,
                            bequest_tol=1e-4,
                            max_bequest_iters=5,
-                           pre_transition_paths=None):
+                           pre_transition_paths=None,
+                           kappa_path=None,
+                           m_scale_path=None,
+                           shock_period=0):
         """
         Simulate transition dynamics with exogenous interest rate path.
         
@@ -2497,9 +2567,29 @@ class OLGTransition:
             If None, computes wage from production function given r
         pop_growth_path : array_like, optional
             If provided, creates time-varying cohort weights (ageing over time).
+        kappa_path, m_scale_path : array_like, optional
+            Health coverage and the multiplier on the level of medical spending
+            by calendar period; None keeps the configured kappa and m.
+        shock_period : int
+            The period t_s in which households learn the paths of this run
+            (an unanticipated shock in t_s; 0 is the start of the transition).
+            Cohorts alive at t_s follow the baseline (pre_transition_paths)
+            before t_s. Requires pre_transition_paths when positive.
         """
         r_path = np.array(r_path)
         self.T_transition = len(r_path)
+        shock_period = int(shock_period)
+        if shock_period > 0 and recompute_bequests:
+            # Bequests received before t_s would differ from the baseline's.
+            raise ValueError("shock_period > 0 is not supported with recompute_bequests=True")
+        self._active_shock_period = shock_period
+        # Health coverage and the medical-spending multiplier by period
+        self._active_kappa_path = (None if kappa_path is None
+                                   else self._as_period_path(kappa_path, self.T_transition))
+        self._active_m_scale_path = (None if m_scale_path is None
+                                     else self._as_period_path(m_scale_path, self.T_transition))
+        kappa_path_full = _extend_path(self._active_kappa_path, self.T)
+        m_scale_path_full = _extend_path(self._active_m_scale_path, self.T)
 
         # Demography: Gamma_t and, with a demographic path, the entering-cohort
         # weights. An explicit pop_growth_path argument still overrides below.
@@ -2700,6 +2790,9 @@ class OLGTransition:
                     verbose=False,
                     lump_sum_path=lump_path_full,
                     unemployment_index_path=_unemp,
+                    kappa_path=kappa_path_full,
+                    m_scale_path=m_scale_path_full,
+                    shock_period=shock_period,
                 )
                 if verbose:
                     print(f"  Bequest iteration {self._bequest_iter_count}/{max_bequest_iters}: simulating panels (n_sim={n_sim})...")
@@ -2736,7 +2829,8 @@ class OLGTransition:
                 cache_key = self._household_inputs_key(
                     (r_path_full, w_path_full, tau_c_path_full, tau_l_path_full,
                      tau_p_path_full, tau_k_path_full, pension_path_full,
-                     lump_path_full, _unemp),
+                     lump_path_full, _unemp, kappa_path_full, m_scale_path_full,
+                     np.array([shock_period])),
                     bequest_lumpsum_path, pre_transition_paths, n_sim)
                 cached_panels = self._household_cache.get(cache_key)
             if cached_panels is not None:
@@ -2766,6 +2860,9 @@ class OLGTransition:
                     verbose=verbose,
                     lump_sum_path=lump_path_full,
                     unemployment_index_path=_unemp,
+                    kappa_path=kappa_path_full,
+                    m_scale_path=m_scale_path_full,
+                    shock_period=shock_period,
                 )
                 # Precompute cohort panels ONCE (requires birth_cohort_solutions from solve_cohort_problems)
                 self._ensure_cohort_panel_cache(n_sim=int(n_sim), seed_base=42, verbose=verbose)
@@ -2936,7 +3033,8 @@ class OLGTransition:
         # Initialize storage — keys match compute_government_budget() output
         budget_keys = [
             'tax_c', 'tax_l', 'tax_p', 'tax_k', 'total_revenue',
-            'ui', 'pension', 'gov_health', 'transfers', 'govt_spending',
+            'ui', 'pension', 'gov_health', 'oop_health', 'medical_total', 'kappa',
+            'transfers', 'govt_spending',
             'public_investment', 'defense_spending', 'other_net_spending',
             'tax_y', 'foreign_transfer', 'education', 'lump_sum',
             'debt_service', 'new_borrowing',

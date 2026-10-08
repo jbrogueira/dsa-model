@@ -297,12 +297,15 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
     if params.get('delta') is None or params.get('r') is None:
         return _skip('goods_market', scenario, 'FAIL',
                      'params lack delta or r; run predates the production stamp')
+    # Total medical spending: the booked memo line when the run has it (the
+    # coverage can move with calendar time), else gov_health / kappa.
+    booked_M = _arr(budget, 'medical_total') is not None
     kappa = params.get('kappa')
     if kappa is None:
         gov, oop = params.get('health_gov_over_Y'), params.get('health_oop_over_Y')
         if gov and oop is not None:
             kappa = float(gov) / (float(gov) + float(oop))
-    if not kappa:
+    if not kappa and not booked_M:
         return _skip('goods_market', scenario, 'FAIL', 'params lack kappa; cannot form medical spending')
     Y = _arr(macro, 'Y'); C = _arr(macro, 'C'); Kd = _arr(macro, 'K_domestic'); NFA = _arr(macro, 'NFA')
     n = min(len(Y), len(C), len(Kd), len(NFA)) - 1
@@ -323,7 +326,7 @@ def chk_goods_market(macro, budget, params, scenario, B_gdp_path=None):
                  + line('defense_spending') + line('other_net_spending')
                  + line('education'))
     FT = line('foreign_transfer')
-    M = line('gov_health') / float(kappa)
+    M = line('medical_total') if booked_M else line('gov_health') / float(kappa)
     B = (np.asarray(B_gdp_path, dtype=float)[:n] * Y[:n]
          if B_gdp_path is not None and len(B_gdp_path) >= n else np.zeros(n))
     # The stock-flow adjustment raises debt without a deficit, so it lowers
@@ -471,20 +474,48 @@ def chk_wealth_output_ratio(macro, scenario):
     return _pass('wealth_output_ratio', scenario, 'WARN')
 
 
-def chk_a0_predetermined(base_macro, cf_macro, scenario):
-    """Household wealth entering t=0 is predetermined: the shock is announced at
-    t=0, so pre-transition cohorts' assets at t=0 must equal the baseline's
+def chk_a0_predetermined(base_macro, cf_macro, scenario, shock_period=0):
+    """Household wealth entering t = 0, ..., t_s is predetermined: the shock is
+    announced in t_s (shock_period, 0 for a shock at the start), so the
+    assets carried into every period up to t_s must equal the baseline's
     exactly (MIT stitching). A difference means the stitching used
-    counterfactual policies for pre-transition ages."""
+    counterfactual policies at ages lived before the shock."""
     base = _arr(base_macro, 'A')
     cf   = _arr(cf_macro,   'A')
     if base is None or cf is None or len(base) == 0 or len(cf) == 0:
         return _skip('a0_predetermined', scenario, 'FAIL', 'no A path')
-    rel = abs(float(cf[0]) - float(base[0])) / (abs(float(base[0])) + 1e-12)
+    n = min(int(shock_period) + 1, len(base), len(cf))
+    rel = float(np.max(np.abs(cf[:n] - base[:n]) / (np.abs(base[:n]) + 1e-12)))
     if rel > A0_REL_TOL:
         return _fail('a0_predetermined', scenario, 'FAIL', rel,
-                     f"|A_cf[0] - A_base[0]| / A_base[0] = {rel:.3e} > {A0_REL_TOL:.0e}")
+                     f"max_t<={n - 1} |A_cf - A_base| / A_base = {rel:.3e} > {A0_REL_TOL:.0e}")
     return _pass('a0_predetermined', scenario, 'FAIL')
+
+
+def chk_health_shock_line(base_budget, cf_budget, params, scenario, own=None):
+    """Government health spending of the health shock: gov_cf = kappa_cf *
+    mu_cf * M_base / mu_base by period, where M_base is the baseline's total
+    medical spending. M does not depend on household choices (only on the
+    population and the age profile of medical spending), so this holds to
+    rounding: (kappa1 mu1 - kappa0) M_base inside the window, zero outside."""
+    hp = own or params.get('health') or {}
+    dk, dm = hp.get('delta_kappa_path'), hp.get('delta_m_scale_path')
+    kb, mb = params.get('kappa_path'), params.get('m_scale_path')
+    M_base = _arr(base_budget, 'medical_total')
+    gov_cf = _arr(cf_budget, 'gov_health')
+    if dk is None or dm is None or kb is None or M_base is None or gov_cf is None:
+        return _skip('shock_health_path', scenario, 'FAIL', 'no health paths or memo lines')
+    n = min(len(M_base), len(gov_cf))
+    ext = lambda v: np.r_[np.asarray(v, float), np.full(max(0, n - len(v)), np.asarray(v, float)[-1])][:n]
+    kb_, mb_ = ext(kb), ext(mb if mb is not None else [1.0])
+    zero_after = lambda v: np.r_[np.asarray(v, float), np.zeros(max(0, n - len(v)))][:n]
+    kcf, mcf = kb_ + zero_after(dk), mb_ + zero_after(dm)
+    pred = kcf * mcf / mb_ * M_base[:n]
+    mx = float(np.max(np.abs(gov_cf[:n] - pred) / np.maximum(np.abs(pred), 1e-12)))
+    if mx > IDENTITY_TOL:
+        return _fail('shock_health_path', scenario, 'FAIL', mx,
+                     f"max |gov_health_cf - kappa_cf mu_cf M_base| / gov_cf = {mx:.2e}")
+    return _pass('shock_health_path', scenario, 'FAIL')
 
 
 def chk_debt_financed_neutrality(base_macro, cf_macro, params, scenario):
@@ -510,10 +541,11 @@ def chk_debt_financed_neutrality(base_macro, cf_macro, params, scenario):
 
 
 def chk_bisection_target(B_gdp_path, target, scenario, t_check=None, target_src='params'):
-    """The τ_l closure targets the baseline transition's terminal B/Y at
-    T_balance (not the initial-debt calibration value, and not the end of the
-    post-horizon extension), so the check is evaluated at t_check = T_balance
-    against the baseline's B_gdp_path there."""
+    """The τ_l closure targets the baseline transition's B/Y in the last
+    period of the horizon, T_balance - 1 (not the initial-debt calibration
+    value, and not the end of the post-horizon extension), so the check is
+    evaluated at t_check = T_balance - 1 against the baseline's B_gdp_path
+    there."""
     idx = -1 if t_check is None or t_check >= len(B_gdp_path) else int(t_check)
     terminal = float(B_gdp_path[idx])
     resid = abs(terminal - target)
@@ -683,11 +715,15 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
                                            base_mac, cf_mac, delta_Ig, ig_mode,
                                            'public_investment', label))
 
+    if shock_type == 'health' and scenario_key != 'baseline':
+        results.append(chk_health_shock_line(base_bud, cf_bud, params, label,
+                                             exp_data.get('health_paths')))
+
     # Bisection target (tax-financed only)
     # terminal_debt_gdp: check B[T]/Y[T] == target (stock condition)
     # terminal_flow_balance: check PD[T-1]/Y[T-1] ≈ (g-r)*target (flow condition)
     balance_cond = exp_data.get('balance_condition', 'terminal_debt_gdp')
-    if scenario_key == 'tax_financed':
+    if scenario_key.startswith('tax_financed'):
         if balance_cond == 'terminal_flow_balance':
             # Rest point of B' = [(1+r_B)B + PD]/G:
             #   PD[T-1]/Y[T-1] = (G - 1 - r_B) * target_debt_gdp
@@ -706,29 +742,39 @@ def run_scenario_checks(exp_data, scenario_key, params, shock_type, baseline_exp
                 else:
                     results.append(_pass('bisection_flow_target', label, 'FAIL'))
         elif len(B_gdp) > 0:
+            # The condition dates the stock with the output of the same
+            # period, B[T_bal-1] / Y[T_bal-1] (fiscal_experiments._balance_residual),
+            # and the driver takes the target from the baseline at that index.
             T_bal = exp_data.get('T_balance')
+            t_chk = None if T_bal is None else int(T_bal) - 1
             base_Bgdp = (baseline_exp or {}).get('B_gdp_path')
-            if base_Bgdp and T_bal is not None and T_bal < len(base_Bgdp):
-                target, target_src = float(base_Bgdp[T_bal]), 'baseline terminal B/Y'
+            if base_Bgdp and t_chk is not None and t_chk < len(base_Bgdp):
+                target, target_src = float(base_Bgdp[t_chk]), 'baseline B/Y at T_bal - 1'
             else:
                 target, target_src = params.get('target_debt_gdp', 0.0), 'params'
             results.append(chk_bisection_target(B_gdp, target, label,
-                                                t_check=T_bal, target_src=target_src))
+                                                t_check=t_chk, target_src=target_src))
 
     # Terminal convergence
     if scenario_key != 'baseline':
         results.append(chk_terminal_converged(exp_data, label))
         results.append(chk_kg_ss_gap(exp_data, params, label))
-        results.append(chk_a0_predetermined(base_mac, cf_mac, label))
+        results.append(chk_a0_predetermined(base_mac, cf_mac, label,
+                                            int(params.get('shock_period') or 0)))
 
     # --- WARN tier ---
     results += chk_firm_foc(cf_mac, params, label)
     results.append(chk_wealth_output_ratio(cf_mac, label))
 
     if scenario_key == 'debt_financed':
-        results += chk_debt_financed_neutrality(base_mac, cf_mac, params, label)
+        if shock_type == 'health':
+            # The cut in coverage changes household budgets, so households respond.
+            results.append(_skip('debt_neutral', label, 'WARN',
+                                 'health shock: household budgets change'))
+        else:
+            results += chk_debt_financed_neutrality(base_mac, cf_mac, params, label)
 
-    if scenario_key == 'tax_financed':
+    if scenario_key.startswith('tax_financed'):
         results.append(chk_labor_response_sign(base_mac, cf_mac, adj_scl, label))
         results.append(chk_consumption_response_sign(base_mac, cf_mac, adj_scl, label))
 
@@ -820,9 +866,10 @@ def main():
               "Many checks will be skipped. Re-run fiscal figures to embed params.", file=sys.stderr)
 
     all_results = []
-    scenario_keys = ['baseline', 'debt_financed', 'tax_financed']
+    scenario_keys = ['baseline', 'debt_financed', 'tax_financed', 'tax_financed_window',
+                     'debt_financed_kappa_only', 'debt_financed_m_only']
 
-    for shock_type in ('G', 'Ig'):
+    for shock_type in ('G', 'Ig', 'health'):
         shock_data = data.get(shock_type)
         if shock_data is None:
             continue

@@ -196,6 +196,16 @@ class LifecycleConfig:
     # line for (BUDGET_ALIGNMENT_PLAN.md section 3.2).
     lump_sum_path: Optional[np.ndarray] = None
 
+    # === Health coverage and medical spending by age (since 2026-10-08) ===
+    # kappa_path: coverage at each age of the household, (T,); None means
+    # the scalar kappa at every age. m_scale_path: a multiplier on the level
+    # of medical spending at each age, (T,), so that
+    # m(j) = m_scale_path[j] * m_age_profile[j] * m_good; None means one.
+    # The transition fills both from calendar-time paths along the cohort's
+    # diagonal (POLICY_EXERCISES_PLAN.md section 2.1).
+    kappa_path: Optional[np.ndarray] = None
+    m_scale_path: Optional[np.ndarray] = None
+
     # === Labor supply (Feature #1) ===
     labor_supply: bool = False           # Enable endogenous labor supply
     nu: float = 1.0                      # Labor disutility weight
@@ -262,6 +272,15 @@ class LifecycleConfig:
             self.lump_sum_path = np.asarray(self.lump_sum_path, dtype=float)
             assert self.lump_sum_path.shape == (self.T,), \
                 f"lump_sum_path must have shape ({self.T},), got {self.lump_sum_path.shape}"
+
+        # Validate/default kappa_path and m_scale_path
+        for name in ('kappa_path', 'm_scale_path'):
+            val = getattr(self, name)
+            if val is not None:
+                val = np.asarray(val, dtype=float)
+                assert val.shape == (self.T,), \
+                    f"{name} must have shape ({self.T},), got {val.shape}"
+                setattr(self, name, val)
 
         # Validate/default child_cost_profile
         if self.child_cost_profile is None:
@@ -401,6 +420,9 @@ class LifecycleModelPerfectForesight:
         if not 0.0 <= self.ui_eligibility_prob <= 1.0:
             raise ValueError(f'ui_eligibility_prob = {self.ui_eligibility_prob} is not a probability')
         self.kappa = config.kappa
+        # Coverage by age: the scalar kappa unless a path is given
+        self.kappa_path = (np.full(config.T, float(config.kappa)) if config.kappa_path is None
+                           else np.asarray(config.kappa_path, dtype=float))
         self.N_earnings_history = config.N_earnings_history
         self.retirement_age = config.retirement_age
         self.pension_min_floor = encoded_pension_floor(config)
@@ -486,6 +508,8 @@ class LifecycleModelPerfectForesight:
         # Age-dependent medical costs: shape (T, n_h) = m_age_profile[t] * m_grid_base[h]
         self.m_age_profile = config.m_age_profile
         self.m_grid = self.m_age_profile[:, None] * self.m_grid_base[None, :]  # (T, n_h)
+        if config.m_scale_path is not None:
+            self.m_grid = config.m_scale_path[:, None] * self.m_grid
 
         # Value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last)
@@ -840,7 +864,7 @@ class LifecycleModelPerfectForesight:
         after_tax_capital_income = gross_capital_income - capital_income_tax
 
         # Feature #20: age-dependent medical expenditure
-        oop_health_exp = (1 - self.kappa) * self.m_grid[t, i_h]
+        oop_health_exp = (1 - self.kappa_path[t]) * self.m_grid[t, i_h]
 
         budget = a + after_tax_capital_income + after_tax_labor_income - oop_health_exp
 
@@ -1330,8 +1354,8 @@ class LifecycleModelPerfectForesight:
 
                 # Feature #20: age-dependent medical expenditure
                 m_sim[t_sim, i] = self.m_grid[lifecycle_age, i_h[i]]
-                oop_m_sim[t_sim, i] = (1 - self.kappa) * m_sim[t_sim, i]
-                gov_m_sim[t_sim, i] = self.kappa * m_sim[t_sim, i]
+                oop_m_sim[t_sim, i] = (1 - self.kappa_path[lifecycle_age]) * m_sim[t_sim, i]
+                gov_m_sim[t_sim, i] = self.kappa_path[lifecycle_age] * m_sim[t_sim, i]
 
                 # Effective labor income (wages + UI, used for aggregation) — also scales with alpha
                 wage_income = self.w_path[lifecycle_age] * self.wage_age_profile[lifecycle_age] * y_sim[t_sim, i] * h_sim[t_sim, i] * l_sim[t_sim, i] * a_mult
@@ -1527,7 +1551,8 @@ class LifecycleModelPerfectForesight:
         bequest = (1.0 - surv) * (1.0 + self.trend_growth) * self.a_grid[a_next_idx]
 
         columns = (a_val, c, y_val, h_val, H, effective_y, employed, ui,
-                   m, (1 - self.kappa) * m, self.kappa * m,
+                   m, (1 - self.kappa_path[lifecycle_age]) * m,
+                   self.kappa_path[lifecycle_age] * m,
                    tax_c, tax_l, tax_p, tax_k, None, pension,
                    np.full(shape, is_retired), l, np.ones(shape), bequest, None, transfer)
         return columns, a_next_idx, surv

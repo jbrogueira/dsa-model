@@ -1,6 +1,15 @@
 # Plan: public-investment and health-coverage policy exercises
 
-Written 2026-10-08; revised the same day after three independent audits (implementation, economics, data). To be implemented and run in a separate session. Branch `trend-growth`.
+Written 2026-10-08; revised the same day after three independent audits (implementation, economics, data). Branch `trend-growth`.
+
+**Status (2026-10-08).** Sections 2-5 are implemented, with the tests of section 4 in `test_policy_exercises.py`. Section 6: the local smoke runs are done (the test economy of `policy_reference_case.py` through `--tiny`, and the hard-coded economy of `run_fiscal_figures.py` with `--shock-year 2026`). The A100 run (6.3) and the §1 numbers recomputed from the new baseline (6.1) are not done. Points where the implementation fills in or departs from the text:
+- The reference arrays of test 11 are `tests_data/policy_reference_e80b119.npz`, written by the code of e80b119 on the small economy of `policy_reference_case.py`. The code of 59da648 writes the same arrays, and so does the new code with the new options off.
+- The transition always uses the kernel variants with κ and `m_grid` per cohort (`_tr`, `_tr_pyc`), with or without health paths. The base tuples are unchanged.
+- The fixed-point pass of §2.3 is in the driver. When the realised changes of the debt-financed run miss a target by more than 0.1 pp of output, (κ1, μ1) are recomputed on that run's output (`health_cut_paths(Y_eval=)`) and the health set is run again.
+- The welfare measure needs log utility. At γ ≠ 1 (the hard-coded test economy) `distribution_stats.extract` skips it and says so.
+- The cross-section check against A_t and C_t runs only under exact aggregation.
+- The evaluator's `bisection_target` compared B/Y at T_bal, while the condition and the driver's target are dated T_bal − 1. It now uses T_bal − 1.
+- The run time of the extraction at production size is not measured.
 
 **Calibration.** The runs use `calibration_input_GR.json` after the recalibration that the user is doing first. The current HEAD config (b14f289) is not the one behind `output/fiscal_2026-10-08d`, which is 91a75e5. Since then δ_g has gone to 0.04316, the A/Y target to 2.96 and τ_k is calibrated, so θ in `_derived` is stale. The model numbers in §1 come from `fiscal_2026-10-08d`. They are indicative and are recomputed from the new baseline before the runs.
 
