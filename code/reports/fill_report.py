@@ -110,7 +110,8 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$\\varphi$', 'inverse Frisch elasticity', mod.get('phi'), ''),
         ('$\\alpha$', 'private capital share', prod.get('alpha'), ''),
         ('$\\delta$', 'private capital depreciation', prod.get('delta'), ''),
-        ('$\\eta_g$', 'public capital elasticity', prod.get('eta_g'), ''),
+        ('$\\eta_g$', 'public capital elasticity', prod.get('eta_g'),
+         'Baxter and King (1993), Leeper et al.\\ (2010), Ramey (2021)'),
         ('$K_g/Y$', 'public capital ratio', prod.get('K_g'), 'IMF ICSD'),
         ('$\\delta_g$', 'public capital depreciation', prod.get('delta_g'),
          '$I_g/K_g-(\\Gamma-1)$'),
@@ -795,7 +796,7 @@ def main():
             'lS[table-format=1.3]S[table-format=1.3]S[table-format=+3.1]',
             ' & {Data} & {Model} & {\\% dev}', implied_table(stats, cfg)),
         'params_body.tex': wrap(
-            'llS[table-format=2.4]l',
+            'llS[table-format=-2.4]>{\\raggedright\\arraybackslash}p{7.0cm}',
             'Symbol & Description & {Value} & Source / identified by',
             params_table(cfg, n0=n, n_inf=n_T)),
         'moments_body.tex': wrap(
