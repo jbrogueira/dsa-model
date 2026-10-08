@@ -344,7 +344,8 @@
     "dsa_projection_file": "../data/dsa_projection_GR.npz",
     "tau_y_mode": "debt",
     "tau_y_debt_year": 2060,
-    "tau_y_first_year": 2026
+    "tau_y_first_year": 2026,
+    "tau_y_terminal_rule": false
   },
   "calibration": {
     "params": [

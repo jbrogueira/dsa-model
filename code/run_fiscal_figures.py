@@ -261,7 +261,8 @@ if args.config:
                         match_debt_year=(int(config_data.get('fiscal', {}).get('tau_y_debt_year', 2060))
                                          if config_data.get('fiscal', {}).get('tau_y_mode', 'constant') == 'debt' else None),
                         first_mid_year=int(config_data.get('fiscal', {}).get('tau_y_first_year', 2026)),
-                        terminal_rule=(config_data.get('fiscal', {}).get('tau_y_mode', 'constant') != 'pinned_throughout'))
+                        terminal_rule=(config_data.get('fiscal', {}).get('tau_y_mode', 'constant') != 'pinned_throughout'
+                                       and bool(config_data.get('fiscal', {}).get('tau_y_terminal_rule', True))))
     Y_path = np.asarray(base_paths['base_macro']['Y'])[:T_TR]
     Y0 = float(Y_path[0])
     debt = fx['debt']
