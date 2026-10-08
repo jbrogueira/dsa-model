@@ -129,6 +129,9 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$\\tau^{beq}$', 'tax on accidental bequests', ext.get('tau_beq'), 'assumption: no intended bequests, accidental ones taxed away'),
         ('$f$', 'job-finding probability', ext.get('job_finding_rate'),
          'Eurostat \\texttt{une\\_ltu\\_a}'),
+        ('$p^{ui}$', 'UI eligibility of a new spell', ext.get('ui_eligibility_prob'),
+         'LFS 2023, unemployed 25--64 with a spell under 12 months receiving benefits, '
+         'Eurostat \\texttt{lfsa\\_ugadra}'),
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
          'Eurostat \\texttt{gov\\_10a\\_exp} and national accounts, 2023'),
         ('$T$', 'model ages (real ages 25--99)', mod.get('T'), ''),
@@ -193,6 +196,7 @@ LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
          'primary_balance_over_Y': 'Household primary balance$/Y$', 'G_over_Y': '$G/Y$',
          'disposable_income_gini': 'Disposable income Gini',
          'disposable_p90_p10': 'Disposable income p90/p10',
+         'ui_recipient_share': 'Unemployed receiving UI, 25--64',
          'B_over_Y': '$B/Y$', 'health_oop_over_Y': 'Out-of-pocket health$/Y$'}
 # Fiscal ratios the model does not target but the data measure. I_g/Y and the
 # household primary balance are out: the first is a policy input, the second
@@ -205,7 +209,8 @@ UNTARGETED = ['ui_over_Y']
 # Eurostat series are disposable; see _moment_disposable_income_gini in
 # calibrate.py for what can and cannot be matched.
 UNTARGETED_DIST = [('disposable_income_gini', 'income_gini'),
-                   ('disposable_p90_p10', 'p90_p10_income')]
+                   ('disposable_p90_p10', 'p90_p10_income'),
+                   ('ui_recipient_share', 'ui_recipient_share')]
 
 
 def live_moments(panels, spec, cfg):

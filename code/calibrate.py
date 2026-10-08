@@ -531,6 +531,19 @@ def _moment_unemployment_rate(panels, spec):
     return 1.0 - float(np.sum(emp_vals * emp_w) / np.sum(emp_w))
 
 
+def _moment_ui_recipient_share(panels, spec):
+    """Share of the unemployed aged 25-64 who receive UI (age-weighted).
+    Model age 0 is real age 25, so ages 25-64 are the first 40 rows."""
+    def _unemployed(p):
+        rows = (np.arange(p.alive_sim.shape[0]) < 40)[:, None]
+        return (p.alive_sim.astype(bool) & ~p.employed_sim.astype(bool)
+                & ~p.retired_sim.astype(bool) & rows)
+    vals, weights = _pool_weighted(panels, spec, 'ui_sim', _unemployed)
+    if len(vals) == 0 or np.sum(weights) == 0:
+        return 0.0
+    return float(np.sum(weights[vals > 0.0]) / np.sum(weights))
+
+
 def _moment_average_hours(panels, spec):
     """Average hours pooled (age-weighted)."""
     def _employed(p):
@@ -833,6 +846,7 @@ MOMENT_DISPATCH = {
     'tax_revenue_over_Y': _moment_tax_revenue_over_Y,
     'pensions_over_Y': _moment_pensions_over_Y,
     'ui_over_Y': _moment_ui_over_Y,
+    'ui_recipient_share': _moment_ui_recipient_share,
     'health_gov_over_Y': _moment_health_gov_over_Y,
     'tax_p_over_Y': _moment_tax_p_over_Y,
     'tax_k_over_Y': _moment_tax_k_over_Y,

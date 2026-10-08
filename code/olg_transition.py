@@ -606,6 +606,7 @@ class OLGTransition:
                 ref.pension_avg_weight, ref.mean_kappa_working, ref.mean_y_employed,
                 alpha_mult_jax,
                 ls_c,
+                ref.ui_eligibility_prob,
             )
 
         batched_arrays = (w_at_rets, r_paths, w_paths,
@@ -965,6 +966,7 @@ class OLGTransition:
                         ref.transfer_floor,
                         cbeq,
                         cls,
+                        ref.ui_eligibility_prob,
                     )
 
                     # Store only actual (non-padded) cohorts
@@ -1080,6 +1082,8 @@ class OLGTransition:
                     jnp.array([float(m.bequest_lumpsum) for m in ms]),
                     stack(lambda m: m.lump_sum_path),
                     False,
+                    None,
+                    ref.ui_eligibility_prob,
                 )
                 res = np.asarray(res)
                 for i, b in enumerate(sel):

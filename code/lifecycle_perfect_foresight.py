@@ -107,6 +107,11 @@ class LifecycleConfig:
     job_finding_rate: float = 0.5
     max_job_separation_rate: float = 0.02
     ui_replacement_rate: float = 0.3
+    # Probability that a household entering unemployment (employed this year,
+    # unemployed next year, next year still a working age) is eligible for UI.
+    # An ineligible household's z_last is set to 0, so it receives no UI over
+    # the spell. 1.0 makes every new spell eligible.
+    ui_eligibility_prob: float = 1.0
     
     # === Health process parameters ===
     n_h: int = 1
@@ -392,6 +397,9 @@ class LifecycleModelPerfectForesight:
         self.n_h = config.n_h
         self.current_age = config.current_age
         self.ui_replacement_rate = config.ui_replacement_rate
+        self.ui_eligibility_prob = float(config.ui_eligibility_prob)
+        if not 0.0 <= self.ui_eligibility_prob <= 1.0:
+            raise ValueError(f'ui_eligibility_prob = {self.ui_eligibility_prob} is not a probability')
         self.kappa = config.kappa
         self.N_earnings_history = config.N_earnings_history
         self.retirement_age = config.retirement_age
@@ -1081,10 +1089,18 @@ class LifecycleModelPerfectForesight:
                     if np.isfinite(prob) and np.isfinite(next_val):
                         EV += prob * next_val
             else:
+                # A household that moves from employment into unemployment at a
+                # working age is eligible for UI with probability p_elig; an
+                # ineligible one carries z_last = 0 into the spell.
+                p_elig = self.ui_eligibility_prob
+                draw_elig = p_elig < 1.0 and i_y > 0 and t + 1 < self.retirement_age
                 for i_y_next in range(self.n_y):
                     for i_h_next in range(self.n_h):
                         prob = self._get_P_y(t, i_h, i_y, i_y_next) * self.P_h[t, i_h, i_h_next]
                         next_val = self.V[t + 1, i_a_next, i_y_next, i_h_next, i_y]
+                        if draw_elig and i_y_next == 0:
+                            next_val = (p_elig * next_val
+                                        + (1.0 - p_elig) * self.V[t + 1, i_a_next, 0, i_h_next, 0])
                         if np.isfinite(prob) and np.isfinite(next_val):
                             EV += prob * next_val
 
@@ -1379,6 +1395,12 @@ class LifecycleModelPerfectForesight:
                         i_y_last[i] = i_y[i]
                         P_y_row = self._get_P_y_row(lifecycle_age, i_h[i], i_y[i])
                         i_y[i] = np.searchsorted(np.cumsum(P_y_row), np.random.random())
+                        # Eligibility for UI at the start of a spell (no draw
+                        # when p = 1, so the random stream is unchanged then).
+                        if (self.ui_eligibility_prob < 1.0 and i_y_last[i] > 0 and i_y[i] == 0
+                                and lifecycle_age + 1 < self.retirement_age
+                                and np.random.random() >= self.ui_eligibility_prob):
+                            i_y_last[i] = 0
 
                     i_h[i] = np.searchsorted(np.cumsum(self.P_h[lifecycle_age, i_h[i], :]), np.random.random())
 
@@ -1548,7 +1570,9 @@ class LifecycleModelPerfectForesight:
             # Next age: survivors move to their chosen asset node, then
             #   working: y' ~ P_y(age, h)[y, .], y_last' = y
             #   retired: y' = 0,                 y_last' = y_last
-            # and h' ~ P_h(age)[h, .].
+            # and h' ~ P_h(age)[h, .]. A household moving from employment into
+            # unemployment at a working age is ineligible for UI with
+            # probability 1 - p, and its y_last' is then 0.
             moved = np.zeros(shape)
             np.add.at(moved, (K, a_next_idx, Y, H, YL), mu * surv)
             P_h_age = self.P_h[lifecycle_age]
@@ -1559,6 +1583,11 @@ class LifecycleModelPerfectForesight:
                 P_y_age = (self.P_y[lifecycle_age] if self.P_y_age_health
                            else np.broadcast_to(self.P_y, (self.n_h, self.n_y, self.n_y)))
                 mu = np.einsum('kayh,hyz,hg->kazgy', moved.sum(axis=4), P_y_age, P_h_age)
+                p_elig = self.ui_eligibility_prob
+                if p_elig < 1.0 and lifecycle_age + 1 < self.retirement_age:
+                    inelig = (1.0 - p_elig) * mu[:, :, 0, :, 1:]
+                    mu[:, :, 0, :, 1:] -= inelig
+                    mu[:, :, 0, :, 0] += inelig.sum(axis=-1)
 
         return (means, dists) if return_dist else means
 

@@ -26,7 +26,7 @@ Productivity is a Markov chain `z ∈ {0, z_1, …, z_{n_y-1}}` (`n_y = 5`), whe
 $$\log z' = \rho_z \log z + \eta', \qquad \eta' \sim N(0, \sigma_\eta^2), \tag{2}$$
 with education-specific `ρ_z = 0.95` and `σ_η ∈ {0.054, 0.086, 0.075}`. The level of productivity that enters wage income is scaled by a deterministic age profile `κ_j` and by the permanent effect through `e^{α_i}`. Employed wage income is
 $$y^L = w_t\,\kappa_j\,z\,e^{\alpha_i}. \tag{3}$$
-The last-employed state evolves as `z_last' = z·𝟙[z>0] + z_last·𝟙[z=0]`. Transitions in and out of unemployment use a job-finding rate `λ^{find}` and a separation rate `λ^{sep} = min((u/(1-u))·λ^{find}, λ̄^{sep})` with education-specific unemployment rate `u`.
+The state `z_last` is the previous year's productivity, with an eligibility draw at the start of an unemployment spell. If `z > 0`, `z' = 0` and `j+1` is a working age, `z_last' = z` with probability `p^{ui}` and `z_last' = 0` with probability `1 − p^{ui}`; otherwise `z_last' = z` while working and `z_last' = z_last` in retirement. A household is therefore paid UI only in the first year of a spell, and only if it is eligible. There is no draw on the transition into retirement, where `z_last` sets the pension base. Transitions in and out of unemployment use a job-finding rate `λ^{find}` and a separation rate `λ^{sep} = min((u/(1-u))·λ^{find}, λ̄^{sep})` with education-specific unemployment rate `u`.
 
 ### 3.2 Budget constraints
 
@@ -151,6 +151,7 @@ Greece. The income process is estimated externally from LIS/EU-SILC; five parame
 | `τ^k` | capital income tax | 0.2236 | Eurostat effective |
 | `τ^β` | bequest tax | 0.0 | — |
 | `ρ^{ui}` | UI replacement | 0.0945 | OAED rules |
+| `p^{ui}` | probability that a new unemployment spell is eligible for UI | 0.332 | LFS 2023, share of the unemployed aged 25–64 with a spell under 12 months who receive benefits (Eurostat `lfsa_ugadra`) |
 | `b_min` | min pension floor (wage units) | 0.15 | Greek min/avg pension |
 | `κ` | government health coverage | 0.662 | OECD Health |
 | `λ^{find}` | job-finding rate | 0.50 | Eurostat |

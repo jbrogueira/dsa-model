@@ -298,7 +298,11 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
          pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
          transfer_floor, education_subsidy_rate, P_y_age_health,
          labor_supply, nu, phi, trend_growth,
-         pension_avg_weight, mean_kappa_working, mean_y_employed)
+         pension_avg_weight, mean_kappa_working, mean_y_employed,
+         ui_eligibility_prob)
+        ui_eligibility_prob is the probability of UI eligibility for a
+        household that is employed now and unemployed next period; the scan
+        passes 1.0 when next period is a retirement age (no draw there).
     alpha_mult : scalar float, default 1.0
         Phase 8 permanent productivity FE multiplier (= exp(alpha_grid[k]) for
         the alpha being solved). Multiplies wage income, UI benefit, and
@@ -320,7 +324,8 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
      pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
      transfer_floor, education_subsidy_rate, P_y_age_health,
      labor_supply, nu, phi, trend_growth,
-     pension_avg_weight, mean_kappa_working, mean_y_employed) = model_params
+     pension_avg_weight, mean_kappa_working, mean_y_employed,
+     ui_eligibility_prob) = model_params
 
     n_a = a_grid.shape[0]
     n_y = y_grid.shape[0]
@@ -403,7 +408,16 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
 
     # 3. Expected continuation value
     EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, V_next)
-    EV_h_t = jnp.transpose(EV_h, (3, 0, 2, 1))
+    EV_h_t = jnp.transpose(EV_h, (3, 0, 2, 1))     # (y_last' = y, a', h, y')
+
+    # Eligibility for UI at the start of a spell: an employed household that
+    # becomes unemployed carries y_last' = y with probability p and
+    # y_last' = 0 (no UI) otherwise.
+    p_elig = ui_eligibility_prob
+    unemp_next = EV_h_t[:, :, :, 0]                                   # (y, a', h)
+    mixed = p_elig * unemp_next + (1.0 - p_elig) * unemp_next[0][None]
+    draw = (y_grid > 0.0)[:, None, None] & (p_elig < 1.0)
+    EV_h_t = EV_h_t.at[:, :, :, 0].set(jnp.where(draw, mixed, unemp_next))
 
     EV_working_3d = jnp.where(
         P_y_age_health,
@@ -566,6 +580,7 @@ def solve_lifecycle_jax(
     mean_y_employed=1.0,
     alpha_mult=1.0,
     lump_sum_path=None,
+    ui_eligibility_prob=1.0,
 ):
     """
     Full backward induction using jax.lax.scan.
@@ -620,7 +635,8 @@ def solve_lifecycle_jax(
                     pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
                     transfer_floor, education_subsidy_rate, P_y_age_health,
                     labor_supply, nu, phi, trend_growth,
-                    pension_avg_weight, mean_kappa_working, mean_y_employed)
+                    pension_avg_weight, mean_kappa_working, mean_y_employed,
+                    ui_eligibility_prob)
 
     # Terminal period
     is_retired_T = (T - 1) >= retirement_age
@@ -679,6 +695,8 @@ def solve_lifecycle_jax(
         # the scan carries it alongside the per-period values.
         jnp.full(ts.shape, wage_age_profile[retirement_age - 1]),
         lump_sum_path[ts],
+        # UI eligibility probability; no draw when next period is retired
+        jnp.where(ts + 1 < retirement_age, ui_eligibility_prob, 1.0),
     )
 
     # The hours table depends on (nu, phi) only: built once, used at every age.
@@ -688,9 +706,10 @@ def solve_lifecycle_jax(
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t,
-         bequest_t, kappa_wage_t, kappa_wage_ret, lump_sum_t) = period_params_slice
+         bequest_t, kappa_wage_t, kappa_wage_ret, lump_sum_t,
+         ui_elig_t) = period_params_slice
 
-        model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:]
+        model_params_t = model_params[:3] + (m_grid_t,) + model_params[4:-1] + (ui_elig_t,)
 
         V_t, a_pol_t, c_pol_t, l_pol_t = solve_period_jax(
             V_next,
@@ -754,6 +773,7 @@ _SOLVE_IN_AXES = (
         None, None, None,        # pension_avg_weight, mean_kappa_working, mean_y_employed
         None,                    # alpha_mult (shared across cohorts within one solve sweep)
         0,                       # lump_sum_path (per-cohort)
+        None,                    # ui_eligibility_prob (shared scalar)
 )
 _SOLVE_STATIC = ('T', 'retirement_age', 'tax_progressive', 'schooling_years', 'labor_supply')
 _solve_lifecycle_jax_batched = jax.jit(
@@ -931,12 +951,13 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
                     trend_growth=0.0,
                     transfer_floor=0.0,
                     bequest_lumpsum=0.0,
-                    lump_sum_path=None):
+                    lump_sum_path=None,
+                    ui_eligibility_prob=1.0):
     """
     Single time-step for one agent.
 
     carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive)
-    t_data: (t_sim_idx, u_y, u_h, u_alive)
+    t_data: (t_sim_idx, u_y, u_h, u_alive, u_elig)
 
     Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
     [n_alpha, T, n_a, n_y, n_h, n_y]. The agent's permanent FE is captured by the
@@ -944,7 +965,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     (= exp(alpha_grid[alpha_idx]), multiplies wage, UI, and pension wage component).
     """
     i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive = carry
-    t_sim_idx, u_y, u_h, u_alive = t_data
+    t_sim_idx, u_y, u_h, u_alive, u_elig = t_data
 
     lifecycle_age = current_age + t_sim_idx
     is_last_step = (t_sim_idx == (T - current_age - 1))
@@ -998,7 +1019,11 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     new_i_y_draw = jnp.searchsorted(cum_P_y, u_y)
     new_i_y_draw = jnp.clip(new_i_y_draw, 0, P_y.shape[-1] - 1)
     new_i_y = jnp.where(is_retired, 0, new_i_y_draw)
-    new_i_y_last = jnp.where(is_retired, i_y_last, i_y)
+    # A household moving from employment into unemployment at a working age
+    # is ineligible for UI with probability 1 - p: its y_last' is then 0.
+    ineligible = ((i_y > 0) & (new_i_y == 0) & (lifecycle_age + 1 < retirement_age)
+                  & (u_elig >= ui_eligibility_prob))
+    new_i_y_last = jnp.where(is_retired, i_y_last, jnp.where(ineligible, 0, i_y))
 
     # Next health state
     cum_P_h = jnp.cumsum(P_h[lifecycle_age, i_h, :])
@@ -1077,6 +1102,7 @@ def simulate_lifecycle_jax(
     transfer_floor=0.0,
     bequest_lumpsum=0.0,
     lump_sum_path=None,
+    ui_eligibility_prob=1.0,
 ):
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
@@ -1098,6 +1124,9 @@ def simulate_lifecycle_jax(
     u_y_all = jax.random.uniform(key1, shape=(T_sim, n_sim))
     u_h_all = jax.random.uniform(key2, shape=(T_sim, n_sim))
     u_alive_all = jax.random.uniform(key3, shape=(T_sim, n_sim))
+    # UI eligibility draws from a key folded off the parent, so the three
+    # draws above are the same whatever the eligibility probability.
+    u_elig_all = jax.random.uniform(jax.random.fold_in(key, 1), shape=(T_sim, n_sim))
     t_indices = jnp.arange(T_sim)
 
     # Default wage_age_profile to ones
@@ -1130,7 +1159,7 @@ def simulate_lifecycle_jax(
     initial_alive = jnp.ones(n_sim, dtype=jnp.bool_)
 
     def simulate_one(init_state, alpha_idx_self, alpha_mult_self,
-                     u_y_seq, u_h_seq, u_alive_seq):
+                     u_y_seq, u_h_seq, u_alive_seq, u_elig_seq):
         """Scan over T_sim steps for one agent. alpha_idx/alpha_mult are
         per-agent constants captured into the step closure."""
         step_fn = partial(
@@ -1161,8 +1190,9 @@ def simulate_lifecycle_jax(
             transfer_floor=transfer_floor,
             bequest_lumpsum=bequest_lumpsum,
             lump_sum_path=lump_sum_path,
+            ui_eligibility_prob=ui_eligibility_prob,
         )
-        xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq)
+        xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq, u_elig_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
         return outputs
 
@@ -1175,8 +1205,8 @@ def simulate_lifecycle_jax(
 
     all_outputs = jax.vmap(
         simulate_one,
-        in_axes=(0, 0, 0, 1, 1, 1),
-    )(init_states, alpha_idx_sim, alpha_mult_sim, u_y_all, u_h_all, u_alive_all)
+        in_axes=(0, 0, 0, 1, 1, 1, 1),
+    )(init_states, alpha_idx_sim, alpha_mult_sim, u_y_all, u_h_all, u_alive_all, u_elig_all)
 
     # all_outputs is a tuple of 22 arrays, each (n_sim, T_sim) from vmap:
     # the 21 panel arrays and transfer_sim. Transpose to (T_sim, n_sim).
@@ -1218,6 +1248,7 @@ _SIMULATE_IN_AXES = (
         None,                    # transfer_floor (shared scalar)
         0,                       # bequest_lumpsum (per-cohort scalar)
         0,                       # lump_sum_path (per-cohort)
+        None,                    # ui_eligibility_prob (shared scalar)
 )
 _SIMULATE_STATIC = ('retirement_age', 'T', 'current_age', 'n_sim', 'tax_progressive',
                     'P_y_age_health')
@@ -1263,6 +1294,7 @@ def exact_age_means_jax(
     lump_sum_path=None,
     return_dist=False,
     panel_rows=None,
+    ui_eligibility_prob=1.0,
 ):
     """
     Per-age population means of the panel variables, without simulation.
@@ -1368,12 +1400,20 @@ def exact_age_means_jax(
         # Next age. Survivors move to their chosen asset node; then
         #   working: y' ~ P_y(age, h)[y, .], y_last' = y
         #   retired: y' = 0,                 y_last' = y_last
-        # and h' ~ P_h(age)[h, .].
+        # and h' ~ P_h(age)[h, .]. A household moving from employment into
+        # unemployment at a working age is ineligible for UI with
+        # probability 1 - p, and its y_last' is then 0.
         moved = jnp.zeros_like(mu).at[K, s['a_pol_val'], Y, H, YL].add(mu * surv)
         P_y_age = jnp.where(P_y_age_health, P_y_4d[age],
                             jnp.broadcast_to(P_y, (n_h, n_y, n_y)))
         P_h_age = P_h[age]
         working = jnp.einsum('kayh,hyz,hg->kazgy', moved.sum(axis=4), P_y_age, P_h_age)
+        q = jnp.where(age + 1 < retirement_age, 1.0 - ui_eligibility_prob, 0.0)
+        inelig = q * working[:, :, 0, :, 1:]
+        working = jnp.where(
+            q > 0.0,
+            working.at[:, :, 0, :, 1:].add(-inelig).at[:, :, 0, :, 0].add(inelig.sum(axis=-1)),
+            working)
         retired = jnp.zeros_like(mu).at[:, :, 0, :, :].set(
             jnp.einsum('kayhl,hg->kagl', moved, P_h_age))
         mu_next = jnp.where(age >= retirement_age, retired, working)
@@ -1425,6 +1465,8 @@ _EXACT_IN_AXES = (
         0,                       # bequest_lumpsum (per-cohort scalar)
         0,                       # lump_sum_path (per-cohort)
         None,                    # return_dist
+        None,                    # panel_rows
+        None,                    # ui_eligibility_prob (shared scalar)
 )
 _exact_age_means_jax_batched = jax.jit(
     jax.vmap(exact_age_means_jax, in_axes=_EXACT_IN_AXES),
@@ -1472,7 +1514,7 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
                          mean_kappa_working, mean_y_employed, bequest_lumpsum,
                          T, retirement_age, current_age, tax_progressive,
                          schooling_years, labor_supply, P_y_age_health, n_alpha, chunk,
-                         lump_stack=None, P_y_stack=None):
+                         lump_stack=None, P_y_stack=None, ui_eligibility_prob=1.0):
     """Body of LifecycleModelJAX.cross_section_exact, compiled as one call.
 
     Solves every cohort once per fixed-effect node, as _cross_section does,
@@ -1508,6 +1550,7 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
             pension_avg_weight, mean_kappa_working, mean_y_employed,
             alpha_mult,
             ls_c,
+            ui_eligibility_prob,
         )
         return a_b, c_b, l_b
 
@@ -1516,7 +1559,8 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
 
     exact_axes = (_axes_override(exact_age_means_jax, _EXACT_IN_AXES, P_y_4d=0)
                   if per_cohort_py else _EXACT_IN_AXES)
-    exact = jax.vmap(exact_age_means_jax, in_axes=exact_axes + (0,))
+    exact = jax.vmap(exact_age_means_jax,
+                     in_axes=_axes_override(exact_age_means_jax, exact_axes, panel_rows=0))
     take_py = (lambda idx: P_y_stack[idx]) if per_cohort_py else (lambda idx: P_y_4d)
     beq_c = jnp.full(chunk, bequest_lumpsum)
     panels, masses = [], []
@@ -1548,6 +1592,7 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
             take(ls_c),
             False,
             take(rows)[:, None],
+            ui_eligibility_prob,
         )
         n = stop - start
         panels.append(panel[:n, 0])
@@ -1624,7 +1669,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
                    mean_kappa_working, mean_y_employed, bequest_lumpsum,
                    T, retirement_age, current_age, n_sim, tax_progressive,
                    schooling_years, labor_supply, P_y_age_health, n_alpha, chunk,
-                   lump_stack=None, P_y_stack=None):
+                   lump_stack=None, P_y_stack=None, ui_eligibility_prob=1.0):
     """Body of LifecycleModelJAX.cross_section_batched, compiled as one call.
 
     Solves every cohort once per fixed-effect node (vmapped over the survival
@@ -1661,6 +1706,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
             pension_avg_weight, mean_kappa_working, mean_y_employed,
             alpha_mult,
             ls_c,
+            ui_eligibility_prob,
         )
         return a_b, c_b, l_b
 
@@ -1707,6 +1753,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
             transfer_floor,
             beq_c,
             take(ls_c),
+            ui_eligibility_prob,
         )
         # Each output is (chunk, T_sim, n_sim); keep row rows[c] of cohort c.
         local = np.arange(stop - start)
@@ -1768,6 +1815,7 @@ class LifecycleModelJAX:
         self.nu = float(config.nu)
         self.phi = float(config.phi)
         self.trend_growth = float(config.trend_growth)
+        self.ui_eligibility_prob = float(self._np_model.ui_eligibility_prob)
 
         # New feature parameters
         self.pension_min_floor = float(encoded_pension_floor(config))
@@ -1877,6 +1925,7 @@ class LifecycleModelJAX:
                 mean_y_employed=self.mean_y_employed,
                 alpha_mult=alpha_mult,
                 lump_sum_path=self.lump_sum_path,
+                ui_eligibility_prob=self.ui_eligibility_prob,
             )
             V_list.append(np.asarray(V))
             a_list.append(np.asarray(a_policy))
@@ -2065,6 +2114,7 @@ class LifecycleModelJAX:
             transfer_floor=float(self.transfer_floor),
             bequest_lumpsum=float(self.bequest_lumpsum),
             lump_sum_path=self.lump_sum_path,
+            ui_eligibility_prob=self.ui_eligibility_prob,
         )
 
         # Convert all outputs to numpy arrays (23-tuple: panel, alpha_idx_panel, transfer_sim)
@@ -2115,6 +2165,7 @@ class LifecycleModelJAX:
             bequest_lumpsum=float(self.bequest_lumpsum),
             lump_sum_path=self.lump_sum_path,
             return_dist=bool(return_dist),
+            ui_eligibility_prob=self.ui_eligibility_prob,
         )
         if return_dist:
             return np.asarray(out[0]), np.asarray(out[1])
@@ -2159,6 +2210,7 @@ class LifecycleModelJAX:
             bequest_lumpsum=float(self.bequest_lumpsum),
             lump_sum_path=self.lump_sum_path,
             panel_rows=jnp.asarray(rows),
+            ui_eligibility_prob=self.ui_eligibility_prob,
         )
         return _exact_panel_to_numpy(panel, mass)
 
@@ -2242,6 +2294,7 @@ class LifecycleModelJAX:
             n_alpha=int(self.n_alpha), chunk=chunk,
             lump_stack=self._lump_stack(lump_stack, C),
             P_y_stack=self._P_y_stack(P_y_stack, C),
+            ui_eligibility_prob=self.ui_eligibility_prob,
         )
         return _exact_panel_to_numpy(panel, mass)
 
@@ -2301,6 +2354,7 @@ class LifecycleModelJAX:
             n_alpha=int(self.n_alpha), chunk=chunk,
             lump_stack=self._lump_stack(lump_stack, C),
             P_y_stack=self._P_y_stack(P_y_stack, C),
+            ui_eligibility_prob=self.ui_eligibility_prob,
         )
         return tuple(np.asarray(x) for x in out)
 

@@ -1,0 +1,71 @@
+{
+  "quantity": "ui_eligibility_prob (p), probability that a new unemployment spell is eligible for UI",
+  "definition": "share of the unemployed aged 25-64 with a spell under 12 months who receive benefits or assistance (LFS, self-reported)",
+  "source": "Eurostat lfsa_ugadra (unit PC, regis_es UNE_BEN, durations M_LT12 and M_GE12) and lfsa_ugad (thousands, duration bands), geo EL, sex T",
+  "vintage": "2026-09-10T23:00:00+0200",
+  "year": 2023,
+  "value": 0.332,
+  "validation": {
+    "ui_recipient_share": 0.14774676823638047,
+    "definition": "share of all unemployed aged 25-64 receiving benefits or assistance"
+  },
+  "by_year_25_64": {
+    "2019": {
+      "receiving_lt12": 0.36700000000000005,
+      "receiving_ge12": 0.045,
+      "long_term_share": 0.717232842800165,
+      "receiving_all": 0.1360510246183469
+    },
+    "2020": {
+      "receiving_lt12": 0.44799999999999995,
+      "receiving_ge12": 0.066,
+      "long_term_share": 0.6773903935358372,
+      "receiving_all": 0.1892368696693102
+    },
+    "2021": {
+      "receiving_lt12": 0.376,
+      "receiving_ge12": 0.028999999999999998,
+      "long_term_share": 0.6508422664624808,
+      "receiving_all": 0.15015773353751918
+    },
+    "2022": {
+      "receiving_lt12": 0.37,
+      "receiving_ge12": 0.03,
+      "long_term_share": 0.6601863102470635,
+      "receiving_all": 0.1455366545159984
+    },
+    "2023": {
+      "receiving_lt12": 0.332,
+      "receiving_ge12": 0.027000000000000003,
+      "long_term_share": 0.6041089566020313,
+      "receiving_all": 0.14774676823638047
+    },
+    "2024": {
+      "receiving_lt12": 0.342,
+      "receiving_ge12": 0.021,
+      "long_term_share": 0.5702722590139809,
+      "receiving_all": 0.15894260485651215
+    },
+    "2025": {
+      "receiving_lt12": 0.36700000000000005,
+      "receiving_ge12": 0.024,
+      "long_term_share": 0.5974789915966386,
+      "receiving_all": 0.16206470588235294
+    }
+  },
+  "receiving_all_15_74": {
+    "2019": 0.1299010263929619,
+    "2020": 0.18238004246284503,
+    "2021": 0.13924348473566642,
+    "2022": 0.13447025151777972,
+    "2023": 0.1405225755791127,
+    "2024": 0.1488452685421995,
+    "2025": 0.1499078151463828
+  },
+  "caveats": [
+    "Receipt is self-reported in the LFS and covers benefits or assistance of any kind.",
+    "2020 is raised by the pandemic measures.",
+    "The regular benefit lasts 5 to 12 months by days worked (MITOS); the model pays a full year to an eligible household.",
+    "Spending counterpart (the UI/Y target): ESSPROS spr_exp_fun, unemployment function, periodic cash benefits for full unemployment, 0.56% of GDP in 2023."
+  ]
+}
