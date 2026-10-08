@@ -83,7 +83,15 @@ def stats(ages, P):
     s = lambda lo, hi: P[(ages >= lo) & (ages <= hi)].sum()
     return {'pop': P.sum() / 1e3, 'pop2599': s(25, 99) / 1e3,
             'oadr': 100 * s(65, 200) / s(20, 64), 'oadr_m': 100 * s(65, 99) / s(25, 64),
-            'sh85': 100 * s(85, 200) / s(65, 200), 'a25': s(25, 25) / 1e3}
+            'sh85': 100 * s(85, 200) / s(65, 200), 'sh85_m': 100 * s(85, 99) / s(65, 99),
+            'a25': s(25, 25) / 1e3}
+
+
+def add_growth(d, key='pop2599', out='g2599'):
+    """Growth of the 25-99 population from the previous year, %, where both years are present."""
+    for y in list(d):
+        if y - 1 in d and key in d[y - 1] and key in d[y]:
+            d[y][out] = 100 * (d[y][key] / d[y - 1][key] - 1)
 
 
 def main():
@@ -98,6 +106,7 @@ def main():
     print('demo_pjan updated', upd)
     for y in (2022, 2023, 2024, 2025):
         obs[y] = stats(*by_age(get, cats, y))
+    add_growth(obs)
     get, cats, upd = jsonstat(os.path.join(raw, 'demo_gind_EL_2020_2024.json'))
     print('demo_gind updated', upd)
     for y in (2022, 2023, 2024):
@@ -115,8 +124,9 @@ def main():
     # --------------------------------------------------------- EUROPOP2023 ---
     eu = {}
     get, cats, _ = jsonstat(os.path.join(DATA, 'europop2023_raw', 'proj_23np_EL_T.json'))
-    for y in YEARS:
+    for y in sorted(y for y in set(YEARS) | {y - 1 for y in YEARS} if y >= 2022):
         eu[y] = stats(*by_age(get, cats, y))
+    add_growth(eu)
     get, cats, _ = jsonstat(os.path.join(DATA, 'europop2023_raw', 'proj_23nanmig_EL_T.json'))
     for y in YEARS:
         ages, M = by_age(get, cats, y)
@@ -147,8 +157,11 @@ def main():
             r = 1.0 if j >= JR + 1 else ((1.0 - sl) if j >= JR else 0.0)
             R += P[j] * r; W += P[j] * (1 - r)
         mod[y] = {'pop2599': P.sum() / 1e3, 'oadr_m': 100 * s(65, 99) / s(25, 64),
-                  'sh85': 100 * s(85, 99) / s(65, 99), 'a25': ent[ey2.index(y)] / 1e3,
-                  'rw': R / W, 'ret': float(ret['retirement_age_path'][ry.index(y)])}
+                  'sh85_m': 100 * s(85, 99) / s(65, 99), 'a25': ent[ey2.index(y)] / 1e3,
+                  'rw': R / W, 'ret': float(ret['retirement_age_path'][ry.index(y)]),
+                  'e65_m': eu[y]['e65_m'], 'e65_f': eu[y]['e65_f']}
+        if y - 1 in py:
+            mod[y]['g2599'] = 100 * (pop[py.index(y)].sum() / pop[py.index(y - 1)].sum() - 1)
 
     # ---------------------------------------------------------------- table ---
     def cell(d, y, k, f):
@@ -179,7 +192,7 @@ def main():
         ('Life expectancy at 65, women', 'e65_f', '%.1f')])
     block('Model (ages 25--99, entering cohorts smoothed)', mod, [
         ('Population aged 25--99, thousand', 'pop2599', '%.0f'), ('Persons 65--99 per 100 aged 25--64', 'oadr_m', '%.1f'),
-        ('Share of 85--99 in 65--99, \\%', 'sh85', '%.1f'), ('Cohort entering at 25, thousand', 'a25', '%.1f'),
+        ('Share of 85--99 in 65--99, \\%', 'sh85_m', '%.1f'), ('Cohort entering at 25, thousand', 'a25', '%.1f'),
         ('Retired per non-retired person', 'rw', '%.2f'), ('Retirement age, years', 'ret', '%.1f')])
     head = ('\\begin{tabular}{@{}l' + 'S[table-format=5.1]' * len(YEARS) + '@{}}\n\\toprule\n & '
             + ' & '.join('{%d}' % y for y in YEARS) + ' \\\\\n\\midrule\n')
@@ -188,6 +201,34 @@ def main():
     out = os.path.join(args.outdir, 'demography_body.tex')
     open(out, 'w').write(body)
     print('wrote', os.path.relpath(out))
+
+    # Short table: statistics defined the same way in the data, the projection
+    # and the model, then a few that are not directly comparable.
+    SY = [2023, 2025, 2030, 2050, 2070]
+    srows = []
+    def triple(label, key, f, srcs=(('data', obs), ('projection', eu), ('model', mod))):
+        srows.append('%s \\\\' % label + '')
+        for name, d in srcs:
+            srows.append('\\quad %s & ' % name + ' & '.join(cell(d, y, key, f) for y in SY) + ' \\\\')
+    srows.append('\\multicolumn{%d}{@{}l}{\\emph{Defined identically}}\\\\' % (len(SY) + 1))
+    triple('Population aged 25--99, thousand', 'pop2599', '%.0f')
+    triple('Growth of the population aged 25--99 from the previous year, \\%', 'g2599', '%+.2f')
+    triple('Persons 65--99 per 100 aged 25--64', 'oadr_m', '%.1f')
+    triple('Share of 85--99 in 65--99, \\%', 'sh85_m', '%.1f')
+    srows.append('\\addlinespace\\multicolumn{%d}{@{}l}{\\emph{Not directly comparable}}\\\\' % (len(SY) + 1))
+    triple('Persons 65+ per 100 aged 20--64 (the Ageing Report\'s ratio)', 'oadr', '%.1f',
+           srcs=(('data', obs), ('projection', eu), ('Ageing Report fiche', fiche)))
+    triple('25-year-olds (data, projection); cohort entering at 25 (model), thousand', 'a25', '%.1f')
+    triple('Life expectancy at 65, men', 'e65_m', '%.1f')
+    triple('Life expectancy at 65, women', 'e65_f', '%.1f')
+    srows.append('Retired per non-retired person, model & ' + ' & '.join(cell(mod, y, 'rw', '%.2f') for y in SY) + ' \\\\')
+    srows.append('Average effective retirement age, model, years & ' + ' & '.join(cell(mod, y, 'ret', '%.1f') for y in SY) + ' \\\\')
+    shead = ('\\begin{tabular}{@{}l' + 'S[table-format=4.2]' * len(SY) + '@{}}\n\\toprule\n & '
+             + ' & '.join('{%d}' % y for y in SY) + ' \\\\\n\\midrule\n')
+    sbody = shead + '\n'.join(srows) + '\n\\bottomrule\n\\end{tabular}\n'
+    out2 = os.path.join(args.outdir, 'demography_short_body.tex')
+    open(out2, 'w').write(sbody)
+    print('wrote', os.path.relpath(out2))
     for src, d in (('observed', obs), ('EUROPOP', eu), ('model', mod)):
         print(src, {y: {k: round(v, 2) for k, v in d[y].items()} for y in d})
 

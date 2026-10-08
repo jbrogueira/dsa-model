@@ -217,8 +217,8 @@ Sources for the parameters not taken straight from a published table:
   100+ group is 0.04\% of the population in 2023 and 0.5\% in 2100); what has
   happened since 2022 (recorded births in 2023--24 are 11--14\% below the
   projection's).
-\item Table~\ref{tab:demography} sets the projection against the data since
-  2022. On 1 January 2025 the population was 10.37 million, 0.5\% above
+\item Tables~\ref{tab:demography_short} and \ref{tab:demography} set the
+  projection against the data since 2022. On 1 January 2025 the population was 10.37 million, 0.5\% above
   the projection, because net migration was 30 thousand in 2023 and 54
   thousand in 2024 against the projection's 5 and $-2$; live births in
   2023--24 were 10--12\% below the projection's; life expectancy at 65 in
@@ -268,51 +268,18 @@ person. \emph{Bottom right}: the average effective retirement age and 65 plus
 life expectancy at 65, in years.}
 \end{figure}
 
-\begin{table}[htbp]\centering\scriptsize
-\caption{\label{tab:demography}Demographic statistics: observed since 2022,
-the projection, and the model}\vspace{-2pt}
-\tabinput{demography_body.tex}
-\begin{minipage}{\linewidth}\vspace{4pt}\scriptsize\setlength{\parskip}{2pt}
-Sources, all read on 2026-10-08 from the Eurostat dissemination API
-(\url{https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/}),
-raw JSON kept under \texttt{data/eurostat\_raw/} and
-\texttt{data/europop2023\_raw/}; table built by
-\texttt{reports/demography\_table.py}.
-
-Observed: population on 1 January by single year of age, Greece, both sexes
-(\texttt{demo\_pjan}, dataset of 2026-09-25,
-\url{https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/table?lang=en});
-live births, deaths and net migration plus statistical adjustment
-(\texttt{demo\_gind}, indicators LBIRTH, DEATH, CNMIGRAT, dataset of
-2026-09-30,
-\url{https://ec.europa.eu/eurostat/databrowser/view/demo_gind/default/table?lang=en});
-period life expectancy at 65 by sex (\texttt{demo\_mlexpec}, age Y65,
-dataset of 2026-09-25,
-\url{https://ec.europa.eu/eurostat/databrowser/view/demo_mlexpec/default/table?lang=en});
-total fertility rate (\texttt{demo\_find}, TOTFERRT, dataset of 2026-09-30,
-\url{https://ec.europa.eu/eurostat/databrowser/view/demo_find/default/table?lang=en}).
-
-EUROPOP2023 baseline (BSL): population on 1 January by single year of age
-(\texttt{proj\_23np},
-\url{https://ec.europa.eu/eurostat/databrowser/view/proj_23np/default/table?lang=en});
-net migration by age, summed (\texttt{proj\_23nanmig},
-\url{https://ec.europa.eu/eurostat/databrowser/view/proj_23nanmig/default/table?lang=en});
-life expectancy at 65 from the assumed mortality rates by age and sex
-(\texttt{proj\_23naasmr}, computed in \texttt{build\_retirement\_age\_GR.py}).
-
-Ageing Report: European Commission, 2024 Ageing Report, country fiche for
-Greece (December 2023), Table 2 ``Main demographic variables evolution'',
-section 2.1; publication page
-\url{https://economy-finance.ec.europa.eu/publications/2024-ageing-report-economic-and-budgetary-projections-eu-member-states-2022-2070_en}.
-The fiche's old-age dependency ratio is persons 65+ per 100 aged 20--64; its
-population and life expectancy are EUROPOP2023's.
-
-Model: \texttt{data/demography\_GR.npz} (\texttt{build\_demography\_GR.py}):
-the 2023 cross-section is EUROPOP2023's at ages 25--99 up to the smoothing
-of cohort sizes, later years are entering cohorts carried by EUROPOP2023
-survival, and the entering cohort absorbs the projection's net migration at
-all ages. Retired per non-retired person and the retirement age follow
-\texttt{data/retirement\_age\_GR.npz}.
+\begin{table}[htbp]\centering\footnotesize
+\caption{\label{tab:demography_short}Demographic statistics: data, projection
+and model}\vspace{-2pt}
+\tabinput{demography_short_body.tex}
+\begin{minipage}{\linewidth}\vspace{3pt}\scriptsize
+Data: Eurostat, population on 1 January and period life tables. Projection:
+EUROPOP2023 baseline, the population behind the 2024 Ageing Report; the
+Ageing Report's own ratio is from its country fiche for Greece. The model's
+entering cohort absorbs the projection's net migration at every age, so it
+is not the number of 25-year-olds; the model's life expectancy is the
+projection's by construction. The full set of statistics, with sources and
+links, is in Table~\ref{tab:demography} in the appendix.
 \end{minipage}
 \end{table}
 
@@ -544,5 +511,57 @@ net foreign assets, both over output, with the baseline.}
 \caption{\label{fig:Ig}Public investment up by 2\% of 2023 output from 2023,
 under the three financing rules; panels as in Figure~\ref{fig:G}.}
 \end{figure}
+
+\clearpage
+\appendix
+\section*{Appendix: demographic statistics in full}\vspace{-0.2cm}
+
+\begin{table}[htbp]\centering\scriptsize
+\caption{\label{tab:demography}Demographic statistics in full: observed
+since 2022, the projection, the Ageing Report fiche, and the model}\vspace{-2pt}
+\tabinput{demography_body.tex}
+\begin{minipage}{\linewidth}\vspace{4pt}\scriptsize\setlength{\parskip}{2pt}
+Sources, all read on 2026-10-08 from the Eurostat dissemination API
+(\url{https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/}),
+raw JSON kept under \texttt{data/eurostat\_raw/} and
+\texttt{data/europop2023\_raw/}; table built by
+\texttt{reports/demography\_table.py}.
+
+Observed: population on 1 January by single year of age, Greece, both sexes
+(\texttt{demo\_pjan}, dataset of 2026-09-25,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/table?lang=en});
+live births, deaths and net migration plus statistical adjustment
+(\texttt{demo\_gind}, indicators LBIRTH, DEATH, CNMIGRAT, dataset of
+2026-09-30,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_gind/default/table?lang=en});
+period life expectancy at 65 by sex (\texttt{demo\_mlexpec}, age Y65,
+dataset of 2026-09-25,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_mlexpec/default/table?lang=en});
+total fertility rate (\texttt{demo\_find}, TOTFERRT, dataset of 2026-09-30,
+\url{https://ec.europa.eu/eurostat/databrowser/view/demo_find/default/table?lang=en}).
+
+EUROPOP2023 baseline (BSL): population on 1 January by single year of age
+(\texttt{proj\_23np},
+\url{https://ec.europa.eu/eurostat/databrowser/view/proj_23np/default/table?lang=en});
+net migration by age, summed (\texttt{proj\_23nanmig},
+\url{https://ec.europa.eu/eurostat/databrowser/view/proj_23nanmig/default/table?lang=en});
+life expectancy at 65 from the assumed mortality rates by age and sex
+(\texttt{proj\_23naasmr}, computed in \texttt{build\_retirement\_age\_GR.py}).
+
+Ageing Report: European Commission, 2024 Ageing Report, country fiche for
+Greece (December 2023), Table 2 ``Main demographic variables evolution'',
+section 2.1; publication page
+\url{https://economy-finance.ec.europa.eu/publications/2024-ageing-report-economic-and-budgetary-projections-eu-member-states-2022-2070_en}.
+The fiche's old-age dependency ratio is persons 65+ per 100 aged 20--64; its
+population and life expectancy are EUROPOP2023's.
+
+Model: \texttt{data/demography\_GR.npz} (\texttt{build\_demography\_GR.py}):
+the 2023 cross-section is EUROPOP2023's at ages 25--99 up to the smoothing
+of cohort sizes, later years are entering cohorts carried by EUROPOP2023
+survival, and the entering cohort absorbs the projection's net migration at
+all ages. Retired per non-retired person and the retirement age follow
+\texttt{data/retirement\_age\_GR.npz}.
+\end{minipage}
+\end{table}
 
 \end{document}
