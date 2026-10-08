@@ -198,6 +198,9 @@ def done(f, h):
     return abs(f) <= args.tol and abs(h) <= args.tol_pb
 
 
+TAU_SAME = 2e-4       # points within this of the current rate share its output effect
+
+
 print("\nsolving the base-year cross-section at the current A_tfp"
       + (" and tau_y ..." if args.pin_tau_y else " ..."), flush=True)
 tau = tau_start if args.pin_tau_y else None
@@ -214,19 +217,26 @@ if not done(f, h):
         f, h = record(A_next, tau_next, Y, pb, m, spec)
         if done(f, h):
             break
-        # Secant step from the two most recent points
+        # Secant step from the two most recent points. With the rate pinned,
+        # a point evaluated at a different rate carries the rate's effect on
+        # output, so the secant and the bracket use points at the current
+        # rate only (within TAU_SAME); otherwise the elasticity step.
         (A1, f1), (A2, f2) = history[-2], history[-1]
-        if f2 != f1:
+        t1, t2 = tau_hist[-2][0], tau_hist[-1][0]
+        same = (not args.pin_tau_y) or abs(t2 - t1) < TAU_SAME
+        if same and f2 != f1:
             A_sec = A2 - f2 * (A2 - A1) / (f2 - f1)
         else:
             A_sec = A2 * (args.target / (f2 + args.target)) ** (1.0 - alpha)
-        # Bisection safeguard: if a sign-change bracket exists and the secant
-        # step leaves it, bisect instead.
-        pos = [(a, ff) for a, ff in history if ff > 0]
-        neg = [(a, ff) for a, ff in history if ff < 0]
+        # Bisection safeguard: if a sign-change bracket exists among the
+        # points at the current rate and the secant step leaves it, bisect.
+        pts = [(a, ff) for (a, ff), (tt, _) in zip(history, tau_hist)
+               if (not args.pin_tau_y) or abs(tt - t2) < TAU_SAME]
+        pos = [(a, ff) for a, ff in pts if ff > 0]
+        neg = [(a, ff) for a, ff in pts if ff < 0]
         if pos and neg:
-            lo = max(a for a, ff in history if ff < 0)
-            hi = min(a for a, ff in history if ff > 0)
+            lo = max(a for a, ff in neg)
+            hi = min(a for a, ff in pos)
             if lo > hi:
                 lo, hi = hi, lo
             if not (lo < A_sec < hi):
