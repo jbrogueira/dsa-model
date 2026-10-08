@@ -115,7 +115,7 @@ def main():
     get, cats, upd = jsonstat(os.path.join(raw, 'demo_mlexpec_EL_2020_2024.json'))
     print('demo_mlexpec updated', upd)
     for y in (2022, 2023, 2024):
-        obs[y].update(e65_m=get(sex='M', time=y), e65_f=get(sex='F', time=y))
+        obs[y].update(e65_m=get(sex='M', time=y), e65_f=get(sex='F', time=y), e65=get(sex='T', time=y))
     get, cats, upd = jsonstat(os.path.join(raw, 'demo_find_EL_2020_2024.json'))
     print('demo_find updated', upd)
     for y in (2022, 2023, 2024):
@@ -136,6 +136,7 @@ def main():
     for y in YEARS:
         eu[y]['e65_m'] = float(ret['e65_men'][ey.index(y)])
         eu[y]['e65_f'] = float(ret['e65_women'][ey.index(y)])
+        eu[y]['e65'] = float(ret['e65'][ey.index(y)])
 
     # --------------------------------------------------------------- model ---
     dem = np.load(os.path.join(DATA, 'demography_GR.npz'))
@@ -159,7 +160,7 @@ def main():
         mod[y] = {'pop2599': P.sum() / 1e3, 'oadr_m': 100 * s(65, 99) / s(25, 64),
                   'sh85_m': 100 * s(85, 99) / s(65, 99), 'a25': ent[ey2.index(y)] / 1e3,
                   'rw': R / W, 'ret': float(ret['retirement_age_path'][ry.index(y)]),
-                  'e65_m': eu[y]['e65_m'], 'e65_f': eu[y]['e65_f']}
+                  'e65': eu[y]['e65']}
         if y - 1 in py:
             mod[y]['g2599'] = 100 * (pop[py.index(y)].sum() / pop[py.index(y - 1)].sum() - 1)
 
@@ -178,13 +179,15 @@ def main():
         ('Share of 85+ in 65+, \\%', 'sh85', '%.1f'), ('25-year-olds, thousand', 'a25', '%.1f'),
         ('Live births, thousand', 'births', '%.1f'), ('Deaths, thousand', 'deaths', '%.1f'),
         ('Net migration, thousand', 'mig', '%.1f'), ('Life expectancy at 65, men', 'e65_m', '%.1f'),
-        ('Life expectancy at 65, women', 'e65_f', '%.1f'), ('Total fertility rate', 'tfr', '%.2f')])
+        ('Life expectancy at 65, women', 'e65_f', '%.1f'), ('Life expectancy at 65, both sexes', 'e65', '%.1f'),
+        ('Total fertility rate', 'tfr', '%.2f')])
     block('EUROPOP2023 baseline (the Ageing Report\'s population)', eu, [
         ('Population, thousand', 'pop', '%.0f'), ('Population aged 25--99, thousand', 'pop2599', '%.0f'),
         ('Persons 65+ per 100 aged 20--64', 'oadr', '%.1f'), ('Persons 65--99 per 100 aged 25--64', 'oadr_m', '%.1f'),
         ('Share of 85+ in 65+, \\%', 'sh85', '%.1f'), ('25-year-olds, thousand', 'a25', '%.1f'),
         ('Net migration, thousand', 'mig', '%.1f'), ('Life expectancy at 65, men', 'e65_m', '%.1f'),
-        ('Life expectancy at 65, women', 'e65_f', '%.1f')])
+        ('Life expectancy at 65, women', 'e65_f', '%.1f'),
+        ('Life expectancy at 65, men and women averaged', 'e65', '%.1f')])
     fiche = {y: {k: FICHE[k].get(y) for k in FICHE} for y in YEARS}
     block('2024 Ageing Report, country fiche for Greece, Table 2', fiche, [
         ('Population, thousand', 'pop', '%.0f'), ('Persons 65+ per 100 aged 20--64', 'oadr', '%.1f'),
@@ -193,6 +196,7 @@ def main():
     block('Model (ages 25--99, entering cohorts smoothed)', mod, [
         ('Population aged 25--99, thousand', 'pop2599', '%.0f'), ('Persons 65--99 per 100 aged 25--64', 'oadr_m', '%.1f'),
         ('Share of 85--99 in 65--99, \\%', 'sh85_m', '%.1f'), ('Cohort entering at 25, thousand', 'a25', '%.1f'),
+        ('Life expectancy at 65, men and women averaged', 'e65', '%.1f'),
         ('Retired per non-retired person', 'rw', '%.2f'), ('Retirement age, years', 'ret', '%.1f')])
     head = ('\\begin{tabular}{@{}l' + 'S[table-format=5.1]' * len(YEARS) + '@{}}\n\\toprule\n & '
             + ' & '.join('{%d}' % y for y in YEARS) + ' \\\\\n\\midrule\n')
@@ -219,8 +223,7 @@ def main():
     triple('Persons 65+ per 100 aged 20--64 (the Ageing Report\'s ratio)', 'oadr', '%.1f',
            srcs=(('data', obs), ('projection', eu), ('Ageing Report fiche', fiche)))
     triple('25-year-olds (data, projection); cohort entering at 25 (model), thousand', 'a25', '%.1f')
-    triple('Life expectancy at 65, men', 'e65_m', '%.1f')
-    triple('Life expectancy at 65, women', 'e65_f', '%.1f')
+    triple('Life expectancy at 65, years', 'e65', '%.1f')
     srows.append('Retired per non-retired person, model & ' + ' & '.join(cell(mod, y, 'rw', '%.2f') for y in SY) + ' \\\\')
     srows.append('Average effective retirement age, model, years & ' + ' & '.join(cell(mod, y, 'ret', '%.1f') for y in SY) + ' \\\\')
     shead = ('\\begin{tabular}{@{}l' + 'S[table-format=4.2]' * len(SY) + '@{}}\n\\toprule\n & '
