@@ -1457,6 +1457,16 @@ class TestNewFeaturesJAX:
 
 class TestPhase6Features:
     """Tests for Phase 6: public capital, public investment, SOE/sovereign debt."""
+    # The household block is a fixture here: the assertions are on K_g, the
+    # firm's conditions and the budget identities, none of which depend on the
+    # asset grid. One education group and a 30-point grid keep a NumPy
+    # transition (24 cohort solves in pure Python) at a few seconds. With the
+    # constructor's three-group default and n_a=100 one transition takes about
+    # four minutes and the two-transition tests run for eight.
+    @staticmethod
+    def _economy(**kwargs):
+        return OLGTransition(lifecycle_config=get_test_config()._replace(n_a=30),
+                             education_shares={'medium': 1.0}, **kwargs)
 
     def test_public_capital_increases_output(self):
         """Public capital with eta_g > 0 should increase output vs baseline."""
@@ -1465,11 +1475,11 @@ class TestPhase6Features:
         n_sim = 100
 
         # Baseline: no public capital
-        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        olg_base = self._economy()
         res_base = olg_base.simulate_transition(r_path, n_sim=n_sim, verbose=False)
 
         # With public capital
-        olg_kg = OLGTransition(lifecycle_config=get_test_config(),
+        olg_kg = self._economy(
                                eta_g=0.05, K_g_initial=1.0,
                                I_g_path=np.ones(T_tr) * 0.1)
         res_kg = olg_kg.simulate_transition(r_path, n_sim=n_sim, verbose=False)
@@ -1486,10 +1496,10 @@ class TestPhase6Features:
         r_path = np.ones(T_tr) * 0.04
         n_sim = 100
 
-        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        olg_base = self._economy()
         res_base = olg_base.simulate_transition(r_path, n_sim=n_sim, verbose=False)
 
-        olg_kg = OLGTransition(lifecycle_config=get_test_config(),
+        olg_kg = self._economy(
                                eta_g=0.0, K_g_initial=5.0,
                                I_g_path=np.ones(T_tr) * 0.5)
         res_kg = olg_kg.simulate_transition(r_path, n_sim=n_sim, verbose=False)
@@ -1505,7 +1515,7 @@ class TestPhase6Features:
         K_g_0 = 2.0
         delta_g = 0.1
 
-        olg = OLGTransition(lifecycle_config=get_test_config(),
+        olg = self._economy(
                             eta_g=0.05, K_g_initial=K_g_0,
                             delta_g=delta_g, I_g_path=I_g)
         res = olg.simulate_transition(r_path, n_sim=100, verbose=False)
@@ -1523,10 +1533,10 @@ class TestPhase6Features:
         T_tr = 5
         r_path = np.ones(T_tr) * 0.04
 
-        olg_base = OLGTransition(lifecycle_config=get_test_config())
+        olg_base = self._economy()
         res_base = olg_base.simulate_transition(r_path, n_sim=100, verbose=False)
 
-        olg_kg = OLGTransition(lifecycle_config=get_test_config(),
+        olg_kg = self._economy(
                                eta_g=0.05, K_g_initial=2.0,
                                I_g_path=np.ones(T_tr) * 0.3)
         res_kg = olg_kg.simulate_transition(r_path, n_sim=100, verbose=False)
@@ -1539,7 +1549,7 @@ class TestPhase6Features:
         T_tr = 5
         r_path = np.ones(T_tr) * 0.04
 
-        olg = OLGTransition(lifecycle_config=get_test_config(),
+        olg = self._economy(
                             eta_g=0.05, K_g_initial=1.0,
                             I_g_path=np.ones(T_tr) * 0.5)
         olg.simulate_transition(r_path, n_sim=100, verbose=False)
@@ -1554,7 +1564,7 @@ class TestPhase6Features:
         r_path = np.ones(T_tr) * 0.04
         B_path = np.linspace(1.0, 1.5, T_tr + 1)
 
-        olg = OLGTransition(lifecycle_config=get_test_config(), B_path=B_path)
+        olg = self._economy(B_path=B_path)
         olg.simulate_transition(r_path, n_sim=100, verbose=False)
         budget = olg.compute_government_budget(0)
 
@@ -1569,7 +1579,7 @@ class TestPhase6Features:
         T_tr = 5
         r_path = np.ones(T_tr) * 0.04
 
-        olg = OLGTransition(lifecycle_config=get_test_config())
+        olg = self._economy()
         olg.simulate_transition(r_path, n_sim=100, verbose=False)
         budget = olg.compute_government_budget(0)
 
@@ -1582,7 +1592,7 @@ class TestPhase6Features:
         T_tr = 5
         r_path = np.ones(T_tr) * 0.04
 
-        olg = OLGTransition(lifecycle_config=get_test_config(), economy_type='soe')
+        olg = self._economy(economy_type='soe')
         res = olg.simulate_transition(r_path, n_sim=100, verbose=False)
 
         assert 'NFA' in res
@@ -1590,7 +1600,7 @@ class TestPhase6Features:
 
     def test_production_function_with_public_capital(self):
         """Production function should include K_g factor."""
-        olg = OLGTransition(lifecycle_config=get_test_config(), eta_g=0.1)
+        olg = self._economy(eta_g=0.1)
 
         K, L = 10.0, 5.0
         K_g = 2.0
@@ -1605,7 +1615,7 @@ class TestPhase6Features:
 
     def test_factor_prices_with_public_capital(self):
         """Factor prices should account for public capital."""
-        olg = OLGTransition(lifecycle_config=get_test_config(), eta_g=0.1)
+        olg = self._economy(eta_g=0.1)
 
         K, L = 10.0, 5.0
         K_g = 2.0
