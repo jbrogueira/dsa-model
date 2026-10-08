@@ -60,6 +60,7 @@ SMM_LABELS = {
     'pension_replacement_default': ('$\\rho^{pens}$', 'pension replacement rate', 'pensions$/Y$'),
     'm_good': ('$m^{good}$', 'medical cost scale', 'public health$/Y$'),
     'ui_replacement_rate': ('$\\rho^{ui}$', 'UI replacement rate', 'UI$/Y$'),
+    'tau_k': ('$\\tau_k$', 'capital income tax rate', 'capital income tax$/Y$'),
 }
 
 
@@ -120,7 +121,6 @@ def params_table(cfg, n0=None, n_inf=None):
          'data to 2025, debt projection 2026--60, linear to 2\\% by 2070'),
         ('$\\tau_c$', 'consumption tax rate', ext.get('tau_c'), 'implicit tax rate on consumption, DG Taxation and Customs Union, Taxation Trends, mean 2019--23'),
         ('$\\tau_l$', 'labour income tax rate', ext.get('tau_l'), 'income-tax part of the implicit tax rate on labour (40.6\\%, mean 2019--23), the rest being contributions'),
-        ('$\\tau_k$', 'capital income tax rate', ext.get('tau_k'), 'effective average tax rate of large corporations (KPMG, in Taxation Trends), mean 2019--23'),
         ('$b_{min}$', 'minimum pension, 2023', ext.get('pension_min_floor'),
          'national pension, L.4387/2016'
          + ('; follows the pension index' if ext.get('pension_floor_indexed') else '')),
@@ -187,7 +187,7 @@ def params_table(cfg, n0=None, n_inf=None):
 
 
 LABEL = {'average_hours': 'Average hours', 'A_over_Y': '$A/Y$',
-         'tax_p_over_Y': 'Payroll revenue$/Y$', 'pensions_over_Y': 'Pensions$/Y$',
+         'tax_p_over_Y': 'Payroll revenue$/Y$', 'tax_k_over_Y': 'Capital income tax$/Y$', 'pensions_over_Y': 'Pensions$/Y$',
          'health_gov_over_Y': 'Public health$/Y$', 'I_g_over_Y': '$I_g/Y$',
          'ui_over_Y': 'UI$/Y$', 'interest_over_Y': 'Interest$/Y$ $(r_BB/Y)$',
          'primary_balance_over_Y': 'Household primary balance$/Y$', 'G_over_Y': '$G/Y$',

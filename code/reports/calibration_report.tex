@@ -49,15 +49,17 @@
   a year.
 \item Households hold domestic capital and foreign assets at the world return
   $r$. Government debt is held by official creditors at the real rate
-  $r_{B,t}$: the data's real effective rate to 2024, a proxy for 2025, the
-  Commission's projection over 2026--60 and 2\% from 2070.
+  $r_{B,t}$: the data's real effective rate to 2024, a proxy for 2025, over
+  2026--60 the rate of the Debt Sustainability Monitor forecast prepared at
+  the European Stability Mechanism on the Commission's Spring 2026 forecast,
+  hereafter the DSM forecast (ESM), and 2\% from 2070.
 \item Firms pay a tax $\tau_y$ on gross output, so that
   $(1-\tau_y)\alpha Y/K=r+\delta$ and $w=(1-\tau_y)(1-\alpha)Y/L$. It stands
   for the taxes on production and the other revenue the model has no line
   for, net of the spending it has no line for. The rate is set in 2023 to the
   outturn primary balance and held through 2025; from 2026 it takes the
-  constant value at which the debt ratio of 2060 equals the Commission's
-  projection, and keeps it.
+  constant value at which the debt ratio of 2060 equals the DSM forecast
+  (ESM), and keeps it.
 \item Every adult receives a lump-sum transfer, the same at every age and
   education level and untaxed, worth $\lambda$ of output per person, output
   taken as a centred five-year average: the cash and in-kind benefits
@@ -97,9 +99,9 @@ Sources for the parameters not taken straight from a published table:
   rate, interest payments over the previous year's debt deflated by GDP
   deflator growth ($-4.1$ and $-1.1$\%); for 2025 the projection's 2026
   nominal rate deflated by 2025 deflator growth ($-1.0$\%); over 2026--60
-  the real effective rate of the debt projection for Greece used throughout,
-  a projection in the layout of the Commission's Debt Sustainability Monitor
-  on the Spring 2026 forecast, prepared at the European Stability Mechanism
+  the real effective rate of the DSM forecast (ESM), a projection for
+  Greece in the layout of the Commission's Debt Sustainability Monitor on
+  the Spring 2026 forecast, prepared at the European Stability Mechanism
   (file of 28 September 2026): $-1.1$\% in
   2026, $-0.6$\% in 2030, 1.7\% in 2040, 1.6\% in 2050 and 1.2\% in 2060;
   linear to 2\% over 2061--70, the Monitor's long-run real rate on market
@@ -107,8 +109,8 @@ Sources for the parameters not taken straight from a published table:
 \item $\tau_y$: the rate that gives the outturn primary balance of 2023
   (1.95\% of GDP) at the calibrated household block, solved together with
   $A$, and held through 2025. From 2026 one constant rate, solved with the
-  transition so that the debt ratio of 2060 equals the Commission's
-  projection (103.4\%), and held for the rest of the horizon. The scenario
+  transition so that the debt ratio of 2060 equals the DSM forecast's
+  (103.4\%), and held for the rest of the horizon. The scenario
   with the 2023 rate held throughout is the model's own reading of the
   accounts (Table~\ref{tab:scenarios}).
 \item $G/Y$, $D/Y$, $I_g/Y$, $e_0$, $\lambda$ and the pension and health
@@ -203,11 +205,13 @@ calibration.}
   $I_g/Y$ is a policy input.
 \item The hours target is usual weekly hours of the employed aged 15--64 in
   2023, 40.9 (Eurostat \texttt{lfsa\_ewhun2}), over an endowment of 100
-  hours a week. The wealth-output target of 4 has no series behind it:
-  household net wealth in the 2021 Household Finance and Consumption Survey
-  (mean \EUR{132.7}k over 4.12 million households) is 3.0 times 2021 GDP,
-  and net financial wealth in the financial accounts (\texttt{nasa\_10\_f\_bs})
-  is 1.0 times GDP in 2023.
+  hours a week. The wealth-output target is household net wealth in the
+  2021 Household Finance and Consumption Survey, mean \EUR{132.7}k over
+  4.12 million households (Eurostat \texttt{lfst\_hhnhtych}), over 2021 GDP:
+  2.96. The capital income tax target is the corporate income tax of 2023,
+  2.7\% of GDP (\texttt{gov\_10a\_taxag}, D51B), the one line of the
+  accounts that is a tax on the return to capital; the rate that yields it
+  on the return to household wealth is set in the SMM.
 \item The untargeted rows compare income inequality. Eurostat measures
   equivalised \emph{household} disposable income (\texttt{ilc\_di12},
   \texttt{ilc\_di01}, 2024); the model's figure is individual income net of
@@ -358,7 +362,7 @@ Aggregates (Figure~\ref{fig:aggregates}):
   recovers to 0.94 by 2070 and 1.05 by 2100 on the rising retirement age.
 \item Real growth averages 0.82\% a year over 2026--60: 2.5\% in 2026--30,
   0.5\% in 2031--40, 0.2\% in 2041--50 and 0.9\% in 2051--60, against 1.0,
-  0.9, 1.2 and 1.2\% in the Commission's projection. After the 2026 step
+  0.9, 1.2 and 1.2\% in the DSM forecast (ESM). After the 2026 step
   the yearly path moves by up to a third of a point around its trend,
   because households choose next period's wealth on a grid; the figure
   shows a 5-year centred mean.
@@ -378,8 +382,8 @@ Aggregates (Figure~\ref{fig:aggregates}):
 \item The output tax carries the revenue and the spending the model does
   not describe: 5.95\% of output through 2025, the 2023 pin, and 4.35\%
   from 2026 on, the rate at which the debt ratio of 2060 equals the
-  Commission's 103.4\%. The balance over 2026--60 is therefore the one the
-  Commission's debt path implies given the model's growth, revenue and
+  DSM forecast's 103.4\%. The balance over 2026--60 is therefore the one
+  the forecast's debt path implies given the model's growth, revenue and
   spending; the model's own balance at the 2023 rate is the scenario of
   Table~\ref{tab:scenarios}.
 \item Debt is the end-of-year stock over the year's output,
@@ -395,7 +399,7 @@ Aggregates (Figure~\ref{fig:aggregates}):
   payment is deferred). After 2060 it is zero.
 \item The primary balance is 1.9\% of output in 2023, 3.2\% in 2025 and
   between 1.1 and 2.8\% over 2026--60, 1.6\% on average against the
-  Commission's 1.4\%: with output growing 0.82\% a year instead of 1.08\%,
+  forecast's 1.4\%: with output growing 0.82\% a year instead of 1.08\%,
   the same debt path needs a balance a quarter of a point higher. Debt is
   121\% of output in 2030, 109\% in 2040, 111\% in 2050 and 103\% in 2060;
   the projection has 125, 111, 111 and 103\%.
@@ -410,26 +414,27 @@ Aggregates (Figure~\ref{fig:aggregates}):
 \noindent Scenarios (Table~\ref{tab:scenarios}, Figure~\ref{fig:projection}):
 \begin{itemize}
 \item The baseline's rate from 2026 is the one at which the 2060 ratio equals
-  the projection's. With the Commission's primary balance in place of the
+  the forecast's. With the DSM forecast's primary balance in place of the
   baseline's over 2026--60, everything else as in the model, the ratio in
-  2060 would be 113\%; with the Commission's growth in place of the model's,
+  2060 would be 113\%; with the forecast's growth in place of the model's,
   94\%. The balance the projection's debt path requires of the model runs a
-  quarter of a point of output a year above the Commission's, because the
+  quarter of a point of output a year above the forecast's, because the
   model grows 0.82\% a year against the projection's 1.08.
 \item With the 2023 rate held throughout, the balance is the model's own:
   3.5\% of output in 2030, 3.3\% in 2040, 2.5\% in 2050 and 2.8\% in 2060,
-  1.2 to 2.2 points above the Commission's, and debt falls to 93\% in 2040,
+  1.2 to 2.2 points above the forecast's, and debt falls to 93\% in 2040,
   78\% in 2050, 57\% in 2060 and 26\% in 2070, below zero from 2077.
-  Replacing that balance by the Commission's over 2026--60 puts the 2060
+  Replacing that balance by the forecast's over 2026--60 puts the 2060
   ratio at 119\%; replacing the model's growth, 0.71\% a year, by the
   projection's puts it at 46\%. The gap to the projection is the balance.
-  The Commission holds the structural balance before the cost of ageing
+  The forecast, following the Commission's method, holds the structural
+  balance before the cost of ageing
   at 2.3\% of GDP with a constant revenue ratio and adds the Ageing
   Report's spending paths; the model's revenue rises from 40.8 to 44.8\%
   of output by 2050 with the age structure (consumption tax +1.6 points,
   capital income tax +1.5, bequest tax +1.7), more than its spending.
-\item With the Commission's balance, growth and rate the recursion
-  reproduces the projection's 103.4\% in 2060.
+\item With the forecast's balance, growth and rate the recursion
+  reproduces its 103.4\% in 2060.
 \item Unemployment. Holding the rate at its 2023 level, 10.2\%, in every
   year, with the same parameters and the same rule, the output tax that
   fits the 2060 projection is 4.94\% of output instead of 4.35: benefits
@@ -440,7 +445,7 @@ Aggregates (Figure~\ref{fig:aggregates}):
 
 \begin{table}[htbp]\centering\footnotesize
 \caption{\label{tab:scenarios}Debt, the primary balance and the output tax by
-scenario, against the Commission's projection}\vspace{-2pt}
+scenario, against the DSM forecast (ESM)}\vspace{-2pt}
 {\setlength{\tabcolsep}{3.5pt}\tabinput{scenarios_body.tex}}
 \begin{minipage}{\linewidth}\vspace{3pt}\scriptsize
 Debt at the end of the year over the year's output. The baseline holds the
@@ -453,10 +458,10 @@ year.
 The first two scenarios differ in one input, the output-tax rate from 2026.
 At the 2023 rate the model's revenue rises with the age structure, the
 primary balance averages 2.9\% of output over 2026--60 against the
-Commission's 1.4\%, and the debt ratio falls to 57\% by 2060. The baseline
+forecast's 1.4\%, and the debt ratio falls to 57\% by 2060. The baseline
 removes 1.6 points of output of revenue a year from 2026 so that the 2060
 ratio equals the projection's; its balance then averages 1.6\%, a quarter
-of a point above the Commission's, because output grows 0.82\% a year
+of a point above the forecast's, because output grows 0.82\% a year
 against the projection's 1.08.
 \end{minipage}
 \end{table}
@@ -524,8 +529,8 @@ at the end of the year over the same year's output.}
 \IfFileExists{\rundir/baseline_projection.pdf}
   {\includegraphics[width=\linewidth]{\rundir/baseline_projection.pdf}}
   {\figbox{Figure: projection --- run \texttt{reports/baseline\_figures.py}.}{6cm}}
-\caption{\label{fig:projection}The baseline against the Commission's debt
-projection for Greece (Spring 2026 forecast, 2025--60). \emph{Top left}:
+\caption{\label{fig:projection}The baseline against the DSM forecast (ESM)
+for Greece, 2025--60. \emph{Top left}:
 end-of-year debt over output. \emph{Top right}: the primary balance, the
 output tax rate and the projection's balance. \emph{Bottom left}: public pensions over output, with the 2024
 Ageing Report's projection. \emph{Bottom right}: real output growth, the
@@ -534,7 +539,7 @@ held throughout.}
 \end{figure}
 
 \begin{table}[htbp]\centering\footnotesize
-\caption{Baseline and the Commission's projection, \% of output. Debt at the
+\caption{Baseline and the DSM forecast (ESM), \% of output. Debt at the
 end of the year over the same year's output}\vspace{-2pt}
 \label{tab:projection}
 {\setlength{\tabcolsep}{3.5pt}\tabinput{projection_body.tex}}

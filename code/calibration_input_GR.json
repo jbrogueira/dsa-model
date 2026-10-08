@@ -42,7 +42,7 @@
     "A_tfp": 1.52671889,
     "K_g": 0.703,
     "eta_g": 0.05,
-    "delta_g": 0.04477
+    "delta_g": 0.04316
   },
   "external_params": {
     "tau_c": 0.1818,
@@ -390,6 +390,13 @@
         "lower": 0.01,
         "upper": 0.3,
         "initial": 0.07922824370209779
+      },
+      {
+        "name": "tau_k",
+        "path": "tau_k_default",
+        "lower": 0.05,
+        "upper": 0.6,
+        "initial": 0.2236
       }
     ],
     "targets": [
@@ -401,8 +408,8 @@
       },
       {
         "name": "A_over_Y",
-        "value": 4.0,
-        "weight": 0.062,
+        "value": 2.96,
+        "weight": 0.1141,
         "compute_key": "A_over_Y"
       },
       {
@@ -428,6 +435,12 @@
         "value": 0.006,
         "weight": 27777.778,
         "compute_key": "ui_over_Y"
+      },
+      {
+        "name": "tax_k_over_Y",
+        "value": 0.027,
+        "weight": 1371.742,
+        "compute_key": "tax_k_over_Y"
       }
     ],
     "base_year_cohorts": true

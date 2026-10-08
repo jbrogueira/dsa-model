@@ -804,6 +804,12 @@ def _moment_tax_p_over_Y(panels, spec):
     return agg['tax_p'] / agg['Y'] if agg['Y'] > 0 else 0.0
 
 
+def _moment_tax_k_over_Y(panels, spec):
+    """Capital income tax revenue / SS output."""
+    agg = _compute_ss_aggregates(panels, spec)
+    return agg['tax_k'] / agg['Y'] if agg['Y'] > 0 else 0.0
+
+
 MOMENT_DISPATCH = {
     'wealth_gini': _moment_wealth_gini,
     'zero_wealth_fraction': _moment_zero_wealth_fraction,
@@ -829,6 +835,7 @@ MOMENT_DISPATCH = {
     'ui_over_Y': _moment_ui_over_Y,
     'health_gov_over_Y': _moment_health_gov_over_Y,
     'tax_p_over_Y': _moment_tax_p_over_Y,
+    'tax_k_over_Y': _moment_tax_k_over_Y,
 }
 
 
