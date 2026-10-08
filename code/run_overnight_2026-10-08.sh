@@ -25,6 +25,7 @@ mkdir -p output/calibration "$OUT" "$REPORT_OUT" "$CF_OUT"
 
 stamp() { date -u '+%Y-%m-%d %H:%M:%S UTC'; }
 
+if [ "${SKIP_CALIB:-0}" = "1" ]; then echo "[$(stamp)] steps 1-2 skipped (SKIP_CALIB=1)"; else
 echo "[$(stamp)] === 1. scale loop ==="
 SMM_EXTRA="--tol 1e-5 --method least_squares" NORM_EXTRA="--tol 5e-4 --tol-pb 2e-4 --max-iter 20" \
   bash run_scale_loop.sh "$CFG" 2>&1 | tee output/scale_loop_2026-10-08.log
@@ -37,6 +38,8 @@ echo "[$(stamp)] === 2. A[0] predetermination check ==="
 python3 -u check_a0_predetermination.py 2>&1 | tee output/a0_check_2026-10-08.log
 grep -q "^DONE" output/a0_check_2026-10-08.log || echo "[$(stamp)] WARNING: A0 check did not finish"
 grep -q "FAIL" output/a0_check_2026-10-08.log && echo "[$(stamp)] WARNING: A0 predetermination FAIL (see log)"
+
+fi
 
 echo "[$(stamp)] === 3. baseline for the report ==="
 ( cd reports && python3 -u fill_report.py --config "../$CFG" --outdir "../$REPORT_OUT" \

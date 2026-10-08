@@ -35,8 +35,12 @@ transitions (a secant on the window residual, steps bounded).
 
 Lump-sum transfer. The transfer per adult is lump_sum_over_Y times the run's
 own output, a level path the household solve needs before output is known;
-solve_baseline() iterates it with the tax rate. The experiments hold both
-paths fixed at the baseline's.
+solve_baseline() iterates it with the tax rate. Output enters as a centred
+moving average over lump_smooth_years: next-period assets are chosen on the
+asset grid, so a household's consumption and hours jump when a small change
+in resources moves its choice to the next node, and a transfer tied to the
+unsmoothed path sustains a two-year alternation in labour input through the
+fixed point. The experiments hold both paths fixed at the baseline's.
 """
 import os
 
@@ -181,11 +185,21 @@ def debt_from_run(paths, raw, dsa=None, r_B_path=None):
     return out
 
 
+def centred_mean(x, years):
+    """Centred moving average over `years` points, edge-padded; x itself for years <= 1."""
+    x = np.asarray(x, dtype=float)
+    if years <= 1:
+        return x
+    half = int(years) // 2
+    pad = np.pad(x, (half, half), mode='edge')
+    return np.convolve(pad, np.ones(int(years)) / float(years), mode='valid')
+
+
 def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
                    r_B_path, growth_factor, Y_init=None, tau_terminal_init=None,
                    ramp_years=10, max_iter=8, tol_Y=1e-4, tol_pb=1e-4, verbose=True,
                    step_max=0.03, tau_bounds=(-0.10, 0.60), tol_tau=5e-4,
-                   match_projection=False):
+                   match_projection=False, lump_smooth_years=5):
     """Fixed point of the baseline over the lump-sum level path and the
     terminal output-tax rate.
 
@@ -204,7 +218,9 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     rate to 2060, is the baseline of the report.
 
     The lump sum of iteration k is lump_sum_over_Y times the output of
-    iteration k-1 (Y_init, or one, before the first run). The terminal rate
+    iteration k-1 (Y_init, or one, before the first run), output taken as a
+    centred moving average over lump_smooth_years (see the module
+    docstring). The terminal rate
     is updated by a secant on the window residual of debt_paths(), the change
     in the debt ratio over the ten years after the terminal year; the first
     step takes a slope of -0.7 per year of the window per unit of the rate
@@ -222,7 +238,7 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     hist = []          # (tau_T, residual)
     out = None
     for k in range(1, max_iter + 1):
-        lump = float(lump_sum_over_Y) * Y_prev
+        lump = float(lump_sum_over_Y) * centred_mean(Y_prev, lump_smooth_years)
         tau = tau_y_path(T_tr, base_year, tau_fixed, tau_T, ramp_years)
         Y, budget = run(lump, tau)
         Y = np.asarray(Y, dtype=float)[:T_tr]
