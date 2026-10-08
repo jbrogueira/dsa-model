@@ -19,16 +19,16 @@
   },
   "_derived": {
     "theta": {
-      "nu": 11.59713020294861,
-      "beta": 0.9985798320204389,
-      "tau_p": 0.1773612069771816,
-      "pension_replacement_default": 0.21639648313395154,
-      "m_good": 0.09276035878660945,
-      "ui_replacement_rate": 0.07949334492095086
+      "nu": 11.961381280804977,
+      "beta": 0.9951326104662334,
+      "tau_p": 0.1777404466413583,
+      "pension_replacement_default": 0.18320419738567062,
+      "m_good": 0.08399820975136206,
+      "ui_replacement_rate": 0.07922824370209779
     },
     "theta_metadata": {
-      "calibration_date": "2026-10-07T22:46:20",
-      "source_report": "output/calibration/calibration_GR_20261007_224620.md"
+      "calibration_date": "2026-10-08T07:07:30",
+      "source_report": "output/calibration/calibration_GR_20261008_070730.md"
     }
   },
   "prices": {
@@ -39,7 +39,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.4699302,
+    "A_tfp": 1.52671889,
     "K_g": 0.703,
     "eta_g": 0.05,
     "delta_g": 0.04477
@@ -330,7 +330,7 @@
     "education_file": "../data/school_age_GR.npz",
     "lump_sum_over_Y": 0.035,
     "foreign_transfer_file": "../data/foreign_transfer_GR.npz",
-    "tau_y": 0.057373,
+    "tau_y": 0.059504,
     "tau_y_ramp_years": 10,
     "pensions_over_Y": 0.14,
     "ui_over_Y": 0.006,
@@ -350,42 +350,42 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 11.593520007401219
+        "initial": 11.961381280804977
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 0.9985195537623097
+        "initial": 0.9951326104662334
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.17710114741432115
+        "initial": 0.1777404466413583
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.21608426089170085
+        "initial": 0.18320419738567062
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.09281340273599026
+        "initial": 0.08399820975136206
       },
       {
         "name": "ui_replacement_rate",
         "path": "ui_replacement_rate",
         "lower": 0.01,
         "upper": 0.3,
-        "initial": 0.07937846586531179
+        "initial": 0.07922824370209779
       }
     ],
     "targets": [
