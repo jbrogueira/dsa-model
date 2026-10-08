@@ -105,7 +105,7 @@ def params_table(cfg, n0=None, n_inf=None):
     rows_ext = [
         ('$g$', 'labour productivity growth, per capita', g, '2024 Ageing Report'),
         ('$n_0$', 'population growth, 2023', n0, 'EUROPOP2023'),
-        ('$n_\\infty$', 'population growth, long run', n_inf, 'assumption, reached in 2120'),
+        ('$n_\\infty$', 'population growth, long run', n_inf, 'assumption; cohorts from 2120, population from 2194'),
         ('$\\gamma$', 'relative risk aversion', mod.get('gamma'), 'log utility'),
         ('$\\varphi$', 'inverse Frisch elasticity', mod.get('phi'), ''),
         ('$\\alpha$', 'private capital share', prod.get('alpha'), ''),
@@ -130,7 +130,7 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$f$', 'job-finding probability', ext.get('job_finding_rate'),
          'Eurostat \\texttt{une\\_ltu\\_a}'),
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
-         'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
+         'Eurostat \\texttt{gov\\_10a\\_exp} and national accounts, 2023'),
         ('$T$', 'model ages (real ages 25--99)', mod.get('T'), ''),
         _retirement_row(cfg, mod),
     ]
@@ -170,7 +170,7 @@ def params_table(cfg, n0=None, n_inf=None):
     rows_pin = [
         ('$A$', 'total factor productivity', prod.get('A_tfp'),
          'normalisation, $\\hat y=1$'),
-        ('$\\tau_y$', 'tax on gross output, to 2060', fis.get('tau_y'),
+        ('$\\tau_y$', 'tax on gross output, 2023 pin, held through 2025', fis.get('tau_y'),
          'primary balance in the data, 2023'),
     ]
     out = ['\\multicolumn{4}{l}{\\itshape Externally set}\\\\']
@@ -414,7 +414,7 @@ def implied_stats(panels, spec, cfg):
 # rate on it; the pension at retirement over the last wage from the fiche.
 DATA_COUNTERPART = [
     ('ssc_rev',     'Social contributions / output',              0.112),
-    ('ssc_base',    'Contribution base / output (model: $1-\\alpha$)', 0.570),
+    ('ssc_base',    'Contribution base / output (model: $(1-\\tau_y)(1-\\alpha)$)', 0.570),
     ('ssc_rate',    'Contribution rate on that base (model: $\\tau^p$)', 0.196),
     ('replacement', 'Pension at retirement / last wage',          0.762750),
 ]
@@ -694,6 +694,8 @@ def main():
                                               tau_y_path=tau, lump_sum_path=lump,
                                               education_over_Y0=tp.get('education_over_Y0', 0.0),
                                               education_index_path=tp.get('education_index_path'),
+                                              education_Y0=1.0,   # the base-year cross-section's output
+
                                               foreign_transfer_over_Y=tp.get('foreign_transfer_over_Y'),
                                               unemployment_index_path=tp.get('unemployment_index_path'),
                                               r_B_path=r_B_full,

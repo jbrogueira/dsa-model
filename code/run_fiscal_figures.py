@@ -242,7 +242,7 @@ if args.config:
     r_B_full = np.asarray(base_paths['r_B_path'], dtype=float)
     # The education line is anchored on the baseline's base-year output in
     # every scenario (e_0 Y_2023 (w_t/w_0) s_t), not on each run's own Y(0).
-    base_paths['education_Y0'] = Y0
+    base_paths['education_Y0'] = 1.0        # the base-year cross-section's output
 
     def _run(lump, tau):
         global base_paths
