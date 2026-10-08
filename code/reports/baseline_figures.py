@@ -178,35 +178,51 @@ FICHE_YEARS = (2022, 2030, 2040, 2050, 2060, 2070)
 FICHE_PENSIONS = (0.145, 0.127, 0.137, 0.140, 0.127, 0.120)
 
 
-def projection_figure(p, out_pdf, plt, last_year=2070):
-    """The baseline against the Commission's debt projection."""
+def projection_figure(p, out_pdf, plt, last_year=2070, p2=None, label2='the 2023 rate throughout'):
+    """The baseline against the Commission's debt projection, with a second
+    scenario (p2, the same arrays) as a dotted line when given."""
     c, dsa, Y, x = p['debt'], p['dsa'], p['Y'], p['years']
     n = int(np.searchsorted(x, last_year)) + 1
     b = p['b']
     fig, ax = plt.subplots(2, 2, figsize=(10, 5.6))
 
-    def two(a, model, proj_x, proj_y, title, labels=('baseline', 'projection')):
+    def alt(a, series):
+        if p2 is not None and series is not None:
+            x2 = p2['years']; n2 = int(np.searchsorted(x2, last_year)) + 1
+            a.plot(x2[:n2], np.asarray(series)[:n2], color=SERIES[3], lw=1.3, ls=':', label=label2)
+
+    def two(a, model, proj_x, proj_y, title, labels=('baseline', 'projection'), model2=None):
         a.plot(x[:n], model[:n], color=SERIES[0], lw=1.5, label=labels[0])
+        alt(a, model2)
         a.plot(proj_x, proj_y, color=SERIES[1], lw=1.5, ls='--', label=labels[1])
         a.legend(frameon=False, fontsize=7.5, labelcolor=INK, handlelength=1.8)
         _style(a, title)
 
-    two(ax[0, 0], c['debt'], dsa['years'], dsa['debt'], 'Debt / output, end of year')
+    two(ax[0, 0], c['debt'], dsa['years'], dsa['debt'], 'Debt / output, end of year',
+        model2=p2['debt']['debt'] if p2 is not None else None)
     ax[0, 1].plot(x[:n], c['primary_balance'][:n], color=SERIES[0], lw=1.5,
                   label='primary balance')
+    alt(ax[0, 1], p2['debt']['primary_balance'] if p2 is not None else None)
     if p['tau_y'] is not None:
         ax[0, 1].plot(x[:n], p['tau_y'][:n], color=SERIES[2], lw=1.5,
                       label=r'output tax rate $\tau_y$')
+        if p2 is not None and p2['tau_y'] is not None:
+            x2 = p2['years']; n2 = int(np.searchsorted(x2, last_year)) + 1
+            ax[0, 1].plot(x2[:n2], p2['tau_y'][:n2], color=SERIES[2], lw=1.3, ls=':',
+                          label=r'$\tau_y$, ' + label2)
     ax[0, 1].plot(dsa['years'], dsa['primary_balance'], color=SERIES[1], lw=1.5, ls='--',
                   label='primary balance, projection')
     ax[0, 1].axhline(0.0, color=INK2, lw=0.6, zorder=1)
     ax[0, 1].legend(frameon=False, fontsize=7.5, labelcolor=INK, handlelength=1.8)
     _style(ax[0, 1], 'Primary balance and output tax rate / output')
     two(ax[1, 0], b('pension') / Y, FICHE_YEARS, FICHE_PENSIONS,
-        'Public pensions / output', labels=('baseline', '2024 Ageing Report'))
+        'Public pensions / output', labels=('baseline', '2024 Ageing Report'),
+        model2=(p2['b']('pension') / p2['Y']) if p2 is not None else None)
     growth = centred_mean(np.nan_to_num(c['growth'], nan=c['growth'][1]), 5)
+    growth2 = (centred_mean(np.nan_to_num(p2['debt']['growth'], nan=p2['debt']['growth'][1]), 5)
+               if p2 is not None else None)
     two(ax[1, 1], growth, dsa['years'], dsa['real_growth'],
-        'Real output growth (baseline: 5-year centred mean)')
+        'Real output growth (baseline: 5-year centred mean)', model2=growth2)
     fig.tight_layout(h_pad=1.2)
     fig.savefig(out_pdf)
     plt.close(fig)
@@ -287,7 +303,9 @@ def main():
     fiscal_figure(p, os.path.join(args.outdir, 'baseline_fiscal.pdf'), plt)
     demography_figure(p['cfg'], os.path.join(args.outdir, 'demography.pdf'), plt)
     if p['dsa'] is not None:
-        projection_figure(p, os.path.join(args.outdir, 'baseline_projection.pdf'), plt)
+        alt_path = os.path.join(here, '..', 'output', 'calibration_growth_tau_pinned', 'baseline_paths.npz')
+        p2 = load(alt_path, args.config) if os.path.exists(alt_path) else None
+        projection_figure(p, os.path.join(args.outdir, 'baseline_projection.pdf'), plt, p2=p2)
 
 
 if __name__ == '__main__':
