@@ -197,9 +197,11 @@ def centred_mean(x, years):
 
 def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
                    r_B_path, growth_factor, Y_init=None, tau_terminal_init=None,
-                   ramp_years=10, max_iter=8, tol_Y=1e-4, tol_pb=1e-4, verbose=True,
+                   ramp_years=10, max_iter=12, tol_Y=1e-4, tol_pb=1e-4, verbose=True,
                    step_max=0.03, tau_bounds=(-0.10, 0.60), tol_tau=5e-4,
-                   match_projection=False, lump_smooth_years=5):
+                   match_projection=False, lump_smooth_years=5,
+                   match_debt_year=None, first_mid_year=2026, tau_mid_init=None,
+                   tol_debt=2e-3):
     """Fixed point of the baseline over the lump-sum level path and the
     terminal output-tax rate.
 
@@ -216,6 +218,13 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     line; a fixed point over full transitions, since the path moves the
     wage). The ramp then starts from the 2060 rate. The default, a constant
     rate to 2060, is the baseline of the report.
+
+    With match_debt_year set, the rate is tau_base through first_mid_year - 1
+    and a constant tau_mid from first_mid_year to 2060, solved by a secant so
+    that the debt ratio in match_debt_year equals the projection's (first
+    step at -0.7 per year between first_mid_year and match_debt_year per unit
+    of the rate); the terminal ramp then starts from tau_mid. Off (the
+    default) the rate is tau_base through 2060.
 
     The lump sum of iteration k is lump_sum_over_Y times the output of
     iteration k-1 (Y_init, or one, before the first run), output taken as a
@@ -236,9 +245,17 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     tau_T = float(tau_base if tau_terminal_init is None else tau_terminal_init)
     tau_fixed = np.full(T_tr, float(tau_base))     # the rates up to 2060
     hist = []          # (tau_T, residual)
+    match_debt = match_debt_year is not None
+    tau_mid = float(tau_base if tau_mid_init is None else tau_mid_init)
+    t_mid0 = int(first_mid_year - base_year)
+    t_match = int(match_debt_year - base_year) if match_debt else None
+    hist_mid = []      # (tau_mid, debt gap at match_debt_year)
+    mid_resid = 0.0
     out = None
     for k in range(1, max_iter + 1):
         lump = float(lump_sum_over_Y) * centred_mean(Y_prev, lump_smooth_years)
+        if match_debt:
+            tau_fixed[t_mid0:] = tau_mid
         tau = tau_y_path(T_tr, base_year, tau_fixed, tau_T, ramp_years)
         Y, budget = run(lump, tau)
         Y = np.asarray(Y, dtype=float)[:T_tr]
@@ -263,24 +280,48 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
             proj_gap = float(np.max(np.abs(gap)))
             tau_fixed = np.clip(tau_fixed + np.clip(gap / 0.7, -step_max, step_max),
                                 tau_bounds[0], tau_bounds[1])
+        update_mid = False
+        if match_debt and 0 < t_match < T_tr and np.isfinite(debt['debt_projection'][t_match]):
+            mid_resid = float(debt['debt'][t_match] - debt['debt_projection'][t_match])
+            update_mid = True
         out = {'lump_sum_path': lump, 'tau_y_path': tau, 'tau_terminal': tau_T, 'Y': Y,
                'budget': budget, 'debt': debt, 'iterations': k,
-               'projection_gap': proj_gap}
+               'projection_gap': proj_gap, 'tau_mid': tau_mid if match_debt else None,
+               'debt_gap_at_match': mid_resid if match_debt else None}
         if verbose:
             t70 = debt['terminal_year'] - base_year
             print(f'  baseline fixed point {k}: tau_y^T = {tau_T:.5f}, debt ratio change over '
                   f'{W} years from {debt["terminal_year"]} = {resid:+.5f}, one-year residual '
                   f'{debt["terminal_residual"]:+.5f}, max |dY|/Y = {dY:.2e}, '
                   f'debt {100 * debt["debt"][t70]:.1f}% in {debt["terminal_year"]}'
-                  + (f', max |pb - projection| = {proj_gap:.5f}' if match_projection else ''),
+                  + (f', max |pb - projection| = {proj_gap:.5f}' if match_projection else '')
+                  + (f', tau_y {first_mid_year}-2060 = {tau_mid:.5f}, debt gap in '
+                     f'{match_debt_year} = {mid_resid:+.4f}' if match_debt else ''),
                   flush=True)
         hist.append((tau_T, resid))
-        if abs(resid) < tol_pb * max(W, 1) and dY < tol_Y and proj_gap < tol_pb:
+        hist_mid.append((tau_mid, mid_resid))
+        mid_ok = (not update_mid) or abs(mid_resid) < tol_debt
+        if abs(resid) < tol_pb * max(W, 1) and dY < tol_Y and proj_gap < tol_pb and mid_ok:
             break
         # Two successive rates within tol_tau with a settled output path: the
         # residual is at the resolution of the model's response.
-        if (len(hist) >= 2 and abs(hist[-1][0] - hist[-2][0]) < tol_tau and dY < tol_Y):
+        mid_settled = (not update_mid) or (len(hist_mid) >= 2
+                                           and abs(hist_mid[-1][0] - hist_mid[-2][0]) < tol_tau)
+        if (len(hist) >= 2 and abs(hist[-1][0] - hist[-2][0]) < tol_tau and dY < tol_Y
+                and mid_settled):
             break
+        if update_mid:
+            # Secant on the debt gap at match_debt_year; first step at the
+            # a-priori slope, -0.7 per year of the rate's reach.
+            prior_m = -0.7 * max(match_debt_year - first_mid_year + 1, 1)
+            slope_m = prior_m
+            if (len(hist_mid) >= 2 and hist_mid[-1][0] != hist_mid[-2][0]
+                    and hist_mid[-1][1] != hist_mid[-2][1]):
+                s_m = (hist_mid[-1][1] - hist_mid[-2][1]) / (hist_mid[-1][0] - hist_mid[-2][0])
+                if 0.2 * abs(prior_m) <= -s_m <= 5.0 * abs(prior_m):
+                    slope_m = s_m
+            step_m = float(np.clip(-mid_resid / slope_m, -step_max, step_max))
+            tau_mid = float(np.clip(tau_mid + step_m, tau_bounds[0], tau_bounds[1]))
         if not update_tau:
             Y_prev = Y
             continue

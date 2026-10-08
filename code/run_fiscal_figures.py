@@ -257,7 +257,10 @@ if args.config:
                         ramp_years=int(paths.get('tau_y_ramp_years', 10)),
                         tol_Y=1e-4, tol_pb=1e-4, verbose=True,
                         match_projection=(config_data.get('fiscal', {}).get('tau_y_mode', 'constant')
-                                          == 'projection'))
+                                          == 'projection'),
+                        match_debt_year=(int(config_data.get('fiscal', {}).get('tau_y_debt_year', 2060))
+                                         if config_data.get('fiscal', {}).get('tau_y_mode', 'constant') == 'debt' else None),
+                        first_mid_year=int(config_data.get('fiscal', {}).get('tau_y_first_year', 2026)))
     Y_path = np.asarray(base_paths['base_macro']['Y'])[:T_TR]
     Y0 = float(Y_path[0])
     debt = fx['debt']

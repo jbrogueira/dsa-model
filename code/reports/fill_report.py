@@ -712,7 +712,10 @@ def main():
                             float(fisc.get('tau_y', 0.0) or 0.0), r_B_full, G_growth,
                             Y_init=y_init, ramp_years=int(fisc.get('tau_y_ramp_years', 10)),
                             tol_Y=1e-4, tol_pb=1e-4, verbose=True,
-                            match_projection=(fisc.get('tau_y_mode', 'constant') == 'projection'))
+                            match_projection=(fisc.get('tau_y_mode', 'constant') == 'projection'),
+                            match_debt_year=(int(fisc.get('tau_y_debt_year', 2060))
+                                             if fisc.get('tau_y_mode', 'constant') == 'debt' else None),
+                            first_mid_year=int(fisc.get('tau_y_first_year', 2026)))
         res, bud = last['res'], last['bud']
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}

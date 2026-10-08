@@ -231,3 +231,35 @@ class TestPriceConsistency:
         raw['fiscal']['tau_y'] = 0.0
         eq0 = compute_equilibrium_prices(raw)
         assert abs(eq['w'] / eq0['w'] - (1 - 0.07) ** (1 / (1 - prod['alpha']))) < 1e-12
+
+
+class TestDebtMatchingRate:
+    """solve_baseline with match_debt_year: a constant rate over 2026-60 puts
+    the debt ratio of 2060 at the projection's, on a toy budget whose balance
+    is linear in the rate."""
+
+    def test_rate_hits_the_projection_in_2060(self):
+        import json
+        import os
+        from baseline_closure import solve_baseline
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), 'calibration_input_GR.json')))
+        T_tr, base = 180, 2023
+        G = np.full(T_tr, 1.017)
+        r_B = np.full(T_tr, 0.02)
+
+        def run(lump, tau):
+            Y = np.ones(T_tr)
+            budget = {'total_revenue': 0.3665 + 0.7 * np.asarray(tau), 'total_spending': np.full(T_tr, 0.386)}
+            return Y, budget
+
+        fx = solve_baseline(run, raw, T_tr, base, 0.035, 0.0595, r_B, G, verbose=False,
+                            match_debt_year=2060, first_mid_year=2026, max_iter=20)
+        d = fx['debt']
+        t60 = 2060 - base
+        assert abs(d['debt'][t60] - d['debt_projection'][t60]) < 2e-3
+        assert fx['tau_mid'] < 0.0595                      # a lower rate raises the ratio
+        tau = fx['tau_y_path']
+        assert np.allclose(tau[:2026 - base], 0.0595)       # 2023-25 at the pinned rate
+        assert np.allclose(tau[2026 - base:2061 - base], fx['tau_mid'])
+        # the terminal window still holds
+        assert abs(d['window_residual']) < 1e-3 * d['window_years'] + 1e-6
