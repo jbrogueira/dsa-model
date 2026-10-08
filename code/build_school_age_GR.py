@@ -7,7 +7,7 @@ baseline variant, population on 1 January by single year of age, 2022-2100),
 cached in data/europop2023_raw/proj_23np_EL_T.json by build_europop_GR.py:
 
   S_t      population aged 5-24
-  N_t      population aged 25-84 (the model's ages)
+  N_t      population aged 25-99 (the model's ages)
   index_t  = (S_t / N_t) / (S_2023 / N_2023).
 
 The index is one in the model's base year, 2023. It holds the 2022 value
@@ -26,7 +26,7 @@ OUT = os.path.join(HERE, '..', 'data', 'school_age_GR.npz')
 
 BASE_YEAR = 2023
 SCHOOL_AGES = np.arange(5, 25)             # 5-24
-MODEL_AGES = np.arange(25, 85)             # 25-84
+MODEL_AGES = np.arange(25, 100)             # 25-99
 FIRST_YEAR, LAST_YEAR = 1900, 2400
 PRINT_YEARS = (2023, 2030, 2040, 2050, 2060, 2070, 2100)
 

@@ -859,16 +859,16 @@ def base_year_cross_section(theta, spec, cfg=None, n_sim=None, seed=None,
                             batched=True, chunk_size=None):
     """Panels whose row j is the cohort aged 25+j in the base year, at age j.
 
-    The transition's t=0 cross-section mixes sixty cohorts, each having solved
-    its own lifecycle problem against its own survival diagonal; they differ by
-    up to 0.47 in the probability of reaching 84. A single stationary solve
+    The transition's t=0 cross-section mixes T cohorts, each having solved
+    its own lifecycle problem against its own survival diagonal; they differ
+    widely in the probability of reaching the last age. A single stationary solve
     cannot represent that, which is why the calibration's moments and the
     transition's t=0 disagree.
 
     Each cohort is solved over the full horizon -- backward induction at age j
     needs every later age, so the solve cannot be truncated -- but simulated
-    only to age j, which is all the base year observes. That is 1,830 cohort
-    periods instead of 3,600.
+    only to age j, which is all the base year observes. That is T(T+1)/2
+    cohort periods instead of T^2.
 
     *survival* overrides the schedules: a (T, n_h) vector is used for every
     cohort, a (T, T) array is one schedule per cohort. Otherwise they come from
@@ -1445,8 +1445,8 @@ def base_year_cohort_survival(raw, T):
 
     This is the object the base-year equilibrium needs in order to face the
     same mortality as the transition's t = 0 cross-section. A single vector
-    cannot: the sixty cohorts differ by up to 0.47 in the probability of
-    reaching 84, which moves hours and pensions/Y by a few percent.
+    cannot: the cohorts differ widely in the probability of reaching the last
+    age, which moves hours and pensions/Y by a few percent.
 
     None when no demographic path is configured.
     """

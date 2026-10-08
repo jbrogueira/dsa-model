@@ -3,12 +3,12 @@ Derive the minimum pension floor b_min for Greece -> data/pension_floor_GR.json.
 
 b_min is the flat national-pension component of the model's pension,
 PENS = max(rho * ybar, b_min), expressed in the model's units: detrended output
-per living person aged 25-84, normalised to 1 in the base year.
+per living person aged 25-99, normalised to 1 in the base year.
 
-    b_min = annual statutory amount / (nominal GDP / population aged 25-84)
+    b_min = annual statutory amount / (nominal GDP / population aged 25-99)
 
 The denominator is the part that is easy to get wrong. The model contains no one
-outside 25-84, so its output is per living person in that band -- not per capita
+outside 25-99, so its output is per living person in that band -- not per capita
 of the whole population, which would understate the denominator by about 30% and
 overstate b_min by the same.
 
@@ -23,7 +23,7 @@ Eurostat supplies the denominator.
   GDP         Eurostat nama_10_gdp, B1GQ, CP_MEUR, Greece -- cached by this
               script at data/nomgdp_GR.json.
   population  data/demography_GR.npz, cross_section_base, summed over model
-              ages 0-59 (real ages 25-84), base year 2023.
+              ages 0-74 (real ages 25-99), base year 2023.
 
 Usage (from code/):  python3 build_pension_floor_GR.py [--refresh]
 """
@@ -82,7 +82,7 @@ def main():
 
     out = {
         'quantity': 'pension_min_floor (b_min)',
-        'units': ('detrended output per living person aged 25-84, '
+        'units': ('detrended output per living person aged 25-99, '
                   'base year normalised to 1'),
         'base_year': base_year,
         'chosen': CHOSEN,
@@ -101,7 +101,7 @@ def main():
                           'pension pages. Eurostat does not publish statutory '
                           'benefit amounts.'),
         'caveats': [
-            'The model has no one outside 25-84, so output is per living person in '
+            'The model has no one outside 25-99, so output is per living person in '
             'that band, not per capita.',
             'A constant b_min in detrended units is a floor indexed at g, which is '
             'the right treatment for a statutory minimum uprated with earnings.',
@@ -116,7 +116,7 @@ def main():
 
     print(f'wrote {os.path.relpath(OUT)}')
     print(f'  nominal GDP {base_year}      EUR {gdp/1e9:,.1f} bn')
-    print(f'  population 25-84        {pop:,.0f}')
+    print(f'  population 25-99        {pop:,.0f}')
     print(f'  output per living person EUR {per_person:,.0f}')
     print()
     for key, r in rows.items():

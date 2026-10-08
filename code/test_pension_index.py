@@ -132,7 +132,7 @@ def _small_spec(backend, aggregation):
     idx = np.stack([np.where(age <= j, 1.0, 1.0 - 0.04 * (age - j)) for j in range(T)])
     spec = dataclasses.replace(
         spec, backend=backend, aggregation=aggregation, cohort_pension_index=idx,
-        cohort_unemployment_index=None,   # the production index is for T = 60
+        cohort_unemployment_index=None,   # the production index is for the production T
         # A fine asset grid: on the country grid shrunk to 25 points this small
         # economy holds no assets, and the path of future pensions would leave
         # no trace in the base-year cross-section.

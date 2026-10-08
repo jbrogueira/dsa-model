@@ -130,7 +130,7 @@ def params_table(cfg, n0=None, n_inf=None):
          'Eurostat \\texttt{une\\_ltu\\_a}'),
         ('$\\kappa$', 'public share of medical spending', ext.get('kappa'),
          'Eurostat \\texttt{hlth\\_sha11\\_hf}'),
-        ('$T$', 'model ages (real ages 25--84)', mod.get('T'), ''),
+        ('$T$', 'model ages (real ages 25--99)', mod.get('T'), ''),
         _retirement_row(cfg, mod),
     ]
     edu = cfg.get('edu_params', {})
@@ -145,7 +145,7 @@ def params_table(cfg, n0=None, n_inf=None):
         if key in shares:
             rows_ext.append((f'$\\omega_{{{name}}}$', f'population share, {name} education',
                              shares[key],
-                             'survey 2023 (ages 25--74), 2021 census (75--84)'
+                             'survey 2023 (ages 25--74), 2021 census (75--99)'
                              if key == 'low' else ''))
     # One row per parameter the configuration lists for the SMM; a parameter
     # the last fit did not cover shows no value rather than its initial.
@@ -282,7 +282,7 @@ def age_table(data_shares, model_t0=None, model_T=None, n_t0=None, n_T=None):
     def col(d, key):
         return NP if d is None else fmt(d.get(key), 3)
     rows = [('Share 25--39', 'young'), ('Share 40--64', 'mid'),
-            ('Share 65--84', 'old'), ('Dependency (65--84 / 25--64)', 'oadr')]
+            ('Share 65--99', 'old'), ('Dependency (65--99 / 25--64)', 'oadr')]
     out = []
     for label, key in rows:
         out.append(f'{label} & {col(data_shares, key)} & {col(model_t0, key)} '
@@ -292,7 +292,7 @@ def age_table(data_shares, model_t0=None, model_T=None, n_t0=None, n_T=None):
 
 
 def shares_from_weights(w):
-    """w over model ages 0..59 = real 25..84."""
+    """w over model ages 0..T-1 = real ages 25..24+T."""
     w = np.asarray(w, float); w = w / w.sum()
     young, mid, old = w[:15].sum(), w[15:40].sum(), w[40:].sum()
     return {'young': young, 'mid': mid, 'old': old, 'oadr': old / (young + mid)}
@@ -545,7 +545,7 @@ def _panels_figure(paths, out_pdf, plt):
 
 def _age_figure(w_data, w_model_t0, outdir, plt):
     fig, a = plt.subplots(figsize=(5.2, 3.0))
-    ages = np.arange(25, 85)
+    ages = 25 + np.arange(len(w_data) if w_data is not None else len(w_model_t0))
     if w_data is not None:
         a.plot(ages, np.asarray(w_data) / np.sum(w_data), label='data 2023', lw=1.5)
     if w_model_t0 is not None:
@@ -617,15 +617,17 @@ def main():
         _d = np.load(demog)
         t_stable = int(_d['stable_year']) - int(_d['base_year'])
 
-    # Base-year age distribution (25-84). The demographic sidecar carries it as
-    # cross_section_base and is tracked, whereas DATA_GR.xlsx is gitignored as
+    # Base-year age distribution as measured (25-99). The demographic sidecar
+    # carries it as cross_section_measured and is tracked, whereas DATA_GR.xlsx is gitignored as
     # *.xlsx and the .npy cache is untracked -- neither reaches a fresh
     # checkout, which is how this column came out empty on the instance.
     w_data = None
     _demog = os.path.join(os.path.dirname(args.config), '..', 'data',
                           'demography_GR.npz')
     if os.path.exists(_demog):
-        _cs = np.asarray(np.load(_demog)['cross_section_base'], dtype=float)
+        _dd = np.load(_demog)
+        _cs = np.asarray(_dd['cross_section_measured'] if 'cross_section_measured' in _dd.files
+                         else _dd['cross_section_base'], dtype=float)
         w_data = _cs / _cs.sum()
     else:
         print(f'  age distribution unavailable: {_demog} not found')

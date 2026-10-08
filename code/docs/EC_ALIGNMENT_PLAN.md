@@ -11,8 +11,9 @@ Written 2026-10-05. Status on 2026-10-07:
   residual line. A tax on gross output paid by firms, at a rate pinned in
   2023, carries what O carried, and the Commission's primary balance is a
   comparison series.
-- Item 9: the ages 85 and over are scheduled in `BUDGET_ALIGNMENT_PLAN.md`
-  §3.17; productivity growth by decade remains open.
+- Item 9: the ages 85 and over are in the model since 2026-10-08 (ages
+  25-99, `BUDGET_ALIGNMENT_PLAN.md` §3.17); productivity growth by decade
+  remains open.
 
 The model numbers in the tables of this document are from the baseline
 transition of 2026-10-05 (effective retirement age, `960d20e`), before any of
@@ -91,7 +92,7 @@ Commission document found publishes the 2037-2060 part of the projection.
 | Real growth | 0.97% (2026-30), 0.92% (2031-40), 1.17% (2041-50), 1.20% (2051-60). Hourly productivity in the Ageing Report: 1.1%, 1.6%, 2.1%, 1.8% | 0.73%, 0.62%, 0.51%, 1.05%. g = 1.7% constant, labour input -0.96% a year over 2026-60 |
 | Stock-flow adjustments | 6.2% of GDP in 2025, 2.8% in 2026, 0.8-1.1% a year in 2027-32 | None |
 | Starting stock | 154.2% of GDP in 2024, 146.1% in 2025 | 164.3% in 2023, 165.4% in 2025 |
-| Population | EUROPOP2023, all ages | EUROPOP2023, ages 25-84 |
+| Population | EUROPOP2023, all ages | EUROPOP2023, ages 25-99 |
 
 The Ageing Report rows are from the country fiche for Greece (December 2023):
 Table 6 (pension spending), Table 10 (pensioners and employment), Table 4
@@ -363,11 +364,12 @@ as it anticipates its survival and retirement age. The alternative, a shock in
   0.062, 0.058 and 0.037, below the cap of 0.1. `_derived.theta`, `A_tfp` and
   the closure in the config were fitted at the previous rates, so a
   recalibration is pending.
-- Education shares, done 2026-10-05: `education_shares` is 0.2914, 0.4117
-  and 0.2969, the 2023 shares for ages 25-84, the model's population. The
-  labour force survey tables stop at age 74. Ages 25-74 are the 2023 survey
-  shares (24.4%, 43.9%, 31.7%). Ages 75-84 come from the 2021 census by
-  cohort (68.7%, 18.6%, 12.7%) and are 10.8% of the model's 2023 population.
+- Education shares, done 2026-10-05, extended 2026-10-08: `education_shares`
+  is 0.3141, 0.3990 and 0.2869, the 2023 shares for ages 25-99, the model's
+  population. The labour force survey tables stop at age 74. Ages 25-74 are
+  the 2023 survey shares (24.4%, 43.9%, 31.7%). Ages 75-99 come from the 2021
+  census by cohort (71.4%, 17.2%, 11.4%) and are 15.0% of the model's 2023
+  population.
   `data_inventory.md` has the construction. The baseline run used 0.2343,
   0.4705 and 0.2952, the 2019-2024 mean for ages 15-64.
 - The shares differ by age: 18.9%, 46.7% and 34.3% for ages 25-64 in 2023.

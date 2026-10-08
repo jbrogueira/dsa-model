@@ -31,7 +31,7 @@ firm_conditions.py             # The firm's two conditions with the tax on gross
 run_overnight_2026-10-07.sh    # Chain of 2026-10-07/08: scale loop -> A[0] check -> report baseline -> G + I_g set -> evaluator
 build_r_B_path_GR.py           # Real sovereign rate by calendar year (data to 2025, DSA projection 2026-60, linear to 2% by 2070) -> data/r_B_path_GR.npz
 build_unemployment_path_GR.py  # Index of the 25-64 unemployment rate by calendar year (outturns 2024-25, Spring 2026 forecast 2026-27, Ageing Report 2050/2055 levels) -> data/unemployment_index_GR.npz
-build_school_age_GR.py         # School-age population (5-24) relative to the model's (25-84), EUROPOP2023 -> data/school_age_GR.npz (the education line's driver)
+build_school_age_GR.py         # School-age population (5-24) relative to the model's (25-99), EUROPOP2023 -> data/school_age_GR.npz (the education line's driver)
 build_foreign_transfer_GR.py   # The general government's net receipts from the EU budget, % of GDP by year -> data/foreign_transfer_GR.npz
 build_eu_transfers_GR.py       # All EU payments to Greece less the national contribution (reference series, not government revenue) -> data/eu_transfers_GR.npz
 build_gov_accounts_GR.py       # Eurostat general government accounts (ESA items, COFOG purchases) 2019-2025 -> data/gov_accounts_GR.json (the report's benchmark table)

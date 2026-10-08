@@ -3,10 +3,10 @@ Derive the means-tested consumption floor for Greece -> data/transfer_floor_GR.j
 
 The floor is the model's transfer_floor: a household whose resources fall
 short of it receives the difference as a government transfer. In the model's
-units -- detrended output per living person aged 25-84, normalised to 1 in the
+units -- detrended output per living person aged 25-99, normalised to 1 in the
 base year -- it is
 
-    transfer_floor = annual guaranteed minimum income / (nominal GDP / population 25-84),
+    transfer_floor = annual guaranteed minimum income / (nominal GDP / population 25-99),
 
 the same denominator as the pension floor (build_pension_floor_GR.py), whose
 cached nominal GDP this script reuses.
@@ -56,7 +56,7 @@ def main():
             for k, (m, n) in AMOUNTS.items()}
     out = {
         'quantity': 'transfer_floor (means-tested consumption floor)',
-        'units': 'detrended output per living person aged 25-84, base year normalised to 1',
+        'units': 'detrended output per living person aged 25-99, base year normalised to 1',
         'base_year': base_year,
         'chosen': CHOSEN,
         'value': rows[CHOSEN]['transfer_floor'],

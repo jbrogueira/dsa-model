@@ -67,7 +67,7 @@ PASS_THROUGH = 0.75
 FIRST_REVIEW = 2024             # three-year cycle from 2021: 2021, 2024, 2027, ...
 REVIEW_EVERY = 3
 PROJ_END = 2100                 # last year of EUROPOP2023
-FIRST_ENTRY = 1939              # oldest cohort alive in 2023 (real age 84)
+FIRST_ENTRY = 1924              # oldest cohort alive in 2023 (real age 99)
 LAST_ENTRY = 2210               # last entering cohort of the demographic path
 
 

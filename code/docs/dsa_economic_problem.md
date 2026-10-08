@@ -10,7 +10,7 @@ The experiment is a debt-sustainability analysis: a permanent fiscal shock — e
 
 ## 2. Environment
 
-Time is discrete, `t = 0, 1, …`. Households live for `J = 60` periods indexed by age `j ∈ {1, …, J}` (model age `j` = calendar age `24 + j`, so the cohort spans ages 25–84). Two stages: working `j ∈ 𝒲 = {1, …, J_R}` and retired `j ∈ ℛ = {J_R+1, …, J}`, with fixed retirement at `J_R = 39` (statutory age 64).¹ Survival from age `j` to `j+1` is stochastic with probability `π(j) ∈ (0,1]`, age-dependent and cohort-specific.² Cohort sizes grow at the exogenous population rate `g_N` (negative — population aging); a cohort of age `j` carries weight `Λ^{-j}` with `Λ = 1 + g_N`.
+Time is discrete, `t = 0, 1, …`. Households live for `J = 75` periods indexed by age `j ∈ {1, …, J}` (model age `j` = calendar age `24 + j`, so the cohort spans ages 25–99). Two stages: working `j ∈ 𝒲 = {1, …, J_R}` and retired `j ∈ ℛ = {J_R+1, …, J}`, with fixed retirement at `J_R = 39` (statutory age 64).¹ Survival from age `j` to `j+1` is stochastic with probability `π(j) ∈ (0,1]`, age-dependent and cohort-specific.² Cohort sizes grow at the exogenous population rate `g_N` (negative — population aging); a cohort of age `j` carries weight `Λ^{-j}` with `Λ = 1 + g_N`.
 
 Households are heterogeneous in: education `e ∈ {low, medium, high}` (fixed at birth, education-specific income process and unemployment rate); a permanent productivity fixed effect `α_i`, drawn at birth from a mean-zero distribution with education-specific variance `σ_α²` and discretized on a 5-node Gauss–Hermite grid; the idiosyncratic productivity state `z`; and the last-employed productivity state `z_last` (the pension and unemployment-benefit base).
 

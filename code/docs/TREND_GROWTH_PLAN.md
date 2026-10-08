@@ -74,6 +74,16 @@ Verified: the base-year cross-section and the 25-84 total reproduced to machine
 precision, A[0] predetermination 0.000e+00 on both backends and both shocks, and
 the detrended series flat to 0.015 points per period over the settled window.
 
+Update 2026-10-08: the model's ages are 25–99 (T = 75) and the entering-cohort
+series is smoothed with a centred five-year moving average in logs over the
+cohorts entering 1949–2100 (`build_demography_GR.py`; `BUDGET_ALIGNMENT_PLAN.md`
+§3.17). The 25–99 total is within 0.27% of EUROPOP2023 in every year to 2100,
+the measured 2023 cross-section is kept as `cross_section_measured`, and the
+stable age distribution is reached in 2194 (t = 171). The old-age ratio, 65–99
+over 25–64, is 0.429 in 2023, 0.876 in 2050 and 0.779 in 2070, against 0.429,
+0.822 and 0.735 in the projection (65+ over 25–64). The numbers below this
+paragraph describe the 25–84 version.
+
 Four things supersede the stored calibration, and clear in one re-run: the
 measured cross-section, the K_g vintage (0.745 → 0.7030 at the 2023 roll-forward),
 the JAX pension base (it valued the career-average component at the retiree's

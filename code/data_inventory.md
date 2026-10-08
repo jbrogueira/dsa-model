@@ -35,7 +35,7 @@ Pre-computed calibration values for Greece. Single row.
 
 **Notes:**
 - **Unemployment rates by education.** The spreadsheet's 16.45%, 15.80% and 10.05% are the means of the quarterly rates for ages 15-64 over 2019Q1-2024Q4 (Eurostat `lfsq_urgaed`). Since 2026-10-05 the config uses the 2023 annual rates for ages 25-64, the model's working ages (Eurostat `lfsa_urgaed`, geo EL, both sexes, dataset updated 2026-09-10): 12.3% (ISCED 0-2), 11.6% (ISCED 3-4), 7.7% (ISCED 5-8). The total for the same group and year is 10.2%, which is the `untargeted.unemployment_rate` entry. The quarterly means for 2023 are 12.25%, 11.65% and 7.68%. Since 2026-10-07 the rates follow the index of `data/unemployment_index_GR.npz` by calendar year (`build_unemployment_path_GR.py`).
-- **Education shares.** The spreadsheet's 23.43%, 47.05% and 29.52% are the 2019-2024 mean for ages 15-64 (Eurostat `edat_lfse_03`, population by educational attainment). Since 2026-10-05 the config uses 2023 shares for ages 25-84, the model's population: 29.14% (ISCED 0-2), 41.17% (ISCED 3-4), 29.69% (ISCED 5-8). Eurostat's labour force survey tables stop at age 74, so the figure combines two sources. Ages 25-74: the 2023 survey shares, 24.36%, 43.90% and 31.74% (`lfsa_pgaed`, counts in thousands 1643.6, 2961.9, 2141.4). Ages 75-84: the 2021 census (`cens_21ae_r2`, Greece, five-year age groups), each single age a in 2023 taking the shares of the census group that contains age a - 2, weighted by the 2023 population by age of `data/demography_GR.npz`; this gives 68.68%, 18.59% and 12.73%. The two parts are weighted by the model's 2023 population (ages 75-84 are 10.78% of ages 25-84). The census records lower attainment than the survey at the same ages in 2021: for ages 25-64 the low share is 25.9% in the census and 20.2% in the survey, for ages 65-69 it is 51.6% and 49.4%. In 2023 the survey shares are 18.9%, 46.7% and 34.3% for ages 25-64.
+- **Education shares.** The spreadsheet's 23.43%, 47.05% and 29.52% are the 2019-2024 mean for ages 15-64 (Eurostat `edat_lfse_03`, population by educational attainment). Since 2026-10-08 the config uses 2023 shares for ages 25-99, the model's population: 31.41% (ISCED 0-2), 39.90% (ISCED 3-4), 28.69% (ISCED 5-8); the same construction over ages 25-84 (the model's population from 2026-10-05 to 2026-10-08) gave 29.14%, 41.17% and 29.69%. Eurostat's labour force survey tables stop at age 74, so the figure combines two sources. Ages 25-74: the 2023 survey shares, 24.36%, 43.90% and 31.74% (`lfsa_pgaed`, counts in thousands 1643.6, 2961.9, 2141.4). Ages 75-84: the 2021 census (`cens_21ae_r2`, Greece, five-year age groups), each single age a in 2023 taking the shares of the census group that contains age a - 2, weighted by the 2023 population by age of `data/demography_GR.npz`; this gives 68.68%, 18.59% and 12.73% for ages 75-84 and, with the census groups 85-89, 90-94 and 95-99 (raw JSON in `data/eurostat_raw/cens_21ae_r2_EL_T.json`), 71.41%, 17.20% and 11.39% for ages 75-99. The two parts are weighted by the model's 2023 population (ages 75-99 are 14.99% of ages 25-99). The census records lower attainment than the survey at the same ages in 2021: for ages 25-64 the low share is 25.9% in the census and 20.2% in the survey, for ages 65-69 it is 51.6% and 49.4%. In 2023 the survey shares are 18.9%, 46.7% and 34.3% for ages 25-64.
 - Capital share (0.503) and depreciation (0.285) from the spreadsheet are unusually high. Calibration uses standard values instead: alpha=0.33, delta=0.07.
 - `mu_y` values are in EUR levels. Need to convert to log income or normalise relative to mean.
 - **Tax decomposition**: the EC ITR on labour (40.58%) **includes SSC**. The model applies `tau_l` (PIT) and `tau_p` (SSC) separately, so using both raw values double-counts. Correct decomposition for the model: `tau_l ≈ 0.10` (PIT only), `tau_p ≈ 0.34` (SSC on wages), total wedge = `tau_p + tau_l·(1−tau_p) = 0.406`. See section 3 "Obtained" for details.
@@ -82,7 +82,7 @@ Eurostat life table (`demo_mlifetable`): probability of surviving between exact 
 
 | Maps to | Used for |
 |---------|----------|
-| `survival_probs` | Step 1 (external). Extract latest year, slice to model age range (e.g., ages 25-84 for T=60). |
+| `survival_probs` | Step 1 (external). Extract latest year, slice to model age range (ages 25-99 for T=75; the historical table ends in an open group at 85, so ages 85-99 carry the EUROPOP2023 mortality assumption of 2022, see `build_survival_GR.py`). |
 | `survival_improvement_rate` | Compute from trend in px over recent decades. |
 
 **Data-driven cohort survival (2026-06-09).** `code/build_survival_GR.py` extracts this sheet → `data/survival_GR.npz` (`years` 1961–2023, `px` (63, 60), model age j ↔ real age 25+j; 1960 dropped as missing). The transition consumes it via `transition.survival_data_file` in the config: `build_olg_transition` loads `(years, px)` and passes `survival_table=` to `OLGTransition`. Each cohort uses the data period tables along its calendar diagonal (cohort-historical), clamped to [1961, 2023] — so future transition years (2024–2079) hold at the 2023 life table. The transition's per-period population weights then use the **same norm** as `calibrate.py:compute_age_weights`: entering-cohort size `(1+g)^(years since base)` × cumulative survival, normalised per period (verified identical to machine precision under a constant table, `code/diag_norm_check.py`). The calibration's stationary `survival_probs` vector is unchanged by this (still the config vector); re-sourcing it from `survival_GR.npz` at a base year would change the SMM moments and require a recalibration.
@@ -211,23 +211,24 @@ does not publish statutory benefit amounts, only aggregate pension expenditure, 
 the amount comes from the legislation and the 2024 Ageing Report country fiche.
 
 The denominator is the part that is easy to get wrong. The model's output is per
-**living person aged 25-84**, not per capita of the whole population, because the
+**living person aged 25-99**, not per capita of the whole population, because the
 model contains no one outside that band. So
 
-    b_min = annual amount / (nominal GDP / population aged 25-84)
+    b_min = annual amount / (nominal GDP / population aged 25-99)
 
 with nominal GDP 2023 = **EUR 224.7 bn** (Eurostat `nama_10_gdp`, B1GQ, CP_MEUR,
-cached at `data/nomgdp_GR.json`) and population 25-84 = **7,559,564**
-(`data/demography_GR.npz`, `cross_section_base`), giving EUR 29,722 of output per
-living 25-84 person. Hence:
+cached at `data/nomgdp_GR.json`) and population 25-99 = **7,924,528**
+(`data/demography_GR.npz`, `cross_section_base`, since 2026-10-08 the smoothed
+2023 cross-section over ages 25-99), giving EUR 28,353 of output per living
+25-99 person. Hence:
 
 | | monthly | annual | b_min |
 |---|---|---|---|
-| national pension, 20+ years, 2023 indexed | EUR 413.76 | 4,965 | **0.1671** |
-| 15 years, 2023 | EUR 387.90 | 4,655 | 0.1566 |
-| base rate before indexation | EUR 384.00 | 4,608 | 0.1550 |
+| national pension, 20+ years, 2023 indexed | EUR 413.76 | 4,965 | **0.1751** |
+| 15 years, 2023 | EUR 387.90 | 4,655 | 0.1642 |
+| base rate before indexation | EUR 384.00 | 4,608 | 0.1625 |
 
-Config set to **0.1671**, the 2023 indexed 20-year rate, against the previous 0.15 —
+Config set to **0.1751**, the 2023 indexed 20-year rate (0.1671 over ages 25-84 until 2026-10-08), against the earlier 0.15 —
 which was close to the un-indexed base and had no recorded derivation. The floor is
 +11.4% higher, so it binds on more of the lower tail and moves pensions/Y; it is not
 an SMM parameter, so the SMM absorbs the change through `rho_pens`.
@@ -484,7 +485,7 @@ Source: `economy-finance.ec.europa.eu/publications/2024-ageing-report_en`
 
 **Greece context:** Public health spending = 5.37% of GDP (2022); per capita = €2,191 (2023).
 
-**For calibration:** Interpolate 5-year groups to single-year ages for `m_age_profile`. Normalise so population-weighted average = 1.0. Set `m_good` so that aggregate `kappa * sum(m_age_profile * pop_weights)` matches health spending/GDP.
+**For calibration:** `m_age_profile` (75 entries, ages 25-99, since 2026-10-08) places each group's value at its midpoint (27, 32, ..., 97), interpolates linearly between midpoints, holds the first and last values flat outside 27-97, and normalises to a population-weighted mean of 1.0 over the model's 2023 cross-section (`data/demography_GR.npz`). `m_good` is an SMM parameter set so that aggregate `kappa * sum(m_age_profile * pop_weights)` matches health spending/GDP.
 
 **References:**
 - EU 2024 Ageing Report, DG ECFIN — age profiles used in EU fiscal projections.

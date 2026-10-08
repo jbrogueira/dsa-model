@@ -6,7 +6,7 @@ Source: Eurostat dissemination API, baseline variant (BSL), Greece, 2022-2100.
   proj_23naasmr  assumed age-specific mortality rates by sex
   proj_23nanmig  assumed net migration by age and sex
 
-The model enters at real age 25 (model age 0), T = 60 → real ages 25-84, and
+The model enters at real age 25 (model age 0), T = 75 → real ages 25-99, and
 its two demographic inputs are the size of each entering cohort and a survival
 schedule. Both are taken here on the projection's own definitions:
 
@@ -37,7 +37,7 @@ API = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data'
 RAW = os.path.join(os.path.dirname(__file__), '..', 'data', 'europop2023_raw')
 OUT = os.path.join(os.path.dirname(__file__), '..', 'data', 'europop2023_GR.npz')
 ENTRY_AGE = 25
-T = 60                                   # model horizon → real ages 25..84
+T = 75                                   # model horizon → real ages 25..99
 DATASETS = {'proj_23np': ('T', 'M', 'F'), 'proj_23naasmr': ('M', 'F'),
             'proj_23nanmig': ('T',)}
 
@@ -122,7 +122,7 @@ def main():
 
     np.savez(OUT,
              years=years.astype(int),
-             px=px.T.astype(float),                       # (Ny, 60), like survival_GR
+             px=px.T.astype(float),                       # (Ny, T), like survival_GR
              pop=pop_T.T.astype(float),
              net_migration=mig.T.astype(float),
              entrants=entrants.astype(float),
@@ -140,15 +140,15 @@ def main():
         gr = entrants[i] / entrants[i - 1] - 1 if i else np.nan
         print(f'  {y}  {entrants[i]:>10,.0f}   {100*gr:+.2f}%')
 
-    print('\nTotal 25-84 population and its growth rate')
+    print(f'\nTotal {real_ages[0]}-{real_ages[-1]} population and its growth rate')
     tot = pop_T.sum(axis=0)
     for y in (2023, 2030, 2040, 2050, 2060, 2070, 2083, 2100):
         i = at(y)
         gr = tot[i] / tot[i - 1] - 1 if i else np.nan
         print(f'  {y}  {tot[i]:>10,.0f}   {100*gr:+.2f}%')
 
-    oadr = pop_T[40:].sum(axis=0) / pop_T[:40].sum(axis=0)   # 65-84 over 25-64
-    print('\nOld-age dependency ratio, 65-84 over 25-64')
+    oadr = pop_T[40:].sum(axis=0) / pop_T[:40].sum(axis=0)   # 65+ over 25-64
+    print(f'\nOld-age dependency ratio, 65-{real_ages[-1]} over 25-64')
     print('  ' + '  '.join(f'{y}: {oadr[at(y)]:.3f}'
                            for y in (2023, 2040, 2060, 2083, 2100)))
 
@@ -157,7 +157,7 @@ def main():
         i = at(y)
         col = gap[:, i]
         f = np.isfinite(col)
-        print(f'  {y}: ages with a full model history {f.sum():2d}/60, '
+        print(f'  {y}: ages with a full model history {f.sum():2d}/{T}, '
               f'mean {100*np.nanmean(col[f]):+.1f}%, '
               f'worst {100*col[f][np.nanargmax(np.abs(col[f]))]:+.1f}%')
 

@@ -214,7 +214,7 @@ def projection_figure(p, out_pdf, plt, last_year=2070):
 
 
 def demography_figure(cfg, out_pdf, plt, last_year=2120):
-    """The demographic inputs: population aged 25-84 and entering cohorts,
+    """The demographic inputs: population aged 25-99 and entering cohorts,
     the age structure, dependency and retirees per non-retired person, and the
     retirement age with life expectancy at 65. Read from the data files the
     configuration names; no run is needed."""
@@ -224,7 +224,7 @@ def demography_figure(cfg, out_pdf, plt, last_year=2120):
     dem = np.load(path('demography_file'))
     ret = np.load(path('retirement_age_file'))
     years = dem['pop_years'].astype(int)
-    pop = np.asarray(dem['pop'], float)                   # (years, 60) ages 25..84
+    pop = np.asarray(dem['pop'], float)                   # (years, T) ages 25..24+T
     n = int(np.searchsorted(years, last_year)) + 1
     x = years[:n]
     total = pop.sum(1)
@@ -232,7 +232,7 @@ def demography_figure(cfg, out_pdf, plt, last_year=2120):
     ent = np.asarray(dem['entrants'], float)
     e0 = ent[np.searchsorted(ent_y, years[0])]
     entrants = np.array([ent[np.searchsorted(ent_y, y)] for y in x]) / e0
-    ages = 25 + np.arange(60)
+    ages = 25 + np.arange(pop.shape[1])
     share = lambda lo, hi: pop[:n, (ages >= lo) & (ages <= hi)].sum(1) / total[:n]
     dep = pop[:n, ages >= 65].sum(1) / pop[:n, ages <= 64].sum(1)
     # Retirees per non-retired person from the cohort retirement table.
@@ -240,7 +240,7 @@ def demography_figure(cfg, out_pdf, plt, last_year=2120):
     lo_e, hi_e = min(tab), max(tab)
     R = np.zeros(n); W = np.zeros(n)
     for i, y in enumerate(x):
-        for j in range(60):
+        for j in range(pop.shape[1]):
             JR, sl = tab[int(min(max(y - j, lo_e), hi_e))]
             r = 1.0 if j >= JR + 1 else ((1.0 - sl) if j >= JR else 0.0)
             R[i] += pop[i, j] * r
@@ -251,14 +251,14 @@ def demography_figure(cfg, out_pdf, plt, last_year=2120):
     e65 = np.array([ret['e65'][np.searchsorted(ey, min(y, ey[-1]))] for y in x])
 
     fig, ax = plt.subplots(2, 2, figsize=(10, 5.6))
-    _lines(ax[0, 0], x, [('population aged 25\u201384', total[:n] / total[0]),
+    _lines(ax[0, 0], x, [('population aged 25\u201399', total[:n] / total[0]),
                          ('cohort entering at 25', entrants)], ncol=2)
     ax[0, 0].axhline(1.0, color=INK2, lw=0.6, zorder=1)
     _style(ax[0, 0], 'Population, 2023 = 1')
     _lines(ax[0, 1], x, [('25\u201339', share(25, 39)), ('40\u201364', share(40, 64)),
-                         ('65\u201384', share(65, 84))], ncol=3)
-    _style(ax[0, 1], 'Shares of the population aged 25\u201384')
-    _lines(ax[1, 0], x, [('aged 65\u201384 per person aged 25\u201364', dep),
+                         ('65\u201399', share(65, 99))], ncol=3)
+    _style(ax[0, 1], 'Shares of the population aged 25\u201399')
+    _lines(ax[1, 0], x, [('aged 65\u201399 per person aged 25\u201364', dep),
                          ('retired per non-retired person', R / W)], ncol=1)
     _style(ax[1, 0], 'Dependency')
     _lines(ax[1, 1], x, [('average effective retirement age', rpath),
@@ -269,7 +269,7 @@ def demography_figure(cfg, out_pdf, plt, last_year=2120):
     plt.close(fig)
     print(f'  wrote {os.path.basename(out_pdf)}')
     return dict(years=x, total=total[:n] / total[0], entrants=entrants, dep=dep, RW=R / W,
-                s2539=share(25, 39), s4064=share(40, 64), s6584=share(65, 84),
+                s2539=share(25, 39), s4064=share(40, 64), s6599=share(65, 99),
                 ret=rpath, e65=e65)
 
 
