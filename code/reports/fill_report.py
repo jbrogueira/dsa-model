@@ -79,7 +79,11 @@ def _retirement_row(cfg, mod):
 
 
 def _ft_base_year(cfg):
-    """The transfer from abroad in the base year from fiscal.foreign_transfer_file."""
+    """The transfer from abroad in the base year: the constant
+    fiscal.foreign_transfer_over_Y when set, else from fiscal.foreign_transfer_file."""
+    const = cfg.get('fiscal', {}).get('foreign_transfer_over_Y')
+    if const is not None:
+        return float(const)
     rel = cfg.get('fiscal', {}).get('foreign_transfer_file')
     if not rel:
         return None
@@ -684,7 +688,7 @@ def main():
         # resource constraint below is read off that budget, not off the
         # configuration. The lump-sum level path and the output tax's
         # terminal ramp are the baseline's fixed point (baseline_closure.py).
-        from baseline_closure import solve_baseline, debt_from_run
+        from baseline_closure import solve_baseline, debt_from_run, closure_options
         economy.household_cache_size = max(economy.household_cache_size, 4)
         G_growth = economy.growth_factors(T_TR)
         r_B_full = (np.asarray(tp['r_B_path'], float) if tp.get('r_B_path') is not None
@@ -718,14 +722,8 @@ def main():
         fx = solve_baseline(_run, L['config_data'], T_TR, int(economy.current_year),
                             float(fisc.get('lump_sum_over_Y', 0.0) or 0.0),
                             float(fisc.get('tau_y', 0.0) or 0.0), r_B_full, G_growth,
-                            Y_init=y_init, ramp_years=int(fisc.get('tau_y_ramp_years', 10)),
-                            tol_Y=1e-4, tol_pb=1e-4, verbose=True,
-                            match_projection=(fisc.get('tau_y_mode', 'constant') == 'projection'),
-                            match_debt_year=(int(fisc.get('tau_y_debt_year', 2060))
-                                             if fisc.get('tau_y_mode', 'constant') == 'debt' else None),
-                            first_mid_year=int(fisc.get('tau_y_first_year', 2026)),
-                            terminal_rule=(fisc.get('tau_y_mode', 'constant') != 'pinned_throughout'
-                                           and bool(fisc.get('tau_y_terminal_rule', True))))
+                            Y_init=y_init, tol_Y=1e-4, tol_pb=1e-4, verbose=True,
+                            **closure_options(fisc))
         res, bud = last['res'], last['bud']
         paths = {k: np.asarray(v) for k, v in res.items()
                  if isinstance(v, (list, np.ndarray)) and np.ndim(v) == 1}

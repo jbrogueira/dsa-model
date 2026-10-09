@@ -332,6 +332,7 @@
     "education_file": "../data/school_age_GR.npz",
     "lump_sum_over_Y": 0.035,
     "foreign_transfer_file": "../data/foreign_transfer_GR.npz",
+    "foreign_transfer_over_Y": 0.01,
     "tau_y": 0.069292,
     "tau_y_ramp_years": 10,
     "pensions_over_Y": 0.14,

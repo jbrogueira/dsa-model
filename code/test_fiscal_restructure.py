@@ -297,3 +297,60 @@ class TestDebtMatchingRate:
         assert np.allclose(tau[2026 - base:], fx['tau_mid'])          # one step, constant after
         d = fx['debt']
         assert abs(d['debt'][2060 - base] - d['debt_projection'][2060 - base]) < 2e-3
+
+
+class TestOutputTaxRules:
+    """The three output-tax rules of closure_options on the toy budget: a
+    linear ramp to the debt-matching rate of 2060, the base-year rate
+    throughout, and one rate from the base year."""
+
+    @staticmethod
+    def _setup():
+        import json
+        import os
+        raw = json.load(open(os.path.join(os.path.dirname(__file__), 'calibration_input_GR.json')))
+        T_tr = 180
+
+        def run(lump, tau):
+            return np.ones(T_tr), {'total_revenue': 0.3665 + 0.7 * np.asarray(tau),
+                                   'total_spending': np.full(T_tr, 0.386)}
+        return raw, T_tr, run
+
+    def test_ramp_is_linear_to_the_debt_matching_rate(self):
+        from baseline_closure import solve_baseline, closure_options
+        raw, T_tr, run = self._setup()
+        base = 2023
+        opts = closure_options({'tau_y_mode': 'debt_ramp', 'tau_y_debt_year': 2060,
+                                'tau_y_terminal_rule': False})
+        fx = solve_baseline(run, raw, T_tr, base, 0.035, 0.0595, np.full(T_tr, 0.02),
+                            np.full(T_tr, 1.017), verbose=False, max_iter=25, **opts)
+        tau, t60 = fx['tau_y_path'], 2060 - base
+        assert abs(tau[0] - 0.0595) < 1e-12                       # the base-year pin
+        assert np.allclose(np.diff(tau[:t60 + 1]), (fx['tau_mid'] - 0.0595) / t60)  # linear, no jump
+        assert np.allclose(tau[t60:], fx['tau_mid'])
+        d = fx['debt']
+        assert abs(d['debt'][t60] - d['debt_projection'][t60]) < 2e-3
+
+    def test_one_rate_from_the_base_year(self):
+        from baseline_closure import solve_baseline, closure_options
+        raw, T_tr, run = self._setup()
+        opts = closure_options({'tau_y_mode': 'debt', 'tau_y_debt_year': 2060,
+                                'tau_y_first_year': 2023, 'tau_y_terminal_rule': False})
+        fx = solve_baseline(run, raw, T_tr, 2023, 0.035, 0.0595, np.full(T_tr, 0.02),
+                            np.full(T_tr, 1.017), verbose=False, max_iter=25, **opts)
+        assert np.allclose(fx['tau_y_path'], fx['tau_mid'])
+        d = fx['debt']
+        assert abs(d['debt'][37] - d['debt_projection'][37]) < 2e-3
+
+    def test_pinned_throughout(self):
+        from baseline_closure import closure_options
+        o = closure_options({'tau_y_mode': 'pinned_throughout'})
+        assert o['match_debt_year'] is None and o['terminal_rule'] is False
+
+    def test_constant_foreign_transfer_overrides_the_file(self):
+        from calibrate import foreign_transfer_by_year
+        raw, _, _ = self._setup()
+        raw['fiscal']['foreign_transfer_over_Y'] = 0.010
+        assert np.allclose(foreign_transfer_by_year(raw, [2023, 2025, 2040]), 0.010)
+        raw['fiscal'].pop('foreign_transfer_over_Y')
+        assert abs(foreign_transfer_by_year(raw, [2025])[0] - 0.027) < 1e-9

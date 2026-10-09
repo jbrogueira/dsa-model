@@ -329,7 +329,7 @@ if args.config:
     # transition. The stock-flow adjustment (the data's 2024-25 ratios, the
     # projection's rows to 2060) then enters the debt recursion as levels and
     # the start-of-base-year stock makes end-of-2023 debt equal fiscal.B_over_Y.
-    from baseline_closure import solve_baseline
+    from baseline_closure import solve_baseline, closure_options
     dsa_cfg = config_data.get('fiscal', {}).get('dsa_projection_file')
     G_growth = economy.growth_factors(T_TR)
     r_B_full = np.asarray(base_paths['r_B_path'], dtype=float)
@@ -348,15 +348,8 @@ if args.config:
 
     fx = solve_baseline(_run, config_data, T_TR, int(economy.current_year), lump_over_Y,
                         tau_y_base, r_B_full, G_growth, Y_init=Y_path,
-                        ramp_years=int(paths.get('tau_y_ramp_years', 10)),
                         tol_Y=1e-4, tol_pb=1e-4, verbose=True,
-                        match_projection=(config_data.get('fiscal', {}).get('tau_y_mode', 'constant')
-                                          == 'projection'),
-                        match_debt_year=(int(config_data.get('fiscal', {}).get('tau_y_debt_year', 2060))
-                                         if config_data.get('fiscal', {}).get('tau_y_mode', 'constant') == 'debt' else None),
-                        first_mid_year=int(config_data.get('fiscal', {}).get('tau_y_first_year', 2026)),
-                        terminal_rule=(config_data.get('fiscal', {}).get('tau_y_mode', 'constant') != 'pinned_throughout'
-                                       and bool(config_data.get('fiscal', {}).get('tau_y_terminal_rule', True))))
+                        **closure_options(config_data.get('fiscal', {})))
     Y_path = np.asarray(base_paths['base_macro']['Y'])[:T_TR]
     Y0 = float(Y_path[0])
     debt = fx['debt']

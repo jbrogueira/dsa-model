@@ -1723,6 +1723,16 @@ def year_series(raw, key, section, value_key, years, default=None):
     return np.interp(np.asarray(years, dtype=float), d['years'].astype(float), d[value_key])
 
 
+def foreign_transfer_by_year(raw, years):
+    """The transfer from abroad over output by calendar year: the constant
+    fiscal.foreign_transfer_over_Y when set, else the series of
+    fiscal.foreign_transfer_file, else None."""
+    const = raw.get('fiscal', {}).get('foreign_transfer_over_Y')
+    if const is not None:
+        return np.full(len(np.atleast_1d(years)), float(const))
+    return year_series(raw, 'foreign_transfer_file', 'fiscal', 'transfer_over_Y', years)
+
+
 def r_B_path_by_year(raw, years):
     """Real sovereign rate by calendar year from prices.r_B_file, or None."""
     return year_series(raw, 'r_B_file', 'prices', 'r_B', years)
@@ -1871,8 +1881,7 @@ def build_olg_transition(config_data, backend='numpy'):
     years_long = base_year + np.arange(T_tr + lifecycle_config.T)
     r_B_path = r_B_path_by_year(config_data, years_long)
     edu_index = year_series(config_data, 'education_file', 'fiscal', 'index', years_long)
-    ft_path = year_series(config_data, 'foreign_transfer_file', 'fiscal', 'transfer_over_Y',
-                          years_long)
+    ft_path = foreign_transfer_by_year(config_data, years_long)
     u_index = unemployment_index_path(config_data, years_long)
 
     # Build OLGTransition
@@ -2097,8 +2106,7 @@ def compute_fiscal_ratios(panels, spec, config_data):
     lump_over_Y    = float(fiscal_data.get('lump_sum_over_Y', 0.0) or 0.0) / Y
     tau_y          = float(fiscal_data.get('tau_y', 0.0) or 0.0)
     base_year      = int(config_data.get('transition', {}).get('current_year', 2023))
-    ft = year_series(config_data, 'foreign_transfer_file', 'fiscal', 'transfer_over_Y',
-                     [base_year])
+    ft = foreign_transfer_by_year(config_data, [base_year])
     ft_over_Y      = 0.0 if ft is None else float(ft[0])
     discretionary  = G_over_Y + I_g_over_Y + defense_over_Y + education_over_Y + lump_over_Y
     pb_house       = ratios['primary_balance_over_Y']

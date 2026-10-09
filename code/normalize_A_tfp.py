@@ -175,7 +175,8 @@ def record(A, tau, Y, pb, m, spec):
     if best is None or score < best[0]:
         best = (score, A, tau, Y, pb, m, spec)
     pb_txt = f"  pb={pb:+.6f}  pb_resid={h:+.2e}" if pb is not None else ""
-    print(f"  iter {len(history):2d}: A_tfp={A:.8f}  tau_y={tau:.6f}  Y_ss={Y:.6f}  "
+    tau_txt = f"{tau:.6f}" if tau is not None else "fixed"
+    print(f"  iter {len(history):2d}: A_tfp={A:.8f}  tau_y={tau_txt}  Y_ss={Y:.6f}  "
           f"resid={f:+.2e}{pb_txt}  [{time.time()-t0:.0f}s]", flush=True)
     return f, h
 

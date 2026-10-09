@@ -58,15 +58,18 @@ PY
   # not continuous in A_tfp at the 1e-4 scale: a change of 1e-6 in A_tfp can
   # move discrete asset choices on the grid and shift Y_ss by ~2e-4 (seen on
   # 2026-10-05), in which case no root lies within the default tolerance.
-  python3 -u normalize_A_tfp.py --backend jax --write --pin-tau-y --config "$CFG" ${NORM_EXTRA:-} \
+  # PIN_TAU_Y=0 keeps fiscal.tau_y as configured (A_tfp alone for Y = 1).
+  PIN_FLAG=$([ "${PIN_TAU_Y:-1}" = "1" ] && echo --pin-tau-y)
+  python3 -u normalize_A_tfp.py --backend jax --write $PIN_FLAG --config "$CFG" ${NORM_EXTRA:-} \
     | tee /tmp/norm_round.log
   grep -q "^CONVERGED" /tmp/norm_round.log \
     || { echo "SCALE LOOP FAILED: normalize round $r"; exit 1; }
 
   resid1=$(grep "iter  1:" /tmp/norm_round.log \
            | sed -E 's/.*  resid=([+-][0-9.eE+-]+).*/\1/')
-  pbres1=$(grep "iter  1:" /tmp/norm_round.log \
-           | sed -E 's/.*pb_resid=([+-][0-9.eE+-]+).*/\1/')
+  pbres1=$(grep "iter  1:" /tmp/norm_round.log | grep -q pb_resid \
+           && grep "iter  1:" /tmp/norm_round.log | sed -E 's/.*pb_resid=([+-][0-9.eE+-]+).*/\1/' \
+           || echo 0)
   # Two tests, both on what the config now holds. resid1 is |Y - 1| at the
   # fitted theta BEFORE this round's A_tfp update, so passing it alone left the
   # written pair (theta_r, A_r) unevaluated: on 2026-10-01 it passed by

@@ -199,13 +199,39 @@ def centred_mean(x, years):
     return np.convolve(pad, np.ones(int(years)) / float(years), mode='valid')
 
 
+def closure_options(fiscal):
+    """solve_baseline keyword arguments for the output-tax rule of the
+    configuration's fiscal block, fiscal.tau_y_mode:
+
+    'constant' / absent   the base-year rate to 2060, then the terminal ramp
+    'pinned_throughout'   the base-year rate in every year, no adjustment
+    'projection'          a path matching the projection's primary balance
+    'debt'                the base-year rate to tau_y_first_year - 1, then one
+                          rate set for the debt ratio of tau_y_debt_year (with
+                          tau_y_first_year equal to the base year the rate
+                          applies from the base year)
+    'debt_ramp'           linear from the base-year rate to a rate reached in
+                          tau_y_debt_year, set for that year's debt ratio
+    """
+    mode = fiscal.get('tau_y_mode', 'constant')
+    debt = mode in ('debt', 'debt_ramp')
+    return dict(
+        ramp_years=int(fiscal.get('tau_y_ramp_years', 10)),
+        match_projection=(mode == 'projection'),
+        match_debt_year=int(fiscal.get('tau_y_debt_year', 2060)) if debt else None,
+        first_mid_year=int(fiscal.get('tau_y_first_year', 2026)),
+        terminal_rule=(mode != 'pinned_throughout' and bool(fiscal.get('tau_y_terminal_rule', True))),
+        mid_shape='ramp' if mode == 'debt_ramp' else 'constant',
+    )
+
+
 def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
                    r_B_path, growth_factor, Y_init=None, tau_terminal_init=None,
                    ramp_years=10, max_iter=12, tol_Y=1e-4, tol_pb=1e-4, verbose=True,
                    step_max=0.03, tau_bounds=(-0.10, 0.60), tol_tau=5e-4,
                    match_projection=False, lump_smooth_years=5,
                    match_debt_year=None, first_mid_year=2026, tau_mid_init=None,
-                   tol_debt=2e-3, terminal_rule=True):
+                   tol_debt=2e-3, terminal_rule=True, mid_shape='constant'):
     """Fixed point of the baseline over the lump-sum level path and the
     terminal output-tax rate.
 
@@ -233,7 +259,9 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     that the debt ratio in match_debt_year equals the projection's (first
     step at -0.7 per year between first_mid_year and match_debt_year per unit
     of the rate); the terminal ramp then starts from tau_mid. Off (the
-    default) the rate is tau_base through 2060.
+    default) the rate is tau_base through 2060. With mid_shape 'ramp' the
+    rate instead falls linearly from tau_base in the base year to tau_mid in
+    match_debt_year and is tau_mid after; tau_mid is solved the same way.
 
     The lump sum of iteration k is lump_sum_over_Y times the output of
     iteration k-1 (Y_init, or one, before the first run), output taken as a
@@ -264,7 +292,11 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
     for k in range(1, max_iter + 1):
         lump = float(lump_sum_over_Y) * centred_mean(Y_prev, lump_smooth_years)
         if match_debt:
-            tau_fixed[t_mid0:] = tau_mid
+            if mid_shape == 'ramp':
+                frac = np.clip(np.arange(T_tr) / float(max(t_match, 1)), 0.0, 1.0)
+                tau_fixed = float(tau_base) + (tau_mid - float(tau_base)) * frac
+            else:
+                tau_fixed[t_mid0:] = tau_mid
             if not terminal_rule:
                 tau_T = tau_mid          # no adjustment: the 2026-60 rate holds after 2060
         tau = tau_y_path(T_tr, base_year, tau_fixed, tau_T, ramp_years)
@@ -325,7 +357,9 @@ def solve_baseline(run, config_data, T_tr, base_year, lump_sum_over_Y, tau_base,
         if update_mid:
             # Secant on the debt gap at match_debt_year; first step at the
             # a-priori slope, -0.7 per year of the rate's reach.
-            prior_m = -0.7 * max(match_debt_year - first_mid_year + 1, 1)
+            # A ramp reaches about half as many rate-years per unit of tau_mid.
+            prior_m = (-0.35 * max(match_debt_year - base_year, 1) if mid_shape == 'ramp'
+                       else -0.7 * max(match_debt_year - first_mid_year + 1, 1))
             slope_m = prior_m
             if (len(hist_mid) >= 2 and hist_mid[-1][0] != hist_mid[-2][0]
                     and hist_mid[-1][1] != hist_mid[-2][1]):
