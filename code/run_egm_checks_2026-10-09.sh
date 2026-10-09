@@ -27,7 +27,7 @@ for RUN in ${RUNS:-egm:100 egm:200 grid:100}; do
     [ "${PIPESTATUS[0]}" -eq 0 ] || { stamp "MOMENTS FAILED ($SOLVER $NA)"; exit 1; }
     START=$(date +%s)
     python3 -u run_fiscal_figures.py --config "$D/config.json" --backend jax \
-        --shock Ig --scenarios debt --shock-year 2026 --no-distribution --policies-on-device \
+        --shock Ig --scenarios debt --shock-year 2026 --no-distribution --no-value-functions \
         --output-dir "$D" 2>&1 | tee "$D/run.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || { stamp "EXPERIMENT FAILED ($SOLVER $NA)"; exit 1; }
     stamp "$SOLVER n_a=$NA: baseline + I_g run took $(( $(date +%s) - START )) s"

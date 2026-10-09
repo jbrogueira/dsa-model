@@ -71,6 +71,9 @@ parser.add_argument('--health-household', choices=['che_minus_gov', 'hf3'],
                     default='che_minus_gov',
                     help='Household health spending: CHE less government schemes, or HF.3')
 parser.add_argument('--health-years', type=int, default=5, help='Length of the health cut')
+parser.add_argument('--no-value-functions', action='store_true',
+                    help='JAX: do not keep the cohort value functions (less host memory; '
+                         'needs --no-distribution)')
 parser.add_argument('--policies-on-device', action='store_true',
                     help='JAX: keep the cohort policy functions in device memory and drop the '
                          'value functions (less host memory; needs --no-distribution)')
@@ -295,6 +298,10 @@ DISTRIBUTION = not args.no_distribution
 economy.household_cache_size = 0 if DISTRIBUTION else 16
 if args.policies_on_device:
     economy.jax_policies_on_device = True
+if args.no_value_functions:
+    if DISTRIBUTION:
+        raise SystemExit('the welfare outputs need the value functions: use --no-distribution')
+    economy.keep_value_functions = False
 if DISTRIBUTION and economy.jax_policies_on_device:
     raise SystemExit('the welfare outputs need the value functions: jax_policies_on_device must be off')
 

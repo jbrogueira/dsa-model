@@ -351,6 +351,10 @@ class OLGTransition:
         self.sim_agent_batch_size = int(sim_agent_batch_size)
         self.household_cache_size = int(household_cache_size)
         self.jax_policies_on_device = bool(jax_policies_on_device)
+        # JAX batched solve: keep each cohort's value functions (needed only by
+        # the welfare outputs). Off saves a fourth of the host memory the
+        # cohort solutions take.
+        self.keep_value_functions = True
         if aggregation not in ('simulation', 'exact'):
             raise ValueError(f"aggregation must be 'simulation' or 'exact', got {aggregation!r}")
         self.aggregation = aggregation
@@ -631,6 +635,9 @@ class OLGTransition:
         on_device = self.jax_policies_on_device
         xp = jnp if on_device else np
         keep = (lambda x: x) if on_device else np.asarray
+        # Value functions are dropped on the device route and when
+        # keep_value_functions is off (the policies stay on the host).
+        drop_V = on_device or not getattr(self, 'keep_value_functions', True)
 
         n_alpha = ref.n_alpha
         V_alpha_sweeps, a_alpha_sweeps, c_alpha_sweeps, l_alpha_sweeps = [], [], [], []
@@ -638,7 +645,7 @@ class OLGTransition:
             alpha_mult_jax = float(np.exp(np.asarray(ref.alpha_grid)[alpha_idx]))
             if chunk_size >= n_cohorts:
                 V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *batched_arrays)
-                V_batch = None if on_device else np.asarray(V_b)
+                V_batch = None if drop_V else np.asarray(V_b)
                 a_pol_batch = keep(a_b)
                 c_pol_batch = keep(c_b)
                 l_pol_batch = keep(l_b)
@@ -655,12 +662,12 @@ class OLGTransition:
                             for s in sliced
                         )
                     V_b, a_b, c_b, l_b = _solve_chunk(alpha_mult_jax, *sliced)
-                    if not on_device:
+                    if not drop_V:
                         V_chunks.append(np.asarray(V_b[:actual]))
                     a_chunks.append(keep(a_b[:actual]))
                     c_chunks.append(keep(c_b[:actual]))
                     l_chunks.append(keep(l_b[:actual]))
-                V_batch = None if on_device else np.concatenate(V_chunks)
+                V_batch = None if drop_V else np.concatenate(V_chunks)
                 a_pol_batch = xp.concatenate(a_chunks)
                 c_pol_batch = xp.concatenate(c_chunks)
                 l_pol_batch = xp.concatenate(l_chunks)
@@ -675,12 +682,12 @@ class OLGTransition:
         # LifecycleModelPerfectForesight.solve conventions.
         for ci, b in enumerate(birth_periods):
             model = models_dict[b]
-            model.V_alpha = (None if on_device
+            model.V_alpha = (None if drop_V
                              else np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0))
             model.a_next_policy_alpha = xp.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
             model.c_policy_alpha = xp.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
             model.l_policy_alpha = xp.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
-            model.V = None if on_device else model.V_alpha[0]
+            model.V = None if drop_V else model.V_alpha[0]
             model.a_next_policy = model.a_next_policy_alpha[0]
             model.c_policy = model.c_policy_alpha[0]
             model.l_policy = model.l_policy_alpha[0]
