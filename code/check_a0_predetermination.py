@@ -26,7 +26,10 @@ shock is zero before t_s, every cohort alive in t_s keeps the baseline's
 policies at the ages it lived before t_s, and household wealth through t_s
 must equal the baseline's.
 
-Usage: python check_a0_predetermination.py [--shock-period 3]
+With --savings-solver egm the households solve the savings choice by the
+endogenous grid method (log utility, a minimum income benefit of 0.1).
+
+Usage: python check_a0_predetermination.py [--shock-period 3] [--savings-solver egm]
 """
 import argparse
 import os
@@ -43,13 +46,17 @@ T_TR = 10
 N_SIM = 50
 _ap = argparse.ArgumentParser()
 _ap.add_argument('--shock-period', type=int, default=0)
-T_S = _ap.parse_args().shock_period
+_ap.add_argument('--savings-solver', choices=('grid', 'egm'), default='grid')
+_args = _ap.parse_args()
+T_S = _args.shock_period
+SOLVER_KW = (dict(savings_solver='egm', gamma=1.0, minimum_income=0.1)
+             if _args.savings_solver == 'egm' else {})
 PRE = np.r_[np.zeros(T_S), np.ones(T_TR - T_S)]   # zero before the shock
 TREND_GROWTH = 0.017   # balanced-growth rate under test; 0.0 recovers the old harness
 
 def run_backend(backend, shock, cohort_retirement=False, rerun=False):
     cfg = LifecycleConfig(T=20, n_a=30, n_y=3, n_alpha=3, retirement_age=12,
-                          trend_growth=TREND_GROWTH)
+                          trend_growth=TREND_GROWTH, **SOLVER_KW)
     ep = dict(cfg.edu_params)
     ep['medium'] = dict(ep['medium'], sigma_alpha=0.3)
     cfg = cfg._replace(edu_params=ep)

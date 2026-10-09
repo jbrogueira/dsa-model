@@ -66,7 +66,12 @@ def _delta_health(kap_w=0.5, mu_w=0.85, n=3):
 # 1, 11a. With the new options off the results are those of the earlier code
 # ---------------------------------------------------------------------------
 
+GRID_REFERENCE = pytest.mark.skipif(
+    prc.SAVINGS_SOLVER != 'grid', reason='the stored arrays hold grid-search numbers')
+
+
 class TestUnchangedWhenOff:
+    @GRID_REFERENCE
     def test_reference_runs_equal_stored_arrays(self):
         """Test 11, shock_period = 0: baseline, I_g under debt and under a
         labour tax equal the arrays written by the code of e80b119."""
@@ -75,6 +80,7 @@ class TestUnchangedWhenOff:
         for k, v in new.items():
             np.testing.assert_array_equal(v, ref[k], err_msg=k)
 
+    @GRID_REFERENCE
     def test_cross_section_unchanged(self):
         """Test 3: the calibration's batched exact cross-section is unchanged
         by the transition-only kernel variants."""

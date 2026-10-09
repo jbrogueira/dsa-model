@@ -1,6 +1,8 @@
 # Continuous savings choice: minimum income benefit and the endogenous grid method
 
-Plan, 2026-10-08; audited and revised 2026-10-09. Not implemented.
+Plan, 2026-10-08; audited and revised 2026-10-09. Steps 1-3 implemented 2026-10-09 on branch `egm` (539f885 the benefit, def45d5 the policy as a level, then the method); Steps 4-5 (checks on the A100, recalibration) not run.
+
+Implementation notes. The JAX lottery draws come from `fold_in(key, 1_000_003)`: on this PRNG `fold_in(key, i)` equals `split(key, 3)[i]` for i < 3, so `fold_in(key, 2)` reproduces the survival draws (and the UI-eligibility draws, `fold_in(key, 1)`, reproduce the health draws, which is harmless at `n_h = 1`). The Euler residuals off the endogenous points are reported, the largest (about 0.1 in the test economy) just above the borrowing limit at the age before the last. The continuity test asks aggregate assets to respond at every step of the r sweep as well: grid search is flat over r ± 1e-4 in the test economy.
 
 ## 1. Why
 

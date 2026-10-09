@@ -30,6 +30,10 @@ def encoded_pension_floor(config):
     return -floor / ref
 
 
+# Largest hours the solvers return (the JAX labour solves cap hours here).
+_HOURS_CAP = 64.0
+
+
 def lottery_np(grid, x):
     """Two-node lottery of a savings level x over an increasing grid.
 
@@ -210,6 +214,13 @@ class LifecycleConfig:
     # does not depend on assets, so the budget stays linear in a. 0 = off; the
     # benefit and transfer_floor are alternatives and are refused together.
     minimum_income: float = 0.0
+
+    # === Savings choice (EGM_PLAN.md section 4) ===
+    # 'grid': a' chosen among the asset nodes by grid search; 'egm': a' a
+    # continuous choice solved by the endogenous grid method. 'egm' needs a
+    # value function concave in a (no transfer floor, flat labour tax, no
+    # child costs) and log utility when trend_growth != 0.
+    savings_solver: str = 'grid'
 
     # === Lump-sum transfer (since 2026-10-07) ===
     # A uniform amount per adult received every period at every age, untaxed,
@@ -459,6 +470,26 @@ class LifecycleModelPerfectForesight:
         if self.minimum_income > 0.0 and float(self.transfer_floor) > 0.0:
             raise ValueError('transfer_floor and minimum_income are alternatives; '
                              'set one of them to zero')
+        self.savings_solver = str(config.savings_solver)
+        if self.savings_solver not in ('grid', 'egm'):
+            raise ValueError(f"savings_solver = {self.savings_solver!r}; use 'grid' or 'egm'")
+        self.egm = self.savings_solver == 'egm'
+        if self.egm:
+            if config.tax_progressive:
+                raise NotImplementedError(
+                    "savings_solver='egm' with tax_progressive: under the HSV schedule the "
+                    "marginal wage depends on income and the hours condition has no closed form")
+            if float(config.transfer_floor) > 0.0:
+                raise ValueError(
+                    "savings_solver='egm' with transfer_floor > 0: the floor makes the value "
+                    "flat in assets below a threshold, so it is not concave (use minimum_income)")
+            if (int(config.schooling_years) > 0
+                    and np.any(np.asarray(config.child_cost_profile) != 0.0)):
+                raise NotImplementedError("savings_solver='egm' with child costs")
+            if float(config.gamma) != 1.0 and float(config.trend_growth) != 0.0:
+                raise ValueError(
+                    "savings_solver='egm' with gamma != 1 and trend_growth != 0: with additive "
+                    "disutility of hours a balanced growth path needs log utility")
         self.bequest_lumpsum = config.bequest_lumpsum
         self.lump_sum_path = np.asarray(config.lump_sum_path, dtype=float)
         self.labor_supply = config.labor_supply
@@ -823,7 +854,11 @@ class LifecycleModelPerfectForesight:
                                self.tau_p_path[t], self.tau_k_path[t])
 
             # Backward induction
-            if parallel:
+            if self.egm:
+                dV = self._terminal_marginal_value()
+                for t in range(self.T - 2, self.current_age - 1, -1):
+                    dV = self._solve_period_egm(t, dV)
+            elif parallel:
                 self._solve_backward_parallel(verbose, n_jobs)
             else:
                 self._solve_backward_sequential(verbose)
@@ -1189,6 +1224,186 @@ class LifecycleModelPerfectForesight:
         else:
             c_fallback = max(budget / (1 + tau_c_t), 1e-10)
             return self.utility(c_fallback, self.gamma), 0, c_fallback, 1.0
+
+    # ------------------------------------------------------------------
+    # Endogenous grid method (docs/EGM_PLAN.md section 4)
+    # ------------------------------------------------------------------
+
+    def _budget_grid(self, t, is_retired):
+        """Resources before saving at one hour of work, (n_a, n_y, n_h, n_y),
+        at every state: the vectorised form of _compute_budget (flat tax, no
+        transfer floor, no child costs; the EGM solve refuses the others)."""
+        a = self.a_grid[:, None, None, None]
+        y = self.y_grid[None, :, None, None]
+        h = self.h_grid[None, None, :, None]
+        y_last = self.y_grid[None, None, None, :]
+        r_t, w_t = self.r_path[t], self.w_path[t]
+        tau_l, tau_p, tau_k = self.tau_l_path[t], self.tau_p_path[t], self.tau_k_path[t]
+        mult = self._alpha_mult
+        if is_retired:
+            lam = self.pension_avg_weight
+            base = (lam * self.wage_age_profile[self.retirement_age - 1] * y_last
+                    + (1 - lam) * self.mean_kappa_working * self.mean_y_employed)
+            pension = self.pension_replacement_path[t] * self.w_at_retirement * base * mult
+            pension = np.maximum(pension, pension_floor_at(self.pension_min_floor,
+                                                           self.pension_replacement_path[t]))
+            after_tax = np.broadcast_to(pension - tau_l * pension,
+                                        (1, self.n_y, self.n_h, self.n_y))
+            covered = np.ones((1, self.n_y, 1, 1), dtype=bool)
+        else:
+            kappa_t = self.wage_age_profile[t]
+            ui = np.where(y == 0.0, self.ui_replacement_rate * w_t * kappa_t * y_last * mult, 0.0)
+            wage = w_t * kappa_t * y * h * mult
+            gross = wage + ui
+            payroll = tau_p * wage
+            after_tax = gross - payroll - tau_l * (gross - payroll)
+            covered = (y == 0.0)
+        oop = (1 - self.kappa_path[t]) * self.m_grid[t][None, None, :, None]
+        budget = a + (r_t * a - tau_k * r_t * a) + after_tax - oop
+        if t == self.current_age and self.bequest_lumpsum > 0.0:
+            budget = budget + self.bequest_lumpsum
+        budget = budget + self.lump_sum_path[t]
+        if self.minimum_income > 0.0:
+            income = self.lump_sum_path[t] + after_tax - oop
+            budget = budget + np.where(covered, np.maximum(0.0, self.minimum_income - income), 0.0)
+        return budget
+
+    def _expected_next(self, t, X_next, is_retired):
+        """E_t X_{t+1}(a', s') given the current state, before survival,
+        (n_a', n_y, n_h, n_y_last): the expectation _solve_state_choice forms
+        for the value, for any array over next period's states."""
+        n_a, n_y, n_h = self.n_a, self.n_y, self.n_h
+        shape = (n_a, n_y, n_h, n_y)
+        P_h_t = self.P_h[t]
+        if is_retired:
+            ret = np.einsum('jk,akl->ajl', P_h_t, X_next[:, 0])
+            return np.broadcast_to(ret[:, None], shape)
+        EV = np.transpose(np.einsum('jk,aykl->ayjl', P_h_t, X_next), (3, 0, 2, 1)).copy()
+        p = self.ui_eligibility_prob
+        if p < 1.0 and t + 1 < self.retirement_age:
+            unemp = EV[:, :, :, 0].copy()
+            EV[1:, :, :, 0] = p * unemp[1:] + (1.0 - p) * unemp[0][None]
+        P_y_t = (self.P_y[t] if self.P_y_age_health
+                 else np.broadcast_to(self.P_y, (n_h, n_y, n_y)))
+        work = np.einsum('bij,iabj->iab', P_y_t, EV)
+        return np.broadcast_to(np.transpose(work, (1, 0, 2))[..., None], shape)
+
+    def _solve_labor_vec(self, c_guess, mw, tau_c_t, n_iters=60):
+        """_solve_labor_newton at every element of c_guess (MW > 0), bracketed
+        above at _HOURS_CAP hours as the JAX solves are."""
+        onetc = 1.0 + tau_c_t
+        g, phi, nu = self.gamma, self.phi, self.nu
+        mws = np.maximum(mw, 1e-12)
+        lo = np.maximum(0.0, 1.0 - c_guess * onetc / mws)
+        hi = np.ones_like(lo)
+        for _ in range(6):
+            c_hi = np.maximum(c_guess + mw * (hi - 1.0) / onetc, 1e-12)
+            hi = np.where(nu * hi ** phi * onetc - c_hi ** (-g) * mw < 0.0, 2.0 * hi, hi)
+        l = 0.5 * (lo + hi)
+        for _ in range(n_iters):
+            c_l = np.maximum(c_guess + mw * (l - 1.0) / onetc, 1e-12)
+            G = nu * l ** phi * onetc - c_l ** (-g) * mw
+            Gp = (nu * phi * np.maximum(l, 1e-12) ** (phi - 1.0) * onetc
+                  + g * c_l ** (-g - 1.0) * mw * (mw / onetc))
+            lo = np.where(G < 0.0, l, lo)
+            hi = np.where(G > 0.0, l, hi)
+            l = np.clip(l - G / Gp, lo, hi)
+        return np.maximum(l, 0.0)
+
+    def _terminal_marginal_value(self):
+        """R u'(c) / (1+tau_c) at the terminal age, from its consumption."""
+        t = self.T - 1
+        R = 1.0 + (1.0 - self.tau_k_path[t]) * self.r_path[t]
+        return R * self.c_policy[t] ** (-self.gamma) / (1.0 + self.tau_c_path[t])
+
+    def _egm_inputs(self, t):
+        """Resources at one hour of work (n_a, n_y, n_h, n_y), the gross
+        return R_t, the state-only part X of resources, the marginal after-tax
+        wage MW (zero unless employed at a working age with endogenous hours)
+        and survival, for the EGM step at age t."""
+        is_retired = t >= self.retirement_age
+        budget = self._budget_grid(t, is_retired)
+        R = 1.0 + (1.0 - self.tau_k_path[t]) * self.r_path[t]
+        X1 = budget[0] - R * self.a_grid[0]
+        y = self.y_grid[None, :, None, None]
+        h = self.h_grid[None, None, :, None]
+        mw = (self.w_path[t] * self.wage_age_profile[t] * y * h * self._alpha_mult
+              * (1.0 - self.tau_p_path[t]) * (1.0 - self.tau_l_path[t]))
+        if is_retired or not self.labor_supply:
+            mw = np.zeros_like(mw)
+        mw = np.where(y > 0.0, mw, 0.0)
+        surv = (np.ones(self.n_h) if self.survival_probs is None
+                else self.survival_probs[t])[None, None, :, None]
+        return budget, R, X1, mw, surv
+
+    def _egm_endogenous(self, t, dV_next):
+        """The endogenous points of age t: for each state and each a' node,
+        consumption from the Euler equation, hours from the intratemporal
+        condition and the assets a that lead to that choice. Returns (a_e,
+        c_e, l_e), each (n_a', n_y, n_h, n_y); dV_next is R u'(c)/(1+tau_c)
+        at t+1 on the grid."""
+        is_retired = t >= self.retirement_age
+        onetc = 1.0 + self.tau_c_path[t]
+        G = 1.0 + self.trend_growth
+        gamma = self.gamma
+        _, R, X1, mw, surv = self._egm_inputs(t)
+        EdV = np.maximum(self.beta * surv * self._expected_next(t, dV_next, is_retired), 1e-300)
+        c_e = (EdV * onetc / G) ** (-1.0 / gamma)
+        l_e = np.where(mw > 0.0,
+                       np.minimum((mw * c_e ** (-gamma) / (self.nu * onetc)) ** (1.0 / self.phi),
+                                  _HOURS_CAP),
+                       1.0)
+        a_e = (onetc * c_e + G * self.a_grid[:, None, None, None] - mw * (l_e - 1.0) - X1[None]) / R
+        return a_e, c_e, l_e
+
+    def _solve_period_egm(self, t, dV_next):
+        """Period t by the endogenous grid method (lifecycle_jax.
+        solve_period_egm_jax, vectorised over states). Writes V, a_next_policy,
+        c_policy and l_policy at t and returns R_t u'(c_t)/(1+tau_c_t)."""
+        is_retired = t >= self.retirement_age
+        onetc = 1.0 + self.tau_c_path[t]
+        G = 1.0 + self.trend_growth
+        gamma = self.gamma
+        a_grid = self.a_grid
+        n_a, n_y, n_h = self.n_a, self.n_y, self.n_h
+        budget, R, _, mw, surv = self._egm_inputs(t)
+        a_e, _, _ = self._egm_endogenous(t, dV_next)
+
+        # a'(a) on the nodes: interval of each node among the endogenous
+        # points (searchsorted side='right' - 1, vectorised over states).
+        xp = a_e.reshape(n_a, -1)                                   # (n_a', S)
+        x = a_grid[:, None]
+        i = np.clip((xp[None, :, :] <= x[:, :, None]).sum(axis=1) - 1, 0, n_a - 2)   # (n_a, S)
+        cols = np.arange(xp.shape[1])[None, :]
+        x0, x1 = xp[i, cols], xp[i + 1, cols]
+        f0, f1 = a_grid[i], a_grid[i + 1]
+        a_pol = f0 + (x - x0) * ((f1 - f0) / (x1 - x0))
+        a_pol = np.where(x <= xp[0][None, :], a_grid[0], a_pol)
+        a_pol = np.clip(a_pol, a_grid[0], a_grid[-1]).reshape(n_a, n_y, n_h, n_y)
+
+        c_guess = (budget - G * a_pol) / onetc
+        if self.labor_supply and not is_retired:
+            mwb = np.broadcast_to(mw, c_guess.shape)
+            l_pol = np.where(mwb > 0.0, self._solve_labor_vec(c_guess, mwb, self.tau_c_path[t]), 1.0)
+            c_pol = c_guess + mw * (l_pol - 1.0) / onetc
+            v_labor = np.where(mwb > 0.0, self.nu * l_pol ** (1 + self.phi) / (1 + self.phi), 0.0)
+        else:
+            l_pol = np.ones_like(c_guess)
+            c_pol = c_guess
+            v_labor = 0.0
+        c_pol = np.maximum(c_pol, 1e-10)
+
+        EV = self.beta * surv * self._expected_next(t, self.V[t + 1], is_retired)
+        k_lo, omega = lottery_np(a_grid, a_pol)
+        EV_at = (omega * np.take_along_axis(EV, k_lo, axis=0)
+                 + (1.0 - omega) * np.take_along_axis(EV, k_lo + 1, axis=0))
+        u = np.log(c_pol) if gamma == 1.0 else c_pol ** (1.0 - gamma) / (1.0 - gamma)
+
+        self.V[t] = u - v_labor + EV_at
+        self.a_next_policy[t] = a_pol
+        self.c_policy[t] = c_pol
+        self.l_policy[t] = l_pol
+        return R * c_pol ** (-gamma) / onetc
 
     def _solve_backward_sequential(self, verbose=False):
         """Solve backward induction sequentially."""

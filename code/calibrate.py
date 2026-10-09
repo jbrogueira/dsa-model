@@ -1636,6 +1636,10 @@ def build_lifecycle_config(raw, w=None):
         if config_key == 'pop_growth':
             continue
         kwargs[config_key] = v
+    # Household solution method: household.savings_solver ('grid' or 'egm').
+    solver = raw.get('household', {}).get('savings_solver')
+    if solver is not None:
+        kwargs['savings_solver'] = solver
     kwargs['edu_params'] = edu_params
     kwargs['r_path'] = np.full(T, r)
     kwargs['w_path'] = np.full(T, w)

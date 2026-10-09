@@ -8,6 +8,8 @@ All tests use a minimal OLG configuration (T=5, T_transition=4, n_sim=20)
 to keep runtime fast while exercising every code path.
 """
 
+import os
+
 import numpy as np
 from lifecycle_perfect_foresight import LifecycleConfig
 from olg_transition import OLGTransition
@@ -40,8 +42,10 @@ RETIREMENT    = 4
 
 def _make_olg(survival_probs=None, eta_g=0.0, K_g_initial=0.0,
               govt_spending_path=None, I_g_path=None):
-    """Minimal OLGTransition for fast tests."""
+    """Minimal OLGTransition for fast tests. DSA_SAVINGS_SOLVER=egm solves the
+    savings choice by the endogenous grid method."""
     config = LifecycleConfig(
+        savings_solver=os.environ.get('DSA_SAVINGS_SOLVER', 'grid'),
         T=T_LIFECYCLE,
         beta=0.96,
         gamma=2.0,
@@ -752,8 +756,12 @@ class TestHouseholdCache:
         assert olg.birth_cohort_solutions is None
         run(tau_l_path=bp['tau_l_path'] + 0.01)
         run(n_sim=N_SIM + 1)
-        run(transfer_floor=0.05)
-        assert len(calls) == 4 and olg._household_cache_hits == 1
+        n_calls = 3
+        if os.environ.get('DSA_SAVINGS_SOLVER', 'grid') == 'grid':
+            # the endogenous grid method refuses a transfer floor
+            run(transfer_floor=0.05)
+            n_calls = 4
+        assert len(calls) == n_calls and olg._household_cache_hits == 1
 
     def test_cache_is_bounded(self):
         bp = _make_base_paths()

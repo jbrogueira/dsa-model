@@ -2813,6 +2813,7 @@ class TestBaseYearCrossSection:
                                    cohort_survival=None,
                                    cohort_retirement=None,
                                    cohort_pension_index=None,
+                                   cohort_unemployment_index=None,
                                    # The country config selects exact aggregation;
                                    # these tests compare simulated panels.
                                    aggregation='simulation')

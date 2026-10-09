@@ -305,6 +305,44 @@ def compute_budget_jax(
 # Vectorised single-period solve
 # ---------------------------------------------------------------------------
 
+def _expected_next_jax(X_next, P_h_t, P_y_t, P_y, P_y_age_health, y_grid,
+                       ui_eligibility_prob, is_retired):
+    """E_t X_{t+1}(a', s') given the current state, before survival:
+    (n_a', n_y, n_h, n_y_last), indexed by the asset choice a' and the
+    current (y, h, y_last). X_next is any array over next period's states
+    (the value, its derivative in a); every operator here is linear in it.
+    """
+    n_a, n_y, n_h, _ = X_next.shape
+    EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, X_next)
+    EV_h_t = jnp.transpose(EV_h, (3, 0, 2, 1))     # (y_last' = y, a', h, y')
+
+    # Eligibility for UI at the start of a spell: an employed household that
+    # becomes unemployed carries y_last' = y with probability p and
+    # y_last' = 0 (no UI) otherwise.
+    p_elig = ui_eligibility_prob
+    unemp_next = EV_h_t[:, :, :, 0]                                   # (y, a', h)
+    mixed = p_elig * unemp_next + (1.0 - p_elig) * unemp_next[0][None]
+    draw = (y_grid > 0.0)[:, None, None] & (p_elig < 1.0)
+    EV_h_t = EV_h_t.at[:, :, :, 0].set(jnp.where(draw, mixed, unemp_next))
+
+    EV_working_3d = jnp.where(
+        P_y_age_health,
+        jnp.einsum('bij,iabj->iab', P_y_t, EV_h_t),
+        jnp.einsum('ij,iabj->iab', P_y, EV_h_t),
+    )
+
+    EV_working = jnp.transpose(EV_working_3d, (1, 0, 2))
+    EV_working = jnp.broadcast_to(EV_working[..., None], (n_a, n_y, n_h, n_y))
+
+    # Retired continuation: the pension depends on y_last, frozen at
+    # retirement, so X_next is read at each state's own y_last (last axis).
+    X_next_ret = X_next[:, 0, :, :]                                   # (n_a, n_h_next, n_y_last)
+    EV_retired_3d = jnp.einsum('jk,akl->ajl', P_h_t, X_next_ret)       # (n_a, n_h, n_y_last)
+    EV_retired = jnp.broadcast_to(EV_retired_3d[:, None, :, :], (n_a, n_y, n_h, n_y))
+
+    return jnp.where(is_retired, EV_retired, EV_working)
+
+
 def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
                      hours_table=None):
     """
@@ -435,35 +473,8 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
         v_labor = 0.0
 
     # 3. Expected continuation value
-    EV_h = jnp.einsum('jk,aykl->ayjl', P_h_t, V_next)
-    EV_h_t = jnp.transpose(EV_h, (3, 0, 2, 1))     # (y_last' = y, a', h, y')
-
-    # Eligibility for UI at the start of a spell: an employed household that
-    # becomes unemployed carries y_last' = y with probability p and
-    # y_last' = 0 (no UI) otherwise.
-    p_elig = ui_eligibility_prob
-    unemp_next = EV_h_t[:, :, :, 0]                                   # (y, a', h)
-    mixed = p_elig * unemp_next + (1.0 - p_elig) * unemp_next[0][None]
-    draw = (y_grid > 0.0)[:, None, None] & (p_elig < 1.0)
-    EV_h_t = EV_h_t.at[:, :, :, 0].set(jnp.where(draw, mixed, unemp_next))
-
-    EV_working_3d = jnp.where(
-        P_y_age_health,
-        jnp.einsum('bij,iabj->iab', P_y_t, EV_h_t),
-        jnp.einsum('ij,iabj->iab', P_y, EV_h_t),
-    )
-
-    EV_working = jnp.transpose(EV_working_3d, (1, 0, 2))
-    EV_working = jnp.broadcast_to(EV_working[..., None], (n_a, n_y, n_h, n_y))
-
-    # Retired continuation: the pension depends on y_last, frozen at
-    # retirement, so V_next is read at each state's own y_last (last axis).
-    # Until 2026-10-02 it was read at y_last index 0 for every retiree.
-    V_next_ret = V_next[:, 0, :, :]                                   # (n_a, n_h_next, n_y_last)
-    EV_retired_3d = jnp.einsum('jk,akl->ajl', P_h_t, V_next_ret)       # (n_a, n_h, n_y_last)
-    EV_retired = jnp.broadcast_to(EV_retired_3d[:, None, :, :], (n_a, n_y, n_h, n_y))
-
-    EV = jnp.where(is_retired, EV_retired, EV_working)
+    EV = _expected_next_jax(V_next, P_h_t, P_y_t, P_y, P_y_age_health, y_grid,
+                            ui_eligibility_prob, is_retired)
 
     survival_broadcast = survival_t[None, None, :, None]
     EV = EV * survival_broadcast
@@ -497,6 +508,148 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
     l_pol_t = jnp.where(jnp.isfinite(best_val), best_l, 1.0)
 
     return V_t, a_pol_t, c_pol_t, l_pol_t
+
+
+def _interp_endogenous(x, xp, fp):
+    """a'(x) on the nodes x from the endogenous pairs (xp, fp), xp increasing:
+    fp[0] below xp[0] (the borrowing limit binds), linear between the pairs,
+    linear extrapolation from the last two pairs above xp[-1], clipped to
+    [fp[0], fp[-1]] (the asset grid)."""
+    n = xp.shape[0]
+    i = jnp.clip(jnp.searchsorted(xp, x, side='right') - 1, 0, n - 2)
+    slope = (fp[i + 1] - fp[i]) / (xp[i + 1] - xp[i])
+    y = fp[i] + (x - xp[i]) * slope
+    y = jnp.where(x <= xp[0], fp[0], y)
+    return jnp.clip(y, fp[0], fp[-1])
+
+
+def solve_period_egm_jax(V_next, dV_next, period_params, model_params, alpha_mult=1.0,
+                         hours_table=None):
+    """Solve a non-terminal period by the endogenous grid method.
+
+    Same inputs as solve_period_jax plus dV_next, the derivative of next
+    period's value in a on the grid, R_{t+1} u'(c_{t+1}) / (1+tau_c_{t+1}). For
+    each state and each a' on the grid the Euler equation gives c, the hours
+    condition gives l in closed form, and the budget gives the assets a that
+    lead to that choice. a'(a) on the grid nodes is interpolated in these
+    pairs; (c, l) at each node are then solved from the budget at that a'
+    jointly with the hours condition, the problem the grid search solves at a
+    given a'. Requires a value function concave in a: no transfer floor, a
+    flat labour tax (refused by the callers).
+
+    Returns (V_t, a_pol_t, c_pol_t, l_pol_t, dV_t), each (n_a, n_y, n_h, n_y),
+    a_pol_t the level of a'.
+    """
+    (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+     pension_replacement_t, P_h_t, P_y_t, is_retired,
+     survival_t, child_cost_t, in_schooling_t,
+     bequest_lumpsum_t, kappa_wage_t, kappa_wage_ret, lump_sum_t) = period_params
+
+    (a_grid, y_grid, h_grid, m_grid, P_y, w_at_retirement,
+     ui_replacement_rate, kappa, beta, gamma,
+     pension_min_floor, tax_progressive, tax_kappa_hsv, tax_eta,
+     transfer_floor, minimum_income, education_subsidy_rate, P_y_age_health,
+     labor_supply, nu, phi, trend_growth,
+     pension_avg_weight, mean_kappa_working, mean_y_employed,
+     ui_eligibility_prob) = model_params
+
+    n_a, n_y, n_h = a_grid.shape[0], y_grid.shape[0], h_grid.shape[0]
+    onetc = 1.0 + tau_c_t
+    G = 1.0 + trend_growth
+
+    # Resources before saving at one hour of work; linear in a with slope R.
+    budget = compute_budget_jax(
+        a_grid, y_grid, h_grid, m_grid,
+        P_y, P_h_t,
+        r_t, w_t, w_at_retirement,
+        tau_l_t, tau_p_t, tau_k_t,
+        pension_replacement_t,
+        ui_replacement_rate, kappa,
+        is_retired,
+        pension_min_floor=pension_min_floor,
+        tax_progressive=tax_progressive,
+        tax_kappa_hsv=tax_kappa_hsv,
+        tax_eta=tax_eta,
+        transfer_floor=transfer_floor,
+        child_cost_t=child_cost_t,
+        education_subsidy_rate=education_subsidy_rate,
+        in_schooling=in_schooling_t,
+        bequest_lumpsum=bequest_lumpsum_t,
+        kappa_wage_t=kappa_wage_t,
+        kappa_wage_ret=kappa_wage_ret,
+        pension_avg_weight=pension_avg_weight,
+        mean_kappa_working=mean_kappa_working,
+        mean_y_employed=mean_y_employed,
+        alpha_mult=alpha_mult,
+        lump_sum_t=lump_sum_t,
+        minimum_income=minimum_income,
+    )
+    R_t = 1.0 + (1.0 - tau_k_t) * r_t
+    X1 = budget[0] - R_t * a_grid[0]                     # (n_y, n_h, n_y), state-only
+
+    # Marginal after-tax wage of an employed working-age household; zero for
+    # the unemployed (y = 0), for retirees and with exogenous hours.
+    y_4d = y_grid[None, :, None, None]
+    h_4d = h_grid[None, None, :, None]
+    work_employed = (~is_retired) & (y_4d > 0.0)
+    mw = (w_t * kappa_wage_t * y_4d * h_4d * alpha_mult
+          * (1.0 - tau_p_t) * (1.0 - tau_l_t))
+    mw = jnp.where(work_employed & labor_supply, mw, 0.0)          # (1, n_y, n_h, 1)
+
+    # 1-2. Expected marginal value and the Euler equation at each a' node.
+    surv = survival_t[None, None, :, None]
+    EdV = jnp.maximum(beta * surv * _expected_next_jax(
+        dV_next, P_h_t, P_y_t, P_y, P_y_age_health, y_grid, ui_eligibility_prob, is_retired),
+        1e-300)                                                      # (n_a', n_y, n_h, n_y)
+    c_e = (EdV * onetc / G) ** (-1.0 / gamma)
+
+    # 3. Hours from the intratemporal condition, closed form.
+    l_e = jnp.minimum((mw * c_e ** (-gamma) / (nu * onetc)) ** (1.0 / phi), _HOURS_CAP)
+    l_e = jnp.where(mw > 0.0, l_e, 1.0)
+
+    # 4. Endogenous assets: the budget at (c, l, a') solved for a.
+    a_next_nodes = a_grid[:, None, None, None]
+    a_e = (onetc * c_e + G * a_next_nodes - mw * (l_e - 1.0) - X1[None]) / R_t
+
+    # 5-6. a'(a) on the grid nodes, state by state.
+    S = n_y * n_h * n_y
+    xp = jnp.moveaxis(a_e.reshape(n_a, S), 0, 1)                    # (S, n_a')
+    a_pol = jax.vmap(_interp_endogenous, in_axes=(None, 0, None))(a_grid, xp, a_grid)
+    a_pol = jnp.moveaxis(a_pol, 0, 1).reshape(n_a, n_y, n_h, n_y)
+
+    # (c, l) at each node from the budget at a', jointly with the hours
+    # condition (the grid search's problem at that a').
+    c_guess = (budget - G * a_pol) / onetc
+    if labor_supply:
+        if hours_table is None:
+            hours_table = hours_table_log_utility(nu, phi)
+        l_star = lax.cond(
+            gamma == 1.0,
+            lambda c: solve_labor_log_jax(c, mw, nu, phi, tau_c_t, hours_table),
+            lambda c: solve_labor_robust_jax(c, mw, nu, phi, gamma, tau_c_t),
+            c_guess,
+        )
+        l_pol = jnp.where(mw > 0.0, l_star, 1.0)
+        c_pol = c_guess + mw * (l_pol - 1.0) / onetc
+        v_labor = jnp.where(mw > 0.0, labor_disutility_jax(l_pol, nu, phi), 0.0)
+    else:
+        l_pol = jnp.ones_like(c_guess)
+        c_pol = c_guess
+        v_labor = 0.0
+    c_pol = jnp.maximum(c_pol, 1e-10)
+
+    # 7. Value: the continuation is linear in a' between nodes.
+    EV = beta * surv * _expected_next_jax(
+        V_next, P_h_t, P_y_t, P_y, P_y_age_health, y_grid, ui_eligibility_prob, is_retired)
+    k_lo, omega = lottery_jax(a_grid, a_pol)
+    EV_at = (omega * jnp.take_along_axis(EV, k_lo, axis=0)
+             + (1.0 - omega) * jnp.take_along_axis(EV, k_lo + 1, axis=0))
+    u = lax.cond(gamma == 1.0, jnp.log,
+                 lambda c: c ** (1.0 - gamma) / (1.0 - gamma), c_pol)
+    V_t = u - v_labor + EV_at
+
+    dV_t = R_t * c_pol ** (-gamma) / onetc
+    return V_t, a_pol, c_pol, l_pol, dV_t
 
 
 def _solve_terminal_period_jax(
@@ -612,9 +765,13 @@ def solve_lifecycle_jax(
     lump_sum_path=None,
     ui_eligibility_prob=1.0,
     minimum_income=0.0,
+    egm=False,
 ):
     """
-    Full backward induction using jax.lax.scan.
+    Full backward induction using jax.lax.scan. With egm (static) the
+    non-terminal periods are solved by the endogenous grid method
+    (solve_period_egm_jax) and the scan carries the derivative of the value
+    in a with the value; otherwise by grid search over the asset nodes.
 
     Returns
     -------
@@ -738,7 +895,7 @@ def solve_lifecycle_jax(
     # The hours table depends on (nu, phi) only: built once, used at every age.
     hours_table = hours_table_log_utility(nu, phi) if labor_supply else None
 
-    def scan_fn(V_next, period_params_slice):
+    def scan_fn(carry, period_params_slice):
         (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
          pension_replacement_t, P_h_t, P_y_t, is_retired,
          survival_t, child_cost_t, in_schooling_t, m_grid_t,
@@ -748,20 +905,31 @@ def solve_lifecycle_jax(
         model_params_t = (model_params[:3] + (m_grid_t,) + model_params[4:7] + (kappa_t,)
                           + model_params[8:-1] + (ui_elig_t,))
 
+        period_t = (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
+                    pension_replacement_t, P_h_t, P_y_t, is_retired,
+                    survival_t, child_cost_t, in_schooling_t, bequest_t, kappa_wage_t,
+                    kappa_wage_ret, lump_sum_t)
+        if egm:
+            V_next, dV_next = carry
+            V_t, a_pol_t, c_pol_t, l_pol_t, dV_t = solve_period_egm_jax(
+                V_next, dV_next, period_t, model_params_t,
+                alpha_mult=alpha_mult, hours_table=hours_table)
+            return (V_t, dV_t), (V_t, a_pol_t, c_pol_t, l_pol_t)
         V_t, a_pol_t, c_pol_t, l_pol_t = solve_period_jax(
-            V_next,
-            (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
-             pension_replacement_t, P_h_t, P_y_t, is_retired,
-             survival_t, child_cost_t, in_schooling_t, bequest_t, kappa_wage_t,
-             kappa_wage_ret, lump_sum_t),
-            model_params_t,
+            carry, period_t, model_params_t,
             alpha_mult=alpha_mult,
             hours_table=hours_table,
         )
         return V_t, (V_t, a_pol_t, c_pol_t, l_pol_t)
 
+    if egm:
+        # Derivative of the terminal value in a: R u'(c) / (1+tau_c).
+        R_T = 1.0 + (1.0 - tau_k_path[T - 1]) * r_path[T - 1]
+        init = (V_T, R_T * c_pol_T ** (-gamma) / (1.0 + tau_c_path[T - 1]))
+    else:
+        init = V_T
     V_final, (V_scan, a_pol_scan, c_pol_scan, l_pol_scan) = lax.scan(
-        scan_fn, V_T, period_params_stack
+        scan_fn, init, period_params_stack
     )
 
     # Reverse to natural order and append terminal period
@@ -782,7 +950,7 @@ def solve_lifecycle_jax(
 _solve_lifecycle_jax_jit = jax.jit(
     solve_lifecycle_jax,
     static_argnames=('T', 'retirement_age', 'tax_progressive', 'schooling_years',
-                     'labor_supply'),
+                     'labor_supply', 'egm'),
 )
 
 # Batched solve: vmap over cohorts with shared grids/transitions.
@@ -812,8 +980,10 @@ _SOLVE_IN_AXES = (
         0,                       # lump_sum_path (per-cohort)
         None,                    # ui_eligibility_prob (shared scalar)
         None,                    # minimum_income (shared scalar)
+        None,                    # egm (static)
 )
-_SOLVE_STATIC = ('T', 'retirement_age', 'tax_progressive', 'schooling_years', 'labor_supply')
+_SOLVE_STATIC = ('T', 'retirement_age', 'tax_progressive', 'schooling_years', 'labor_supply',
+                 'egm')
 _solve_lifecycle_jax_batched = jax.jit(
     jax.vmap(solve_lifecycle_jax, in_axes=_SOLVE_IN_AXES),
     static_argnames=_SOLVE_STATIC,
@@ -1638,7 +1808,7 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
                          T, retirement_age, current_age, tax_progressive,
                          schooling_years, labor_supply, P_y_age_health, n_alpha, chunk,
                          lump_stack=None, P_y_stack=None, ui_eligibility_prob=1.0,
-                         minimum_income=0.0):
+                         minimum_income=0.0, egm=False):
     """Body of LifecycleModelJAX.cross_section_exact, compiled as one call.
 
     Solves every cohort once per fixed-effect node, as _cross_section does,
@@ -1676,6 +1846,7 @@ def _cross_section_exact(surv, alpha_mults, rows, initial_dist, alpha_grid,
             ls_c,
             ui_eligibility_prob,
             minimum_income,
+            egm,
         )
         return a_b, c_b, l_b
 
@@ -1730,7 +1901,7 @@ _cross_section_exact_jit = jax.jit(
     _cross_section_exact,
     static_argnames=('T', 'retirement_age', 'current_age', 'tax_progressive',
                      'schooling_years', 'labor_supply', 'P_y_age_health',
-                     'n_alpha', 'chunk'),
+                     'n_alpha', 'chunk', 'egm'),
 )
 
 
@@ -1796,7 +1967,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
                    T, retirement_age, current_age, n_sim, tax_progressive,
                    schooling_years, labor_supply, P_y_age_health, n_alpha, chunk,
                    lump_stack=None, P_y_stack=None, ui_eligibility_prob=1.0,
-                   minimum_income=0.0):
+                   minimum_income=0.0, egm=False):
     """Body of LifecycleModelJAX.cross_section_batched, compiled as one call.
 
     Solves every cohort once per fixed-effect node (vmapped over the survival
@@ -1835,6 +2006,7 @@ def _cross_section(surv, sim_inputs, alpha_mults, rows,
             ls_c,
             ui_eligibility_prob,
             minimum_income,
+            egm,
         )
         return a_b, c_b, l_b
 
@@ -1894,7 +2066,7 @@ _cross_section_jit = jax.jit(
     _cross_section,
     static_argnames=('T', 'retirement_age', 'current_age', 'n_sim', 'tax_progressive',
                      'schooling_years', 'labor_supply', 'P_y_age_health',
-                     'n_alpha', 'chunk'),
+                     'n_alpha', 'chunk', 'egm'),
 )
 
 
@@ -1954,6 +2126,7 @@ class LifecycleModelJAX:
         self.tax_eta = float(config.tax_eta)
         self.transfer_floor = float(config.transfer_floor)
         self.minimum_income = float(self._np_model.minimum_income)
+        self.egm = bool(self._np_model.egm)
         self.bequest_lumpsum = float(config.bequest_lumpsum)
         self.lump_sum_path = jnp.array(self._np_model.lump_sum_path)
         self.education_subsidy_rate = float(config.education_subsidy_rate)
@@ -2058,6 +2231,7 @@ class LifecycleModelJAX:
                 lump_sum_path=self.lump_sum_path,
                 ui_eligibility_prob=self.ui_eligibility_prob,
                 minimum_income=self.minimum_income,
+                egm=self.egm,
             )
             V_list.append(np.asarray(V))
             a_list.append(np.asarray(a_next_policy))
@@ -2431,6 +2605,7 @@ class LifecycleModelJAX:
             P_y_stack=self._P_y_stack(P_y_stack, C),
             ui_eligibility_prob=self.ui_eligibility_prob,
             minimum_income=self.minimum_income,
+            egm=self.egm,
         )
         return _exact_panel_to_numpy(panel, mass)
 
@@ -2492,6 +2667,7 @@ class LifecycleModelJAX:
             P_y_stack=self._P_y_stack(P_y_stack, C),
             ui_eligibility_prob=self.ui_eligibility_prob,
             minimum_income=self.minimum_income,
+            egm=self.egm,
         )
         return tuple(np.asarray(x) for x in out)
 

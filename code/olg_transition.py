@@ -616,6 +616,7 @@ class OLGTransition:
                 ls_c,
                 ref.ui_eligibility_prob,
                 ref.minimum_income,
+                ref.egm,
             )
 
         batched_arrays = (w_at_rets, r_paths, w_paths,

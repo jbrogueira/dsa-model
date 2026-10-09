@@ -32,6 +32,9 @@
       "source_report": "output/calibration/calibration_GR_20261008_152734.md"
     }
   },
+  "household": {
+    "savings_solver": "egm"
+  },
   "prices": {
     "r": 0.04,
     "r_B": 0.02,

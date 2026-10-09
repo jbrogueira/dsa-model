@@ -6,7 +6,13 @@ paths and the shock period, so reference_runs() runs on the code of e80b119
 too. `python policy_reference_case.py OUT.npz` writes its arrays; the stored
 file tests_data/policy_reference_e80b119.npz was written by the code of
 e80b119 (POLICY_EXERCISES_PLAN.md section 4, test 11).
+
+With the environment variable DSA_SAVINGS_SOLVER=egm the households solve
+the savings choice by the endogenous grid method and receive a minimum income
+benefit of 0.05 in place of the consumption floor (EGM_PLAN.md section 4), so
+the tests that use this economy run under the method.
 """
+import os
 import sys
 
 import numpy as np
@@ -16,6 +22,7 @@ from olg_transition import OLGTransition
 
 T, J_R, T_TR, N_POST = 8, 5, 10, 2
 KAPPA0 = 0.6
+SAVINGS_SOLVER = os.environ.get('DSA_SAVINGS_SOLVER', 'grid')
 
 
 def lifecycle_config(**kw):
@@ -31,6 +38,8 @@ def lifecycle_config(**kw):
         edu_params={'medium': {'mu_y': 0.0, 'sigma_y': 0.1, 'rho_y': 0.95,
                                'sigma_alpha': 0.0, 'unemployment_rate': 0.12}},
     )
+    if SAVINGS_SOLVER == 'egm':
+        base.update(savings_solver='egm', transfer_floor=0.0, minimum_income=0.05)
     base.update(kw)
     return LifecycleConfig(**base)
 
