@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>Debt Sustainability Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: a single reading column for a methods note, equations set off in full width. */
+:root {
+  --bg: #fbfcfd;
+  --fg: #1d232b;
+  --muted: #5b6672;
+  --rule: #d8dee5;
+  --accent: #2c5d8a;
+  --panel: #eef2f6;
+  --font-body: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-head: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181d; --fg: #e3e7ec; --muted: #9aa5b1; --rule: #2e353e; --accent: #8db8e0; --panel: #1c222a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14181d; --fg: #e3e7ec; --muted: #9aa5b1; --rule: #2e353e; --accent: #8db8e0; --panel: #1c222a;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 1.125rem; line-height: 1.6; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-inline: 16px; padding-block: 2.5rem 4rem; }
+header { display: grid; gap: .4rem; border-bottom: 1px solid var(--rule); padding-bottom: 1.25rem; margin-bottom: 1.75rem; }
+.eyebrow { font-family: var(--font-head); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-head); font-weight: 600; font-size: 1.75rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-head); font-weight: 600; font-size: 1.2rem; margin: 2.5rem 0 .5rem; text-wrap: balance; color: var(--accent); }
+h3 { font-family: var(--font-head); font-weight: 500; font-size: 1rem; margin: 1.5rem 0 .25rem; }
+p { margin: .6rem 0; }
+ul, ol { padding-left: 1.3rem; margin: .5rem 0; }
+li { margin: .35rem 0; }
+code { font-family: var(--font-mono); font-size: .85em; background: var(--panel); padding: .05em .3em; border-radius: 3px; }
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .25rem; }
+.tldr { background: var(--panel); border-radius: 6px; padding: 1rem 1.2rem; margin-top: 2.5rem; }
+.tldr strong { font-family: var(--font-head); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: .25rem; }
+.note { font-size: .95rem; color: var(--muted); }
+mjx-container[display="true"] { margin: .6rem 0 !important; }
+.table-box { overflow-x: auto; margin: 1rem 0; }
+table { border-collapse: collapse; font-size: .95rem; font-variant-numeric: tabular-nums; min-width: 100%; }
+th, td { padding: .4rem .7rem; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font-family: var(--font-head); font-weight: 500; font-size: .8rem; color: var(--muted); }
+th:first-child, td:first-child { text-align: left; }
+@media print { .table-box { overflow: visible; } th, td { white-space: normal; } }
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">DSA to LSA · model notes · 9 October 2026</span>
+  <h1>Testing debt sustainability in the model</h1>
+  <p class="note">Greek OLG small open economy. Stocks and flows are detrended per-capita values unless stated as ratios to GDP.</p>
+</header>
+
+<h2>1. Debt dynamics</h2>
+<p>Notation. \(t\) and \(m\) index years. \(B_t\) is government debt at the start of year \(t\), \(PD_t\) the primary deficit in year \(t\), and \(y_t\) output. \(r_{B,t}\) is the real sovereign rate paid in year \(t\). \(\Gamma_t=(1+g)(1+n_t)\) is the growth factor of the trend, with \(g\) the growth rate of labour-augmenting productivity and \(n_t\) the growth rate of the population aged 25–99 from \(t\) to \(t+1\). The law of motion of debt is</p>
+<div class="eq">\[ \Gamma_t B_{t+1} = (1+r_{B,t})\,B_t + PD_t . \]</div>
+<p>Debt is predetermined. Solving forward to a horizon \(N\) gives an identity for any path,</p>
+<div class="eq">\[ B_t=\sum_{m=t}^{N} q_{t,m}\,\big(-PD_m\big)+q_{t,N}\,\Gamma_N B_{N+1},\qquad q_{t,m}=\frac{\prod_{j=t}^{m-1}\Gamma_j}{\prod_{j=t}^{m}(1+r_{B,j})}, \]</div>
+<p>where \(q_{t,m}\) is the factor that discounts a detrended per-capita flow of year \(m\) to year \(t\). The intertemporal budget constraint requires the terminal term to vanish as \(N\to\infty\). It restricts future primary balances given the inherited debt; it does not determine \(B_t\).</p>
+
+<h3>Ratio form</h3>
+<p>Let \(d_t=\Gamma_t B_{t+1}/y_t\) be debt at the end of year \(t\) over GDP of year \(t\), \(pb_t=-PD_t/y_t\) the primary surplus over GDP, and \(g^Y_t\) GDP growth, with \(1+g^Y_t=\Gamma_{t-1}\,y_t/y_{t-1}\). GDP growth differs from \(\Gamma_{t-1}-1\) while detrended per-capita output moves along the transition. Dividing the law of motion by \(y_t\) gives the standard recursion</p>
+<div class="eq">\[ d_t=d_{t-1}\,\frac{1+r_{B,t}}{1+g^Y_t}-pb_t . \]</div>
+<p>Subtracting \(d_{t-1}\) from both sides,</p>
+<div class="eq">\[ d_t-d_{t-1}=\frac{r_{B,t}-g^Y_t}{1+g^Y_t}\,d_{t-1}-pb_t . \]</div>
+<p>The first term on the right is the primary surplus that holds the debt ratio constant, the debt-stabilising balance</p>
+<div class="eq">\[ pb^{stab}_t(d)=\frac{r_{B,t}-g^Y_t}{1+g^Y_t}\,d . \]</div>
+<p>The change in the debt ratio is then</p>
+<div class="eq">\[ d_t-d_{t-1}=pb^{stab}_t(d_{t-1})-pb_t , \]</div>
+<p>so the debt ratio rises whenever the primary surplus falls short of the debt-stabilising balance.</p>
+
+<h3>Balanced growth path</h3>
+<p>On the balanced growth path every detrended per-capita variable is constant. This requires a stable population (constant \(n\) and an unchanging age distribution, so constant survival rates and constant growth of entering cohorts), constant prices (the return on capital \(r\), the wage \(w\) and \(r_B\)), constant policies (tax rates, the pension replacement rate, the health coverage rate \(\kappa\), the retirement age, spending shares of GDP) and a stationary distribution of households over assets and income states. A constant \(n_t\) alone is not sufficient. On this path \(1+g^Y=\Gamma\). Variables without a time subscript below are balanced-growth values. \(T\) is the first year of the balanced growth path, 2194 in the model: the population is stationary with \(n=0\) from that year, and in the baseline detrended output and the primary balance change by less than \(10^{-5}\) of output a year from about 2190.</p>
+
+<h2>2. A test that does not depend on a fiscal rule</h2>
+<p>A fiscal rule raises taxes or cuts spending when debt rises. An example is \(\tau_t=\bar\tau+\phi\,(d_{t-1}-d^*)\), where \(\tau_t\) is a tax rate, \(\bar\tau\) its base value, \(d^*\) a target debt ratio and \(\phi>0\) the response of the rate to debt. Bohn (1998) shows that a primary surplus that rises with the debt ratio is sufficient for the intertemporal budget constraint to hold; a bounded debt ratio requires the surplus to rise by more than \((r_B-g^Y)/(1+g^Y)\) per unit of debt. If \(\phi\) is large enough and the surplus the rule requires stays within what taxes can raise, the rule keeps the debt ratio bounded whatever the reform. A test that imposes a rule then finds sustainable every reform whose required surplus stays within that range, and when the rule fails, it does not say how far the reform is from what taxes can finance.</p>
+<p>We ask instead whether a tax path that keeps debt bounded exists. Let \(P\) be the policy reform under assessment, defined by the pension rule, \(\kappa\), unemployment insurance (UI), government consumption \(G\), public investment \(I_g\) and defence spending. Debt is sustainable under \(P\) if and only if at least one path of distortionary tax rates that is constant from \(T-75\) on keeps the debt ratio from growing without bound. The restriction to paths that settle 75 years, one lifetime, before \(T\) ensures that every household alive at \(T\) has faced constant rates all its life, so the economy is on its balanced growth path from \(T\).</p>
+
+<h2>3. The debt limit</h2>
+<h3>The interest rate on the debt stock</h3>
+<p>Let \(\bar r_t\) be the average real interest rate paid in year \(t\) on the debt carried into year \(t\), so that \(r_{B,t}=\bar r_t\) in section 1. Each year a share \(\mu_t\) of the stock is refinanced at the rate on new borrowing, and the rest keeps the rate at which it was issued:</p>
+<div class="eq">\[ \bar r_t=(1-\mu_t)\,\bar r_{t-1}+\mu_t\big(r^m_t+s(d_{t-1})\big),\qquad d_t=d_{t-1}\,\frac{1+\bar r_t}{1+g^Y_t}-pb_t . \]</div>
+<p>\(r^m_t\) is the real rate on new borrowing at low debt, and \(s(\cdot)\) is the spread on new borrowing, non-negative, non-decreasing in the debt ratio and zero for negative debt. The state of public finances in a year is the pair \((d_t,\bar r_t)\): the debt ratio and the rate the stock carries. With \(\mu_t=1\) the whole stock is repriced every year and the rate depends on the debt ratio alone.</p>
+<p>In the model, \(\mu_t\) is amortisation over the previous year's debt in the Commission's projection (0.055–0.08 in 2026–32, 0.14 in 2040, 0.21 in 2060), held at its 2051–60 mean of 0.215 after 2060. \(r^m_t\) is chosen so that with \(s\equiv0\) the recursion reproduces the baseline sovereign rate path exactly. The concessional terms of the official loans are then carried by \(\bar r_{2025}=-0.98\%\) and its slow repricing. With a positive spread, refinanced debt pays the spread at the current debt ratio on top of the rate the baseline implies, including along the baseline debt path. The spread is a fixed function of the debt ratio: it does not depend on the reform or on the distance to the limit, as the risk premium does in Bi (2012), and it does not pass through to the return on capital \(r\).</p>
+
+<h3>On the balanced growth path</h3>
+<p>With constant \(\mu\), \(r^m\), \(g^Y\) and surplus, the rate on the stock settles at \(\bar r=r^m+s(d)\) and the debt-stabilising balance is</p>
+<div class="eq">\[ pb^{stab}(d)=\frac{r^m+s(d)-g^Y}{1+g^Y}\,d . \]</div>
+<p>Let \(pb^{\max}\) be the largest primary surplus, as a share of GDP, that constant distortionary tax rates can raise on the balanced growth path under \(P\), and assume it is positive. Suppose \(pb^{stab}\) increases in \(d\), which holds for \(d>0\) when \(r^m\ge g^Y\). Where \(pb^{stab}(d)>pb^{\max}\), debt rises at any constant tax rates, which raises the rate on refinanced debt and widens the gap, so debt grows without bound. The balanced-growth limit \(\bar d\) solves</p>
+<div class="eq">\[ pb^{\max}=\frac{r^m+s(\bar d)-g^Y}{1+g^Y}\,\bar d . \]</div>
+<p class="note">Illustration with assumed values, not model output: \(s(d)=0.03\,\max(d-0.6,\,0)\) (3 basis points per percentage point of debt above 60% of GDP, close to Laubach's (2009) estimate of 3–4 basis points per percentage point of projected debt for US five-year-ahead ten-year forward rates), \(r^m-g^Y=0.3\) percentage points and \(pb^{\max}=8\%\) give \(\bar d\approx1.9\).</p>
+
+<h3>Along the transition</h3>
+<p>Before \(T\), the surplus in a year depends on the whole tax path, through saving and hours. Let \(\tau\) be a path of tax rates from \(t_s\) on, the year the reform takes effect, that is constant from \(T-75\) on, and \(pb_t(\tau)\) the surplus it produces in year \(t\). The surplus path does not depend on the debt ratio: the spread affects only the interest the government pays, while households earn \(r\) and firms face \(r\). Given the inherited state \((d_{t_s-1},\bar r_{t_s-1})\), the two equations above then determine the debt path.</p>
+<p>The debt ratio a year later increases in both the debt ratio and the rate on the stock, and a higher debt ratio raises the rate on refinanced debt. A higher inherited debt ratio therefore gives a higher debt ratio in every later year. The initial debt ratios from which debt stays bounded form an interval, and its upper end is the limit along \(\tau\),</p>
+<div class="eq">\[ \bar d_{t_s-1}(\tau;\bar r_{t_s-1})=\max\big\{d:\ \text{debt starting from }(d,\bar r_{t_s-1})\text{ under }\tau\text{ stays bounded}\big\}. \]</div>
+<p>The limit is higher when the surpluses along \(\tau\) are higher, when GDP growth is higher, when \(r^m\) is lower and when the inherited rate \(\bar r_{t_s-1}\) is lower. The last effect is how the terms of the existing stock enter: debt carried at a low rate that is refinanced slowly can be higher than debt carried at market rates.</p>
+
+<h3>The test</h3>
+<p>The debt limit of the reform is the largest limit over tax paths,</p>
+<div class="eq">\[ \bar d_{t_s-1}(P)=\sup_{\tau}\ \bar d_{t_s-1}(\tau;\bar r_{t_s-1}), \]</div>
+<p>and \(d_{t_s-1}\), the ratio at the end of the year before the reform, is the debt it inherits. Assume the supremum is attained by some tax path, as it is on any finite set of paths. Debt is sustainable under \(P\) if and only if</p>
+<div class="eq">\[ d_{t_s-1}\le \bar d_{t_s-1}(P) . \]</div>
+<p>If the inherited debt ratio is at or below the limit, the tax path that attains the limit keeps debt bounded, because debt starting lower stays below the debt path that starts at the limit. If it is above the limit of every tax path, debt grows without bound under each of them. In the model, \(t_s=2026\) and the inherited state is \(d_{2025}=1.46\) and \(\bar r_{2025}=-0.98\%\).</p>
+<p>Section 5 searches over a smaller set of tax paths. The largest limit within that set is at or below \(\bar d_{t_s-1}(P)\). A debt ratio below it is therefore sustainable, while a debt ratio above it may still be sustainable under a tax path outside the set.</p>
+<p>Fiscal space is \(\bar d_{t_s-1}(P)-d_{t_s-1}\). The fiscal cost of a reform is the fall in fiscal space relative to the baseline, including the behavioural response to the financing. The difference between two lower bounds does not bound this fall in either direction, so a fiscal cost computed on a restricted set of tax paths is the cost within that set.</p>
+
+<h2>4. Debt-inelastic rate, and the role of the balanced growth path</h2>
+<h3>Debt-inelastic rate</h3>
+<p>With \(s\equiv0\), the rate on the stock follows the baseline path \(r_{B,t}\) whatever the debt, and the limit has a closed form:</p>
+<div class="eq">\[ \bar d=pb^{\max}\,\frac{1+g^Y}{r_B-g^Y},\qquad \bar d_{t_s-1}(\tau)=\sum_{m=t_s}^{\infty} D_{t_s-1,m}\,pb_m(\tau),\qquad D_{t,m}=\prod_{k=t+1}^{m}\frac{1+g^Y_k}{1+r_{B,k}} , \]</div>
+<p>where \(D_{t,m}\) discounts a ratio to GDP of year \(m\) to year \(t\). The limit is the present value of the surpluses, and the test compares initial debt with the largest such present value (Bi 2012; D'Erasmo, Mendoza and Zhang 2016).</p>
+<ul>
+  <li>The balanced growth path carries a large weight. There \(r_B=2\%\) and \(\Gamma=1+g^Y=1.017\) (population growth is zero), so \((1+g^Y)/(r_B-g^Y)\approx339\): a permanent surplus of 1% of GDP is worth 339% of GDP. In the baseline, the discount factors \(D_{2025,m}\) sum to about 140 over 2026–2202 and to about 185 thereafter, so the years after 2202 carry 57% of the weight that a constant surplus ratio receives. The illustration gives \(\bar d\approx27\), about nineteen times the 2025 debt ratio of 1.46.</li>
+  <li>With \(s\equiv0\), if the terminal \(r_B\) is below \(g^Y\), or equal to it with \(pb^{\max}\ge0\), there is no limit and the intertemporal budget constraint does not bind (Blanchard 2019). With \(r_B=g^Y\) and \(pb^{\max}<0\), debt grows without bound.</li>
+</ul>
+
+<h3>Dependence on the balanced growth path</h3>
+<p>With a debt-inelastic rate the answer depends on the balanced-growth assumption. The 2025 limit is the present value of the surpluses to 2202 plus the 2202 limit discounted to 2025 with the factor \(D_{2025,2202}\approx0.55\). The 2202 limit is itself the balanced-growth surplus times about 339. The table computes these limits for two surplus paths along the baseline tax path (\(\Delta=0\)): the baseline primary surplus, and the baseline surplus plus 2% of GDP in every year. The last two columns recompute the 2025 limit with the 2202 limit halved and raised by half.</p>
+<div class="table-box"><table>
+  <thead><tr><th>Surplus path</th><th>Limit in 2202, \(\bar d_{2202}\)</th><th>Limit in 2025, \(\bar d_{2025}\)</th><th>\(\bar d_{2025}\) with \(\bar d_{2202}\) halved</th><th>\(\bar d_{2025}\) with \(\bar d_{2202}\) raised by half</th></tr></thead>
+  <tbody>
+    <tr><td>Baseline</td><td>18.1</td><td>15.2</td><td>10.3</td><td>20.1</td></tr>
+    <tr><td>Baseline + 2% of GDP</td><td>24.9</td><td>21.7</td><td>14.9</td><td>28.5</td></tr>
+  </tbody>
+</table></div>
+<p>With a debt-elastic rate, debt above the limit raises the rate on refinanced debt, which raises debt further, so it diverges within a few decades. Surpluses in the distant future then matter little for the limit. Along the baseline tax path, with the illustrative spread and the refinancing shares above:</p>
+<div class="table-box"><table>
+  <thead><tr><th>Surpluses</th><th>Baseline</th><th>After 2202 \(\times0.5\)</th><th>After 2202 \(\times1.5\)</th><th>After 2100 \(\times0.5\)</th><th>After 2060 \(\times0.5\)</th></tr></thead>
+  <tbody><tr><td>\(\bar d_{2025}\)</td><td>1.364</td><td>1.364</td><td>1.364</td><td>1.354</td><td>1.281</td></tr></tbody>
+</table></div>
+<p>The 2025 limit is set mainly by the surpluses before 2060. A refinancing share after 2060 of 0.05 instead of 0.215 gives 1.379 instead of 1.364.</p>
+
+<h3>Sensitivity to the spread</h3>
+<p>The level of the limit is sensitive to the spread and to the speed of repricing. Along the baseline tax path the 2025 limit ranges from 1.19 to 2.00 across the spreads below with gradual repricing, so whether the 2025 debt ratio of 1.46 lies below the limit depends on the spread's slope and on the debt ratio at which it starts. Full repricing (\(\mu_t=1\)) lowers the limit by 0.12–0.29. In every case, changing the surpluses after 2202 by half moves the 2025 limit by at most 0.002.</p>
+<div class="table-box"><table>
+  <thead><tr><th>Spread \(s(d)\)</th><th>Gradual repricing</th><th>Gradual, surpluses + 2 pp</th><th>Full repricing</th><th>Full, surpluses + 2 pp</th></tr></thead>
+  <tbody>
+    <tr><td>\(0.01\max(d-0.6,0)\)</td><td>2.00</td><td>2.71</td><td>1.84</td><td>2.42</td></tr>
+    <tr><td>\(0.03\max(d-0.6,0)\)</td><td>1.36</td><td>1.86</td><td>1.23</td><td>1.60</td></tr>
+    <tr><td>\(0.05\max(d-0.6,0)\)</td><td>1.19</td><td>1.60</td><td>1.06</td><td>1.35</td></tr>
+    <tr><td>\(0.03\max(d-0.4,0)\)</td><td>1.24</td><td>1.74</td><td>1.09</td><td>1.47</td></tr>
+    <tr><td>\(0.03\max(d-0.9,0)\)</td><td>1.58</td><td>2.06</td><td>1.45</td><td>1.81</td></tr>
+  </tbody>
+</table></div>
+<p class="note">Baseline surpluses, GDP growth and sovereign rates from the report baseline (<code>output/calibration_growth/baseline_paths.npz</code>); refinancing shares from <code>data/dsa_projection_GR.npz</code>. These are limits along the baseline tax path, not the bound of section 5. The spread applies to refinanced debt; in these paths the government runs primary surpluses throughout.</p>
+
+<h2>5. Computation</h2>
+<p>The numerical exercise computes the lower bound of section 3 for one set of policies, the baseline or a reform \(P\). The set of tax paths searched is permanent changes in the labour income tax rate,</p>
+<div class="eq">\[ \tau_{l,m}=\tau^{base}_{l,m}+\Delta\quad\text{for } m\ge t_s=2026, \]</div>
+<p>where \(\tau_{l,m}\) is the rate in year \(m\), \(\tau^{base}_{l,m}\) its baseline value and \(\Delta\) the change. Households learn of the change in 2026. Policies other than the labour tax rate and the reform follow their baseline paths. For each \(\Delta\):</p>
+<ol>
+  <li><strong>Surpluses.</strong> One transition of the model gives the primary surplus \(pb_m(\Delta)\) and GDP growth \(g^Y_m(\Delta)\) for 2026–2202. Labour supply, saving and every budget line respond to the tax change. With \(r\) exogenous and the output tax and public capital on their baseline paths, the wage and the capital–labour ratio do not change. A permanent \(\Delta\) is constant from \(T-75\) on, so the economy is on its balanced growth path from \(T=2194\). After 2202 all paths are held at their 2202 values.</li>
+  <li><strong>Limit in 2025.</strong> Starting from \(\bar r_{2025}=-0.98\%\), the two equations of section 3 with \(pb_m(\Delta)\), \(g^Y_m(\Delta)\), \(\mu_m\) and \(r^m_m\) give the debt path from any \(d_{2025}\). The limit \(\bar d_{2025}(\Delta)\) is the largest \(d_{2025}\) for which this path stays bounded, found by bisection, with the paths continued for 1,500 years beyond 2202.</li>
+</ol>
+<p>The bound on sustainable debt is the largest of these limits,</p>
+<div class="eq">\[ \underline{d}_{2025}(P)=\max_{\Delta}\ \bar d_{2025}(\Delta)\ \le\ \bar d_{2025}(P), \]</div>
+<p>found on a grid of \(\Delta\) refined around the maximum, about 10–12 transitions. Debt is sustainable under \(P\) if the 2025 debt ratio, 1.46, is at or below \(\underline{d}_{2025}(P)\). Repeating the exercise for the baseline and for a reform gives the fiscal cost of the reform within the permanent-\(\Delta\) family as the fall in the bound.</p>
+<p>Only step 1 solves the model. The spread changes only the interest the government pays, so step 2, and the same step for a different spread or refinancing share, is a calculation on the saved surplus paths. In the code, step 1 is <code>run_debt_financed</code> with the change passed as <code>delta_tau_l_path</code>; step 2 and the grid over \(\Delta\) are new. A transition takes about 106 seconds on the A100.</p>
+<p>Permanent changes may give a loose bound. With a debt-elastic rate the 2025 limit depends mainly on the surpluses before 2060, so tax paths that raise more in those years may give a higher limit. A second family, with one change for 2026–2035 and another from 2036, tests this on a two-dimensional grid.</p>
+
+<h3>References</h3>
+<ul class="note">
+  <li>Bi, H. (2012). Sovereign default risk premia, fiscal limits, and fiscal policy. <em>European Economic Review</em> 56(3), 389–410.</li>
+  <li>Blanchard, O. (2019). Public debt and low interest rates. <em>American Economic Review</em> 109(4), 1197–1229.</li>
+  <li>Bohn, H. (1998). The behavior of U.S. public debt and deficits. <em>Quarterly Journal of Economics</em> 113(3), 949–963.</li>
+  <li>D'Erasmo, P., Mendoza, E. G. and Zhang, J. (2016). What is a sustainable public debt? In J. B. Taylor and H. Uhlig (eds.), <em>Handbook of Macroeconomics</em>, vol. 2, 2493–2597. Elsevier.</li>
+  <li>Laubach, T. (2009). New evidence on the interest rate effects of budget deficits and debt. <em>Journal of the European Economic Association</em> 7(4), 858–885.</li>
+</ul>
+
+<div class="tldr">
+  <strong>Summary</strong>
+  Debt is sustainable under a policy reform if and only if the debt ratio it inherits is at or below the limit \(\bar d_{t_s-1}(P)\), the largest ratio from which some tax path keeps debt from growing without bound. The state of public finances is the debt ratio and the rate the stock carries: new borrowing pays a spread that rises with debt, and the stock reprices as it is refinanced. The numerical exercise searches over permanent changes in the labour tax rate, which gives a lower bound on the limit, so passing it is sufficient. With a debt-inelastic rate the limit is the present value of surpluses and depends heavily on the balanced growth path. With a debt-elastic rate it depends mainly on the surpluses before 2060, and its level depends on the spread.
+</div>
+</div>
+
+<script>
+window.MathJax = { tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] }, svg: { fontCache: 'global' } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+
+</body>
+</html>
