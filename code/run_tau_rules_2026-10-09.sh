@@ -11,6 +11,9 @@
 #      calibration (SMM and A_tfp, rate held) and the rate alternate until the
 #      rate settles
 #
+# SKIP_CALIB=1 skips the scale loop and rule B, for a configuration already
+# calibrated at the pin whose rule-B baseline is in output/calibration_growth_tau_pinned.
+#
 # Usage (from code/, inside the venv):
 #   nohup bash run_tau_rules_2026-10-09.sh > output/tau_rules_2026-10-09.log 2>&1 &
 set -uo pipefail
@@ -48,17 +51,21 @@ baseline() {  # baseline CFG OUTDIR LOG
   grep -q "wrote baseline_paths.npz" "$3" || { echo "[$(stamp)] TAU RULES FAILED: baseline $1"; exit 1; }
 }
 
+if [ "${SKIP_CALIB:-0}" = "1" ]; then echo "[$(stamp)] step 1 and rule B skipped (SKIP_CALIB=1)"; else
 echo "[$(stamp)] === 1. scale loop with the constant transfer ==="
 SMM_EXTRA="$SMM" NORM_EXTRA="$NORM" bash run_scale_loop.sh "$CFG" 2>&1 | tee output/scale_loop_tau_rules.log
 grep -q "SCALE LOOP DONE" output/scale_loop_tau_rules.log || { echo "[$(stamp)] TAU RULES FAILED: scale loop"; exit 1; }
+fi
 
 echo "[$(stamp)] === 2A. linear ramp to the 2060 rate ==="
 variant calibration_input_GR_tau_ramp.json debt_ramp
 baseline calibration_input_GR_tau_ramp.json output/calibration_growth_tau_ramp output/fill_report_tau_ramp.log
 
+if [ "${SKIP_CALIB:-0}" != "1" ]; then
 echo "[$(stamp)] === 2B. the pin throughout ==="
 variant calibration_input_GR_tau_pinned.json pinned_throughout
 baseline calibration_input_GR_tau_pinned.json output/calibration_growth_tau_pinned output/fill_report_tau_pinned.log
+fi
 for d in tau_ramp tau_pinned; do
   ( cd reports && python3 -u baseline_figures.py --config "../calibration_input_GR_$d.json" \
       --outdir "../output/calibration_growth_$d" 2>&1 ) | tail -3
