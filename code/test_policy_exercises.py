@@ -244,6 +244,29 @@ def test_cross_section_weights_and_aggregates():
     np.testing.assert_allclose(ext['mean_assets'], olg.K_path[:prc.T_TR], rtol=1e-10)
 
 
+def test_extract_by_period_chunks():
+    """Panels computed a few periods at a time give the same outputs, welfare
+    inputs included, as all periods at once."""
+    olg, bp = _baseline('jax')
+    _run(olg, bp, name='b', shock_period=T_S)
+    periods = list(range(prc.T_TR))
+    full = ds.extract(olg, periods, t_s=T_S, newborn_bps=[T_S + 1])
+    part = ds.extract(olg, periods, t_s=T_S, newborn_bps=[T_S + 1], period_chunk=2)
+    for k in ('weight_sum', 'mean_assets', 'mean_consumption'):
+        np.testing.assert_allclose(part[k], full[k], rtol=1e-12)
+    assert part['inequality'] == full['inequality']
+    for gp, gf in zip(part['age_groups'], full['age_groups']):
+        for grp in gf:
+            for k, v in gf[grp].items():
+                np.testing.assert_array_equal(gp[grp][k], v)   # NaN-equal
+    for grp in ('alive', 'newborn'):
+        assert part['welfare'][grp].keys() == full['welfare'][grp].keys()
+        for key, rec in full['welfare'][grp].items():
+            for f in ('V', 'mass', 'income'):
+                if f in rec:
+                    np.testing.assert_array_equal(part['welfare'][grp][key][f], rec[f])
+
+
 def test_welfare_zero_when_counterfactual_is_baseline():
     """Test 10: lambda = 0 for a zero shock in t_s (JAX, deduplicated models)."""
     olg, bp = _baseline('jax')

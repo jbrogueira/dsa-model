@@ -525,7 +525,7 @@ def _extract(res):
     if not np.array_equal(np.asarray(economy.Y_path), np.asarray(res.cf_macro['Y'])):
         raise RuntimeError(f'{res.scenario.name}: the last run is not the reported one')
     t1 = time.time()
-    ext = dstat.extract(economy, PERIODS, t_s=T_S, newborn_bps=NEWBORN_BPS)
+    ext = dstat.extract(economy, PERIODS, t_s=T_S, newborn_bps=NEWBORN_BPS, period_chunk=7)
     print(f"      distribution and value functions extracted in {time.time() - t1:.1f}s")
     return ext
 

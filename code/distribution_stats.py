@@ -424,7 +424,7 @@ def quintile_cev(base, cf, base_cs_ts, education_shares, W_ts, n_q=5):
 # One call per run
 # ---------------------------------------------------------------------------
 
-def extract(olg, periods, t_s=None, newborn_bps=(), check_aggregates=True):
+def extract(olg, periods, t_s=None, newborn_bps=(), check_aggregates=True, period_chunk=None):
     """Distributional outputs of the last run of *olg*.
 
     Returns {'periods': [...], 'inequality': [...], 'age_groups': [...],
@@ -432,19 +432,42 @@ def extract(olg, periods, t_s=None, newborn_bps=(), check_aggregates=True):
     (which must be in *periods*) the welfare inputs under 'welfare' (value
     functions and masses, not serialisable) and the baseline income of the
     t_s cross-section by state under the same keys.
+
+    *period_chunk* computes the state-level panels for that many periods at a
+    time (default: all at once). The results are the same; the panels of all
+    cohorts for all periods take tens of GB at production size.
     """
     periods = [int(t) for t in periods]
-    panels = cohort_panels(olg, periods)
     out = {'periods': periods, 'inequality': [], 'age_groups': [], 'hours': [],
            'weight_sum': [], 'mean_assets': [], 'mean_consumption': []}
-    for r, t in enumerate(periods):
-        cs = cross_section(olg, panels, r, t)
-        out['inequality'].append(inequality(cs))
-        out['age_groups'].append(age_group_means(cs))
-        out['hours'].append(aggregate_hours(cs))
-        out['weight_sum'].append(float(cs['weight'].sum()))
-        out['mean_assets'].append(float(np.sum(cs['weight'] * cs['assets'])))
-        out['mean_consumption'].append(float(np.sum(cs['weight'] * cs['consumption'])))
+    if t_s is not None and abs(float(getattr(olg.lifecycle_config, 'gamma', 1.0)) - 1.0) > 1e-12:
+        print("      note: the consumption-equivalent measure assumes log utility; "
+              "no welfare outputs at gamma != 1")
+        t_s = None
+    n = int(period_chunk or len(periods))
+    for c0 in range(0, len(periods), n):
+        chunk = periods[c0:c0 + n]
+        panels = cohort_panels(olg, chunk)
+        for r, t in enumerate(chunk):
+            cs = cross_section(olg, panels, r, t)
+            out['inequality'].append(inequality(cs))
+            out['age_groups'].append(age_group_means(cs))
+            out['hours'].append(aggregate_hours(cs))
+            out['weight_sum'].append(float(cs['weight'].sum()))
+            out['mean_assets'].append(float(np.sum(cs['weight'] * cs['assets'])))
+            out['mean_consumption'].append(float(np.sum(cs['weight'] * cs['consumption'])))
+        if t_s is not None and int(t_s) in chunk:
+            r_ts = chunk.index(int(t_s))
+            wel = welfare_inputs(olg, panels, int(t_s), r_ts, newborn_bps)
+            for key, rec in wel['alive'].items():
+                rows, alive, vals, mass, share, model = panels[key]
+                _check_state_order(model, vals[r_ts])
+                rec['income'] = _derived(vals[r_ts], model, rec['j'])['disp_income']
+                # A copy: the slice would keep the panel batch alive.
+                rec['mass'] = np.array(rec['mass'])
+            wel['W_ts'] = np.asarray(olg._aggregation_weights(int(t_s)), dtype=float)
+            out['welfare'] = wel
+        del panels
     # Under simulated aggregation the transition's means carry sampling error
     # that the exact cross-section does not.
     if check_aggregates and getattr(olg, 'aggregation', 'simulation') == 'exact':
@@ -456,19 +479,8 @@ def extract(olg, periods, t_s=None, newborn_bps=(), check_aggregates=True):
             gap = float(np.max(np.abs(got - ref) / np.maximum(np.abs(ref), 1e-12)))
             if gap > 1e-6:
                 raise RuntimeError(f"cross-section {name} differs from the transition's by {gap:.2e}")
-    if t_s is not None and abs(float(getattr(olg.lifecycle_config, 'gamma', 1.0)) - 1.0) > 1e-12:
-        print("      note: the consumption-equivalent measure assumes log utility; "
-              "no welfare outputs at gamma != 1")
-        t_s = None
-    if t_s is not None:
-        r_ts = periods.index(int(t_s))
-        wel = welfare_inputs(olg, panels, int(t_s), r_ts, newborn_bps)
-        for key, rec in wel['alive'].items():
-            rows, alive, vals, mass, share, model = panels[key]
-            _check_state_order(model, vals[r_ts])
-            rec['income'] = _derived(vals[r_ts], model, rec['j'])['disp_income']
-        wel['W_ts'] = np.asarray(olg._aggregation_weights(int(t_s)), dtype=float)
-        out['welfare'] = wel
+    if t_s is not None and 'welfare' not in out:
+        raise ValueError(f"t_s = {t_s} is not one of the periods")
     return out
 
 
