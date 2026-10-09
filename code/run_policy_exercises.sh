@@ -24,5 +24,8 @@ python3 eval_fiscal_results.py --input "$OUT/fiscal_results.json" \
     --config calibration_input_GR.json 2>&1 | tee "$OUT/eval.log"
 
 stamp "=== 3. report figures and tables ==="
-python3 reports/fiscal_figures.py --results "$OUT/fiscal_results.json" 2>&1 | tee -a "$OUT/run.log"
+# The report shows the health cut under debt and permanent labour-tax
+# financing only; the labour tax over 2026-30 stays in the results file.
+python3 reports/fiscal_figures.py --results "$OUT/fiscal_results.json" \
+    --drop health:tax_financed_window 2>&1 | tee -a "$OUT/run.log"
 stamp "POLICY EXERCISES DONE"
