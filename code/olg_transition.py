@@ -1,5 +1,6 @@
 import sys
 import time
+import gc
 import hashlib
 import pickle
 from collections import OrderedDict
@@ -2857,6 +2858,12 @@ class OLGTransition:
                     print("\nHousehold inputs unchanged from an earlier call: "
                           "reusing its cohort age means.")
             else:
+                # The cohort models of the previous call are not read by this
+                # solve; dropping them first keeps one set in memory, not two
+                # (a tax search runs one transition per evaluation).
+                self.birth_cohort_solutions = None
+                self.birth_cohort_later = {}
+                gc.collect()
                 # Solve all cohort problems with perfect foresight of r and w
                 self.solve_cohort_problems(
                     r_path_full, w_path_full,
