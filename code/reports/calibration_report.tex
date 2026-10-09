@@ -13,7 +13,7 @@
 
 \sisetup{table-align-text-post=false}
 \newcommand{\rundir}{../output/calibration_growth}
-\newcommand{\fiscaldir}{../output/fiscal_2026-10-08f}
+\newcommand{\fiscaldir}{../output/policy_2026-10-09}
 % Fallbacks so the template compiles before any run exists; header.tex
 % overrides them with the values of the run \rundir points at.
 \newcommand{\runlabel}{\np}\newcommand{\gval}{\np}\newcommand{\nval}{\np}
@@ -576,72 +576,84 @@ end of the year over the same year's output}\vspace{-2pt}
 \noindent\footnotesize
 Design:
 \begin{itemize}
-\item Two permanent spending increases start in 2023, each worth 2\% of
-  output. Neither enters utility.
-\item Government consumption $G$ rises by 2\% of each year's output.
-\item Public investment $I_g$ rises by 2\% of 2023 output and stays there in
-  detrended per-capita terms, because public capital enters production and
-  an increase set as a share of output would depend on its own effect.
+\item Two policy changes, each unanticipated. Households learn of the change
+  in 2026 and re-optimise from the wealth they hold that year under the
+  baseline. Through 2025 the economy follows the baseline.
+\item Public investment $I_g$ rises from 2026 by 2\% of baseline output in
+  2025 and stays at that level in detrended per-capita terms (1.88\% of
+  2026 output). Public capital enters production, so an increase set as a
+  share of output would depend on its own effect.
+\item Public health spending is cut over 2026--30 and returns to the
+  baseline in 2031 (design below).
 \item Debt financing: the primary deficit is borrowed abroad at $r_B$ and no
   tax changes.
-\item Labour-tax financing: $\tau_l$ rises by a constant $\Delta\tau_l$ from
-  2023, set so that at the start of 2202, the last year of the horizon,
-  either the debt ratio or net foreign assets over output are back at their
-  baseline values.
+\item Labour-tax financing: $\tau_l$ changes by a constant $\Delta\tau_l$
+  from 2026, set so that the debt ratio at the end of the horizon is back at
+  the baseline's. For the health cut a second rule changes $\tau_l$ over
+  2026--30 only, with the same target.
+\item The labour-income tax also applies to pensions, so a change in
+  $\tau_l$ reaches retired households.
 \item The output-tax path, the lump-sum transfer per adult, the unemployment
   path and the stock-flow adjustment stay at the baseline's; the EU transfer
   stays at the baseline's share of each run's own output; education is
   priced at each run's own wage from the base-year level.
-\item The policy is announced in 2023. The wealth each cohort holds that year
-  is the same as in the baseline.
 \item Net foreign assets are household foreign assets less government debt.
 \item The cumulative multiplier is the sum of the output response over the
-  sum of the spending increase, both as aggregate flows over the horizon.
-\item In Table~\ref{tab:fiscal}, debt is at the end of the year over the
-  year's output. The experiments solve their own baseline under the same
-  rule, with the report baseline's rate from 2026, 5.56\%. Its debt ratio
-  is 89\% in 2070, 58\% in 2080, $-38$\% in 2100 and $-649$\% in 2200, the
-  rate staying at its 2026 value while the balance rises; its net foreign
-  assets are 6.8 times output in 2200. Without a terminal adjustment the economy is
-  not at rest at the end of the horizon: the government's net asset position
-  is still growing, and the evaluator flags the change in the debt ratio
-  over 2070--80 ($-31$ points) and the terminal drift of debt, net foreign
-  assets and pension assets (1--2\%). The 2023--32 column is the mean
-  deviation over those years.
+  sum of the spending change, both as aggregate flows. For the health cut
+  the spending line is government health spending plus the means-tested
+  transfers.
+\item Welfare is the consumption-equivalent variation: the percentage change
+  in consumption at every date and state of the baseline that gives the
+  household the expected lifetime utility it has under the policy (log
+  utility). Cohorts alive in 2026 are evaluated at their 2026 state, later
+  cohorts at entry. The quintiles are those of disposable income in 2026
+  under the baseline.
+\item Inequality is measured on the exact cross-section of each year:
+  disposable income (labour income, pensions, unemployment benefits,
+  capital income, the lump sum and the means-tested transfer, net of
+  taxes), consumption, labour income of the employed and wealth.
+\item Debt is at the end of the year over the year's output. The experiments
+  solve their own baseline under the same rule, with the report baseline's
+  output-tax rate from 2026, 5.56\%. Its debt ratio is 89\% in 2070, 58\%
+  in 2080, $-38$\% in 2100 and $-649$\% in 2200, the rate staying at its
+  2026 value while the balance rises; its net foreign assets are 6.8 times
+  output in 2200. Without a terminal adjustment the economy is not at rest
+  at the end of the horizon, and the evaluator flags the change in the debt
+  ratio over 2070--80 ($-31$ points).
 \end{itemize}
 
-\noindent Government consumption (Figure~\ref{fig:G}):
+\noindent Public investment (Table~\ref{tab:fiscal-Ig}, Figures~\ref{fig:Ig}
+and~\ref{fig:Ig-welfare}):
 \begin{itemize}
-\item Debt-financed, it leaves output, consumption and hours exactly where
-  they were. It enters neither utility nor production, and the debt is held
-  abroad, so no household budget changes. The multiplier is zero.
-\item The debt ratio climbs to 190\% of output in 2060 and is $-133$\% in
-  2200, 516 points above the baseline's.
-\item Bringing the ratio back to the baseline's by 2202 takes
-  $\Delta\tau_l=4.32$ percentage points. Hours and output fall 0.7\% in 2023
-  and 0.3\% on average over 2023--32, and are within 0.1\% of the baseline
-  from 2046. Consumption is 3.6\% below the baseline in 2023 and 4.8\%
-  below in 2100.
-\item Returning net foreign assets to their baseline ratio instead takes 4.49
-  points and leaves the debt ratio 20 points below the baseline's in 2200.
-\end{itemize}
-
-\noindent Public investment (Figure~\ref{fig:Ig}):
-\begin{itemize}
-\item Public capital per person rises from 0.70 of base-year output to 0.98
-  in 2050 and 1.04 in 2100.
-\item Debt-financed, output is 1.0\% below the baseline in 2023, because
-  households expect higher wages and work less now. It is 0.4\% above the
-  baseline on average over 2023--32, 2.6\% in 2050 and 3.0\% in 2100.
-  Consumption is 1.0\% above the baseline in 2023 and 2.9\% above in 2100.
-\item The cumulative multiplier is 0.22 over 2023--32 and 1.46 over the
-  horizon.
-\item The debt ratio reaches 180\% in 2060 and is $-232$\% in 2200, 417
-  points above the baseline's.
-\item The labour-tax rules need 3.46 points (debt target) and 3.60 points
-  (net-foreign-asset target). Output is 1.4\% below the baseline in 2023
-  under both and 2.6--2.7\% above in 2050. Consumption ends 1.0\% and 1.2\%
-  below in 2100.
+\item Public capital rises from 0.70 of base-year output to 0.97 in 2050
+  and 1.04 in 2100.
+\item Debt-financed, output is 0.8\% below the baseline in 2026, because
+  households expect higher wages and work less now. It is above the
+  baseline from 2029, 2.5\% above in 2050 and 2.9\% in 2100. Consumption is
+  0.9\% above the baseline in 2026, 1.6\% in 2050 and 2.9\% in 2100.
+\item The multiplier is $-0.44$ in 2026, 0.22 cumulated over 2026--35 and
+  1.45 over the horizon.
+\item The debt ratio is 174\% in 2060 and 177\% in 2070, against 103\% and
+  89\% in the baseline.
+\item Returning the debt ratio to the baseline's takes $\Delta\tau_l=3.44$
+  percentage points. Output is 1.8\% below the baseline in 2026 and 2.5\%
+  above in 2050. Consumption is 1.5\% below in 2026, 2.5\% below in 2030
+  and 1.0\% below in 2100. The cumulative multiplier is 0.07 over 2026--35
+  and 1.47 over the horizon.
+\item Debt-financed, the cohorts alive in 2026 gain 0.86\% on average. The
+  oldest cohorts are unaffected and the gain rises with the year of birth:
+  0.4\% for those born in 1965, 2.1\% for those entering in 2026 and 3.0\%
+  for those entering in 2056. The gain is 0.7\% in the bottom two
+  quintiles and 1.0\% in the top two.
+\item Under labour-tax financing the cohorts alive in 2026 lose 2.56\% on
+  average. The loss is largest for the oldest, whose pensions are taxed at
+  the higher rate and who do not live to see the higher wages: 4.5\% for
+  those born in 1935, 1.8\% for those entering in 2027 and 1.0\% for those
+  entering in 2056. By quintile the loss falls from 3.0\% at the bottom to
+  2.1\% at the top.
+\item Inequality changes little. The Gini of disposable income rises by at
+  most 0.13 points; the wealth Gini rises by 0.3 (debt) and 0.5 (labour
+  tax) points around 2030.
 \end{itemize}
 
 \noindent Temporary cut in public health spending (design):
@@ -665,7 +677,7 @@ Design:
   to 2010. Both are held from 2026 to 2030 and return to their baseline
   values in 2031. The five-year mean matches the cumulative cut in the
   data; the 2014 change held for five years would overstate it by about
-  60\%.
+  60\%. This gives $\kappa$ = 0.546 (from 0.631) and $m$ scaled by 0.879.
 \item Household health spending is measured as current health expenditure
   less government and compulsory schemes, the same concept as the
   household share in the calibration (total health spending less public
@@ -676,10 +688,43 @@ Design:
   outcomes. Two further runs, one cutting $\kappa$ alone and one cutting $m$
   alone, separate the effect of the lower level of spending from the shift
   of costs between government and households.
-\item The cut is not anticipated: households learn of it in 2026, with the
-  wealth they hold under the baseline. It is financed by debt, by a
-  permanent change in $\tau_l$ from 2026 that returns the debt ratio to the
-  baseline's by 2202, or by a change in $\tau_l$ over 2026--30 only.
+\end{itemize}
+
+\noindent Temporary cut in public health spending (results;
+Table~\ref{tab:fiscal-health}, Figures~\ref{fig:health}
+and~\ref{fig:health-welfare}):
+\begin{itemize}
+\item Under debt financing government health spending falls by 1.28 points
+  of output over 2026--30 and household health spending rises by 0.27
+  points. The means-tested transfer changes by less than 0.01 points.
+\item Output stays within 0.1\% of the baseline through 2028. It is 0.8\%
+  below the baseline in 2030 and 0.7\% above in 2031, the year the cut
+  ends. Consumption is 0.2\% below the baseline over 2026--28, 0.9\% above
+  in 2030 and 1.0\% below in 2031. Household wealth is 0.6\% below the
+  baseline in 2031.
+\item The debt ratio is 115\% in 2030 and 96\% in 2060, 6 and 7 points below
+  the baseline.
+\item The permanent labour-tax rule cuts $\tau_l$ by 0.10 points. The rule
+  over 2026--30 cuts it by 5.32 points for five years. Output is then 2.4\%
+  above the baseline in 2026 and 3.6\% above in 2030, 1.1\% below in 2031
+  and 0.4\% below in 2040. The debt ratio is 124\% in 2030, 3 points above
+  the baseline, and 105\% in 2060.
+\item Debt-financed, the cohorts alive in 2026 lose 0.27\% on average. The
+  loss falls on the old, who have the highest medical spending: 2.1\% for
+  those born in 1935, 0.4\% for those born in 1950, 0.1\% or less for those
+  born after 1965. By quintile the loss is 0.72\% at the bottom and 0.04\%
+  at the top. Later cohorts are unaffected.
+\item The cut in coverage alone costs the cohorts alive in 2026 0.74\%; the
+  cut in medical spending alone raises their welfare by 0.39\%. The two
+  sum to $-0.35$\% against $-0.27$\% for the joint cut; the interaction is
+  0.09 points on the mean and up to 0.9 points for single cohorts.
+\item With the tax cut over 2026--30 the cohorts alive in 2026 gain 1.11\%
+  on average, about the same in each quintile, and the oldest gain most.
+  With the permanent rule they lose 0.17\% and cohorts entering from 2027
+  gain 0.1\%.
+\item The Gini of consumption falls by 0.3 points in 2030 under debt
+  financing; under the window rule the wealth Gini is 1.4 points lower in
+  2030.
 \end{itemize}
 
 \begin{table}[htbp]\centering\footnotesize
@@ -688,22 +733,54 @@ Design:
 {\setlength{\tabcolsep}{3.5pt}\fiscalinput{fiscal_body.tex}}
 \end{table}
 
-\begin{figure}[htbp]\centering
-\IfFileExists{\fiscaldir/fiscal_G.pdf}
-  {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_G.pdf}}
-  {\figbox{Figure: G shock --- run \texttt{reports/fiscal\_figures.py}.}{6cm}}
-\caption{\label{fig:G}Government consumption up by 2\% of output from 2023,
-under the three financing rules. \emph{Top}: output and consumption, \%
-deviation from the baseline. \emph{Bottom}: debt at the end of the year and
-net foreign assets, both over output, with the baseline.}
-\end{figure}
+\begin{table}[htbp]\centering\footnotesize
+\caption{Public investment up by 2\% of 2025 output from 2026}\vspace{-2pt}
+\label{tab:fiscal-Ig}
+{\setlength{\tabcolsep}{3.5pt}\fiscalinput{fiscal_Ig_body.tex}}
+\end{table}
+
+\begin{table}[htbp]\centering\footnotesize
+\caption{Cut in public health spending over 2026--30}\vspace{-2pt}
+\label{tab:fiscal-health}
+{\setlength{\tabcolsep}{3.5pt}\fiscalinput{fiscal_health_body.tex}}
+\end{table}
 
 \begin{figure}[htbp]\centering
 \IfFileExists{\fiscaldir/fiscal_Ig.pdf}
   {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_Ig.pdf}}
   {\figbox{Figure: I\_g shock --- run \texttt{reports/fiscal\_figures.py}.}{6cm}}
-\caption{\label{fig:Ig}Public investment up by 2\% of 2023 output from 2023,
-under the three financing rules; panels as in Figure~\ref{fig:G}.}
+\caption{\label{fig:Ig}Public investment up by 2\% of 2025 output from 2026,
+under debt and labour-tax financing. \emph{Top}: output and consumption,
+\% deviation from the baseline; debt at the end of the year over output.
+\emph{Bottom}: net foreign assets over output, the labour-tax rate and the
+change in public investment over output.}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{\fiscaldir/fiscal_Ig_welfare.pdf}
+  {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_Ig_welfare.pdf}}
+  {\figbox{Figure: I\_g welfare --- run \texttt{reports/fiscal\_figures.py}.}{4cm}}
+\caption{\label{fig:Ig-welfare}Public investment: consumption-equivalent
+variation by year of birth (shaded: alive in 2026) and by quintile of
+disposable income in 2026.}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{\fiscaldir/fiscal_health.pdf}
+  {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_health.pdf}}
+  {\figbox{Figure: health shock --- run \texttt{reports/fiscal\_figures.py}.}{6cm}}
+\caption{\label{fig:health}Cut in public health spending over 2026--30,
+under the three financing rules; panels as in Figure~\ref{fig:Ig}, with
+government and household health spending over output in the last panel.}
+\end{figure}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{\fiscaldir/fiscal_health_welfare.pdf}
+  {\includegraphics[width=\linewidth]{\fiscaldir/fiscal_health_welfare.pdf}}
+  {\figbox{Figure: health welfare --- run \texttt{reports/fiscal\_figures.py}.}{4cm}}
+\caption{\label{fig:health-welfare}Cut in public health spending:
+consumption-equivalent variation by year of birth (shaded: alive in 2026)
+and by quintile of disposable income in 2026.}
 \end{figure}
 
 \clearpage
@@ -763,8 +840,8 @@ all ages. Retired per non-retired person and the retirement age follow
 \section*{Appendix: reference sizes for the public investment increase}\vspace{-0.2cm}
 
 \noindent\footnotesize
-The experiments raise public investment by 2\% of output for good, from
-4.1\% in 2023. The sizes discussed in the EU since 2024:
+The experiment raises public investment for good from 2026 by 2\% of
+2025 output, from 4.1\% of output in 2023. The sizes discussed in the EU since 2024:
 \begin{itemize}
 \item Draghi report (September 2024): \EUR{750}--800bn a year of additional
   investment in the EU, 4.4--4.7\% of 2023 GDP, public and private
