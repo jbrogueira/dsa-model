@@ -29,6 +29,7 @@ year) reproduces the runs with the shock at the start of the transition.
 
 import argparse
 import functools
+import gc
 import json
 import os
 import platform
@@ -296,6 +297,20 @@ if DISTRIBUTION and economy.jax_policies_on_device:
 print("Running the baseline …")
 base_paths = run_baseline(economy, base_paths, n_post=N_POST, n_sim=N_SIM, shock_period=T_S)
 
+
+def _release_models():
+    """Drop the cohort models of the last run (policies and value functions,
+    tens of GB at production size) once nothing reads them, so that the next
+    run does not hold two sets. The baseline models the MIT stitching needs
+    stay in economy._mit_baseline_cache."""
+    if DISTRIBUTION:
+        economy.birth_cohort_solutions = None
+        economy.birth_cohort_later = {}
+        gc.collect()
+
+
+_release_models()
+
 if args.config:
     # B_initial = B_over_Y * Y0 and the I_g shock level 0.02 * Y0 are read off
     # the baseline the scenarios are compared with, so B/Y(0) equals B_over_Y
@@ -521,7 +536,9 @@ def _run(scn, **kw):
     extra = (f", {res.n_iterations} evaluations, Δτ_l = {100 * res.adjustment_scalar:+.3f} pp, "
              f"converged = {res.converged}" if scn.financing != 'debt' else '')
     print(f"      {scn.name}: {time.time() - t1:.1f}s{extra}")
-    return res, _extract(res)
+    ext = _extract(res)
+    _release_models()
+    return res, ext
 
 
 def run_experiment_set(shock):
