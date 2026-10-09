@@ -4,7 +4,7 @@ Checks before the recalibration with the endogenous grid method
 
   python egm_grid_check.py config --n-a 200 [--savings-solver grid] --out CFG.json
       writes calibration_input_GR.json with another grid size or solver
-  python egm_grid_check.py moments --config CFG.json --out MOM.json
+  python egm_grid_check.py moments --config CFG.json --out MOM.json [--backend numpy]
       targeted moments of the base-year cross-section, the mass of wealth
       above a = 20 and a = 40, and the run time of the cross-section
   python egm_grid_check.py compare --runs DIR_100 DIR_200 [DIR_grid] --out TABLE.md
@@ -40,8 +40,9 @@ def make_config(args):
 
 def moments(args):
     from calibrate import load_config, theta_from_config, run_model_moments, _agent_weights
+    import dataclasses
     L = load_config(args.config)
-    spec = L['spec']
+    spec = dataclasses.replace(L['spec'], backend=args.backend)
     theta = theta_from_config(L['config_data'], spec, verbose=False)
     t0 = time.time()
     m, panels = run_model_moments(theta, spec, return_panels=True)
@@ -160,6 +161,7 @@ def main():
     m = sub.add_parser('moments')
     m.add_argument('--config', required=True)
     m.add_argument('--out', required=True)
+    m.add_argument('--backend', choices=('jax', 'numpy'), default='jax')
     k = sub.add_parser('compare')
     k.add_argument('--runs', nargs='+', required=True)
     k.add_argument('--out', required=True)
