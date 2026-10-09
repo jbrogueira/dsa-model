@@ -71,6 +71,9 @@ parser.add_argument('--health-household', choices=['che_minus_gov', 'hf3'],
                     default='che_minus_gov',
                     help='Household health spending: CHE less government schemes, or HF.3')
 parser.add_argument('--health-years', type=int, default=5, help='Length of the health cut')
+parser.add_argument('--policies-on-device', action='store_true',
+                    help='JAX: keep the cohort policy functions in device memory and drop the '
+                         'value functions (less host memory; needs --no-distribution)')
 parser.add_argument('--no-distribution', action='store_true',
                     help='Skip the distributional and welfare outputs')
 parser.add_argument('--tiny', action='store_true',
@@ -290,6 +293,8 @@ base_paths['m_scale_path'] = np.ones(T_TR)
 # functions) of every run, so the reuse is off when they are produced.
 DISTRIBUTION = not args.no_distribution
 economy.household_cache_size = 0 if DISTRIBUTION else 16
+if args.policies_on_device:
+    economy.jax_policies_on_device = True
 if DISTRIBUTION and economy.jax_policies_on_device:
     raise SystemExit('the welfare outputs need the value functions: jax_policies_on_device must be off')
 

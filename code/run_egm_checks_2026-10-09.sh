@@ -14,9 +14,9 @@ OUT=${OUT:-output/egm_checks_$(date +%Y-%m-%d)}
 mkdir -p "$OUT"
 stamp() { echo "[$(date -u "+%Y-%m-%d %H:%M:%S UTC")] $*"; }
 
-for RUN in "egm 100" "egm 200" "grid 100"; do
-    set -- $RUN
-    SOLVER=$1; NA=$2
+# RUNS: solver:n_a pairs (default all three; set it to rerun a subset)
+for RUN in ${RUNS:-egm:100 egm:200 grid:100}; do
+    SOLVER=${RUN%%:*}; NA=${RUN##*:}
     D="$OUT/${SOLVER}_n${NA}"
     mkdir -p "$D"
     stamp "=== $SOLVER, n_a = $NA -> $D ==="
@@ -27,7 +27,7 @@ for RUN in "egm 100" "egm 200" "grid 100"; do
     [ "${PIPESTATUS[0]}" -eq 0 ] || { stamp "MOMENTS FAILED ($SOLVER $NA)"; exit 1; }
     START=$(date +%s)
     python3 -u run_fiscal_figures.py --config "$D/config.json" --backend jax \
-        --shock Ig --scenarios debt --shock-year 2026 --no-distribution \
+        --shock Ig --scenarios debt --shock-year 2026 --no-distribution --policies-on-device \
         --output-dir "$D" 2>&1 | tee "$D/run.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || { stamp "EXPERIMENT FAILED ($SOLVER $NA)"; exit 1; }
     stamp "$SOLVER n_a=$NA: baseline + I_g run took $(( $(date +%s) - START )) s"
