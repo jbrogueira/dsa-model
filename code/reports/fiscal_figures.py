@@ -114,6 +114,19 @@ def _shock_year(R, base_year):
     return int(p.get('shock_year', base_year + int(p.get('shock_period', 0) or 0)))
 
 
+def _shade_shock(R, base_year, shock, axes):
+    """Shade the years in which a temporary shock is in place (the health
+    cut: from the shock year for params.health.years years)."""
+    if shock != 'health':
+        return
+    years = int(R.get('params', {}).get('health', {}).get('years', 0) or 0)
+    if years <= 0:
+        return
+    y0 = _shock_year(R, base_year)
+    for a in axes:
+        a.axvspan(y0 - 0.5, y0 + years - 0.5, color='#ecebe7', zorder=0, lw=0)
+
+
 def shock_figure(R, G, base_year, shock, out_pdf, plt, last_year):
     S = R[shock]
     scn = present(S, SCENARIOS)
@@ -154,6 +167,7 @@ def shock_figure(R, G, base_year, shock, out_pdf, plt, last_year):
                 else 'Change in public investment') + ' / output, pp')
     for a in ax.flat:
         a.axvline(_shock_year(R, base_year), color=INK2, lw=0.5, ls=':')
+    _shade_shock(R, base_year, shock, ax.flat)
     fig.tight_layout(h_pad=1.2)
     fig.savefig(out_pdf)
     plt.close(fig)
@@ -181,6 +195,7 @@ def age_figure(R, base_year, shock, out_pdf, plt):
                 yc = np.array([row[g][var] for row in c], float)
                 series.append((g, 100.0 * (yc / yb - 1.0)))
             _lines(ax[i, j], years, len(years), series, f'{vlab}, % ({lab})')
+    _shade_shock(R, base_year, shock, ax.flat)
     fig.tight_layout(h_pad=1.0)
     fig.savefig(out_pdf)
     plt.close(fig)
@@ -204,6 +219,7 @@ def ineq_figure(R, base_year, shock, out_pdf, plt):
         _lines(a, years, len(years),
                [(lab, scale * (_ineq(S[k], measure, stat) - b)) for k, lab in scn],
                title + (', change in points' if scale == 100.0 else ', change'))
+    _shade_shock(R, base_year, shock, ax.flat)
     fig.tight_layout(h_pad=1.0)
     fig.savefig(out_pdf)
     plt.close(fig)
