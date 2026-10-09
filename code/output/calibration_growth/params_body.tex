@@ -18,7 +18,7 @@ $r_B$ & real sovereign rate from 2070 & 0.0200 & data to 2025, debt projection 2
 $\tau_c$ & consumption tax rate & 0.1818 & implicit tax rate on consumption, DG Taxation and Customs Union, Taxation Trends, mean 2019--23 \\
 $\tau_l$ & labour income tax rate & 0.1000 & income-tax part of the implicit tax rate on labour (40.6\%, mean 2019--23), the rest being contributions \\
 $b_{min}$ & minimum pension, 2023 & 0.1751 & national pension, L.4387/2016; follows the pension index \\
-$\underline{c}$ & consumption floor (means-tested) & 0.0846 & guaranteed minimum income \\
+$y_{min}$ & minimum income level & 0.0846 & guaranteed minimum income, single adult \\
 $\tau^{beq}$ & tax on accidental bequests & 1.0000 & assumption: no intended bequests, accidental ones taxed away \\
 $f$ & job-finding probability & 0.4400 & Eurostat \texttt{une\_ltu\_a} \\
 $p^{ui}$ & UI eligibility of a new spell & 0.3320 & LFS 2023, unemployed 25--64 with a spell under 12 months receiving benefits, Eurostat \texttt{lfsa\_ugadra} \\
@@ -36,19 +36,19 @@ $D/Y$ & defence & 0.0166 & ESA purchases, COFOG 02 \\
 $I_g/Y$ & public investment & 0.0400 & gross fixed capital formation \\
 $e_0$ & education, 2023 & 0.0260 & ESA purchases, COFOG 09; follows the school-age population and the wage \\
 $\lambda$ & lump-sum transfer per adult, over output & 0.0350 & cash and in-kind benefits outside pensions, unemployment and health, 2023 \\
-$FT/Y$ & net transfer from the EU budget, 2023 & 0.0190 & general government accounts; 1.0\% of output from 2027 \\
+$FT/Y$ & net transfer from the EU budget, every year & 0.0100 & assumption for the next financial framework \\
 \midrule
 \multicolumn{4}{l}{\itshape Calibrated jointly by SMM}\\
-$\nu$ & labour disutility weight & 11.4558 & average hours \\
-$\beta$ & discount factor & 0.9928 & $A/Y$ \\
-$\tau_p$ & payroll tax rate & 0.1796 & payroll revenue$/Y$ \\
-$\rho^{pens}$ & pension replacement rate & 0.1853 & pensions$/Y$ \\
+$\nu$ & labour disutility weight & 11.2890 & average hours \\
+$\beta$ & discount factor & 0.9923 & $A/Y$ \\
+$\tau_p$ & payroll tax rate & 0.1817 & payroll revenue$/Y$ \\
+$\rho^{pens}$ & pension replacement rate & 0.1871 & pensions$/Y$ \\
 $m^{good}$ & medical cost scale & 0.0840 & public health$/Y$ \\
-$\rho^{ui}$ & UI replacement rate & 0.2413 & UI$/Y$ \\
+$\rho^{ui}$ & UI replacement rate & 0.2437 & UI$/Y$ \\
 $\tau_k$ & capital income tax rate & 0.3109 & capital income tax$/Y$ \\
 \midrule
 \multicolumn{4}{l}{\itshape Set outside the SMM}\\
-$A$ & total factor productivity & 1.5307 & normalisation, $\hat y=1$ \\
-$\tau_y$ & tax on gross output, 2023 pin to 2025 & 0.0693 & primary balance in the data, 2023 \\
+$A$ & total factor productivity & 1.5386 & normalisation, $\hat y=1$ \\
+$\tau_y$ & tax on gross output, 2023 pin to 2025 & 0.0799 & primary balance in the data, 2023 \\
 \bottomrule
 \end{tabular}

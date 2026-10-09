@@ -1,6 +1,6 @@
 {
   "country": "GR",
-  "description": "Greece — income process from LIS Greek pool GR03-GR21 (n=76,255 emp_fyft); AR(1) baseline rho=0.95, sigma_y per-edu from MD fit on var(u) age profile",
+  "description": "Greece \u2014 income process from LIS Greek pool GR03-GR21 (n=76,255 emp_fyft); AR(1) baseline rho=0.95, sigma_y per-edu from MD fit on var(u) age profile",
   "model": {
     "T": 75,
     "retirement_age": 39,
@@ -19,17 +19,17 @@
   },
   "_derived": {
     "theta": {
-      "nu": 11.455798965636404,
-      "beta": 0.9927586673313438,
-      "tau_p": 0.1796096940226985,
-      "pension_replacement_default": 0.1852716222305677,
-      "m_good": 0.08395794573828527,
-      "ui_replacement_rate": 0.24133339727681788,
+      "nu": 11.288965883682634,
+      "beta": 0.9923430714648289,
+      "tau_p": 0.1816749181827106,
+      "pension_replacement_default": 0.18711240888239172,
+      "m_good": 0.08399772983147188,
+      "ui_replacement_rate": 0.24373008414878836,
       "tau_k": 0.31089527027027
     },
     "theta_metadata": {
-      "calibration_date": "2026-10-08T15:27:34",
-      "source_report": "output/calibration/calibration_GR_20261008_152734.md"
+      "calibration_date": "2026-10-09T15:55:16",
+      "source_report": "output/calibration/calibration_GR_20261009_155516.md"
     }
   },
   "household": {
@@ -43,7 +43,7 @@
   "production": {
     "alpha": 0.33,
     "delta": 0.05,
-    "A_tfp": 1.53072262,
+    "A_tfp": 1.53859424,
     "K_g": 0.703,
     "eta_g": 0.05,
     "delta_g": 0.04316
@@ -337,7 +337,7 @@
     "lump_sum_over_Y": 0.035,
     "foreign_transfer_file": "../data/foreign_transfer_GR.npz",
     "foreign_transfer_over_Y": 0.01,
-    "tau_y": 0.069292,
+    "tau_y": 0.079872,
     "tau_y_ramp_years": 10,
     "pensions_over_Y": 0.14,
     "ui_over_Y": 0.006,
@@ -361,49 +361,49 @@
         "path": "nu",
         "lower": 0.1,
         "upper": 200.0,
-        "initial": 11.437797963378143
+        "initial": 11.27287645912022
       },
       {
         "name": "beta",
         "path": "beta",
         "lower": 0.9,
         "upper": 1.1,
-        "initial": 0.9923469073671556
+        "initial": 0.9919250251220082
       },
       {
         "name": "tau_p",
         "path": "tau_p_default",
         "lower": 0.05,
         "upper": 0.45,
-        "initial": 0.17774044664142913
+        "initial": 0.1796096940226985
       },
       {
         "name": "pension_replacement_default",
         "path": "pension_replacement_default",
         "lower": 0.05,
         "upper": 0.4,
-        "initial": 0.1833207439748214
+        "initial": 0.1849602951616633
       },
       {
         "name": "m_good",
         "path": "m_good",
         "lower": 0.01,
         "upper": 0.2,
-        "initial": 0.084051138147757
+        "initial": 0.08381820535701989
       },
       {
         "name": "ui_replacement_rate",
         "path": "ui_replacement_rate",
         "lower": 0.01,
         "upper": 0.6,
-        "initial": 0.2387896573421843
+        "initial": 0.24093171976515348
       },
       {
         "name": "tau_k",
         "path": "tau_k_default",
         "lower": 0.05,
         "upper": 0.6,
-        "initial": 0.3108952702702703
+        "initial": 0.31089527027027
       }
     ],
     "targets": [

@@ -128,7 +128,7 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$b_{min}$', 'minimum pension, 2023', ext.get('pension_min_floor'),
          'national pension, L.4387/2016'
          + ('; follows the pension index' if ext.get('pension_floor_indexed') else '')),
-        (('$y_{min}$', 'guaranteed income level of the minimum income benefit',
+        (('$y_{min}$', 'minimum income level',
           ext.get('minimum_income'), 'guaranteed minimum income, single adult')
          if float(ext.get('minimum_income') or 0.0) > 0.0 else
          ('$\\underline{c}$', 'consumption floor (means-tested)', ext.get('transfer_floor'),
@@ -174,8 +174,11 @@ def params_table(cfg, n0=None, n_inf=None):
          'ESA purchases, COFOG 09; follows the school-age population and the wage'),
         ('$\\lambda$', 'lump-sum transfer per adult, over output', fis.get('lump_sum_over_Y'),
          'cash and in-kind benefits outside pensions, unemployment and health, 2023'),
-        ('$FT/Y$', 'net transfer from the EU budget, 2023', _ft_base_year(cfg),
-         'general government accounts; 1.0\\% of output from 2027'),
+        (('$FT/Y$', 'net transfer from the EU budget, every year', _ft_base_year(cfg),
+          'assumption for the next financial framework')
+         if fis.get('foreign_transfer_over_Y') is not None else
+         ('$FT/Y$', 'net transfer from the EU budget, 2023', _ft_base_year(cfg),
+          'general government accounts; 1.0\\% of output from 2027')),
     ]
     rows_pin = [
         ('$A$', 'total factor productivity', prod.get('A_tfp'),
