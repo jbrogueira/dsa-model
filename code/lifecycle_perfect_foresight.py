@@ -571,6 +571,9 @@ class LifecycleModelPerfectForesight:
         if config.m_scale_path is not None:
             self.m_grid = config.m_scale_path[:, None] * self.m_grid
 
+        if self.egm:
+            self._check_positive_resources()
+
         # Value and policy functions
         # Dimensions: (T, n_a, n_y, n_h, n_y_last). The savings policy is the
         # level of a' in detrended units.
@@ -1267,6 +1270,30 @@ class LifecycleModelPerfectForesight:
             income = self.lump_sum_path[t] + after_tax - oop
             budget = budget + np.where(covered, np.maximum(0.0, self.minimum_income - income), 0.0)
         return budget
+
+    def _check_positive_resources(self):
+        """Consumption of the unemployed and of retirees is positive at the
+        borrowing limit: their resources before saving exceed (1+g) a_min at
+        every age, along this model's coverage and medical-spending paths. With
+        hours endogenous an employed household has MW > 0 and positive
+        consumption whatever its other resources; with exogenous hours its
+        consumption is floored at 1e-10, as in the grid search's fallback."""
+        G = 1.0 + self.trend_growth
+        y = self.y_grid[None, :, None, None]
+        try:
+            for mult in np.exp(self.alpha_grid):
+                self._alpha_mult = float(mult)
+                for t in range(self.current_age, self.T):
+                    retired = t >= self.retirement_age
+                    res = self._budget_grid(t, retired)[0] - G * self.a_grid[0]
+                    covered = np.broadcast_to(retired | (y[0] == 0.0), res.shape)
+                    if covered.any() and res[covered].min() <= 0.0:
+                        raise ValueError(
+                            f'resources at the borrowing limit are {res[covered].min():.4g} '
+                            f'at age index {t} (alpha multiplier {mult:.3f}): consumption '
+                            f'would not be positive; set minimum_income > 0')
+        finally:
+            self._alpha_mult = 1.0
 
     def _expected_next(self, t, X_next, is_retired):
         """E_t X_{t+1}(a', s') given the current state, before survival,

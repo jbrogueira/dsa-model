@@ -21,6 +21,13 @@ distribution_stats.py          # Cross-section of a run on the exact distributio
 policy_reference_case.py       # Small economy of test_policy_exercises.py (HEAD-compatible API) and the writer of tests_data/policy_reference_e80b119.npz
 test_policy_exercises.py       # Pytest tests (20) of POLICY_EXERCISES_PLAN.md section 4: health paths, shock in t_s, memo lines, health-cut calibration, statistics, welfare, driver + evaluator + report on a --tiny run
 docs/POLICY_EXERCISES_PLAN.md  # Plan of the I_g and health-coverage exercises (implemented 2026-10-08; status at its top)
+docs/EGM_PLAN.md               # Minimum income benefit, savings policy as a level with a two-node lottery, endogenous grid method (Steps 1-3 implemented 2026-10-09; status at its top)
+egm_reference_case.py          # Small household economy and the writer of tests_data/egm_reference_2580d6e.npz (grid-search arrays of 2580d6e)
+test_minimum_income.py         # Pytest tests (14) of the minimum income benefit
+test_savings_lottery.py        # Pytest tests (8) of the savings level and the lottery; bit-for-bit against 2580d6e
+test_egm.py                    # Pytest tests (16) of the endogenous grid method
+egm_grid_check.py              # EGM_PLAN section 5 checks: config variant (n_a, solver), targeted moments + wealth above a = 20 at the current theta, comparison table and the grid-size rule
+run_egm_checks_2026-10-09.sh   # Chain of the section 5 checks for the GPU instance (EGM n_a 100 and 200, grid 100: moments, baseline + debt-financed I_g)
 regen_fiscal_figures_from_json.py  # Re-plot fiscal figures from a saved fiscal_results.json (no simulation); --budget-components SHOCK SCENARIO draws the stacked budget lines behind the primary balance (levels + deviations)
 test_fiscal_experiments.py     # Pytest tests for fiscal experiments (39 tests)
 build_health_flag_data.py      # Health-flag data side: coverage/CHE/GDP/population from DATA_GR.xlsx -> data/health_flag_GR.csv

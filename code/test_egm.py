@@ -165,6 +165,11 @@ class TestBackends:
                    dict(gamma=2.0), dict(savings_solver='vfi')):
             with pytest.raises((ValueError, NotImplementedError)):
                 LifecycleModelPerfectForesight(egm_config(**kw), verbose=False)
+        # resources at the borrowing limit must be positive
+        with pytest.raises(ValueError):
+            LifecycleModelPerfectForesight(
+                egm_config(minimum_income=0.0, lump_sum_path=np.zeros(erc.T),
+                           ui_replacement_rate=0.0, m_good=0.2), verbose=False)
         # gamma != 1 is accepted without trend growth
         LifecycleModelPerfectForesight(egm_config(gamma=2.0, trend_growth=0.0), verbose=False)
 

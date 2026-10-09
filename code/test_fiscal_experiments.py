@@ -43,9 +43,12 @@ RETIREMENT    = 4
 def _make_olg(survival_probs=None, eta_g=0.0, K_g_initial=0.0,
               govt_spending_path=None, I_g_path=None):
     """Minimal OLGTransition for fast tests. DSA_SAVINGS_SOLVER=egm solves the
-    savings choice by the endogenous grid method."""
+    savings choice by the endogenous grid method, with a minimum income
+    benefit that keeps consumption positive at the borrowing limit."""
+    egm = os.environ.get('DSA_SAVINGS_SOLVER', 'grid') == 'egm'
     config = LifecycleConfig(
-        savings_solver=os.environ.get('DSA_SAVINGS_SOLVER', 'grid'),
+        savings_solver='egm' if egm else 'grid',
+        minimum_income=0.05 if egm else 0.0,
         T=T_LIFECYCLE,
         beta=0.96,
         gamma=2.0,
