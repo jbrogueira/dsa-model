@@ -1,9 +1,10 @@
 {
-  "quantity": "transfer_floor (means-tested consumption floor)",
+  "quantity": "minimum_income (guaranteed income level of the minimum income benefit); the same level was transfer_floor (means-tested consumption floor) until 2026-10-09",
   "units": "detrended output per living person aged 25-99, base year normalised to 1",
   "base_year": 2023,
   "chosen": "gmi_single_adult",
   "value": 0.08464634995326646,
+  "minimum_income": 0.08464634995326646,
   "denominator": {
     "nominal_gdp_eur": 224686200000.0,
     "nominal_gdp_vintage": "2026-09-30T23:00:00+0200",
@@ -25,8 +26,43 @@
     }
   },
   "amount_source": "Greek Guaranteed Minimum Income (L.4389/2016 art. 235 and implementing decisions), Ministry of Labour / OPEKA programme pages; amount to be checked against the base-year vintage.",
+  "esspros_spending": {
+    "social_exclusion_income_support_mt": {
+      "dataset": "spr_exp_fex",
+      "filter": "spdep=CASH_P_INC&spdepm=MT",
+      "unit": "% of GDP",
+      "updated": "2026-10-07T23:00:00+0200",
+      "values": {
+        "2018": 0.44,
+        "2019": 0.36,
+        "2020": 0.4,
+        "2021": 0.38,
+        "2022": 0.32,
+        "2023": 0.24,
+        "2024": 0.22
+      }
+    },
+    "unemployment_cash_mt": {
+      "dataset": "spr_exp_fun",
+      "filter": "spdep=CASH&spdepm=MT",
+      "unit": "% of GDP",
+      "updated": "2026-10-07T23:00:00+0200",
+      "values": {
+        "2015": 0.02,
+        "2016": 0.02,
+        "2017": 0.02,
+        "2018": 0.02,
+        "2019": 0.02,
+        "2020": 0.03,
+        "2021": 0.04,
+        "2022": 0.02,
+        "2023": 0.01,
+        "2024": 0.01
+      }
+    }
+  },
   "caveats": [
-    "The floor applies to resources after taxes and out-of-pocket medical spending, before the hours adjustment, as compute_budget evaluates it.",
-    "A constant floor in detrended units is indexed at g in levels."
+    "The benefit tops up the lump sum plus after-tax UI or pension, net of out-of-pocket medical spending, of the unemployed of working age and of retirees; the GMI wealth test and capital-income test are not modelled.",
+    "A constant level in detrended units is indexed at g in levels."
   ]
 }

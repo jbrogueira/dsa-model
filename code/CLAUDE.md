@@ -161,7 +161,8 @@ In `olg_transition.py`:
 - UI benefits for unemployed
 - Multiple tax instruments (consumption, labor, payroll, capital)
 - Progressive HSV taxation (`tax_progressive`, `tax_kappa`, `tax_eta`)
-- Means-tested transfers / consumption floor (`transfer_floor`) — booked since 2026-10-02: the simulations record the top-up per agent (`transfer_sim`), `compute_government_budget` adds `transfers` to `total_spending`, and the production config sets 0.0807. `financing='transfer_floor'` is usable again
+- Means-tested transfers / consumption floor (`transfer_floor`) — booked since 2026-10-02: the simulations record the top-up per agent (`transfer_sim`), `compute_government_budget` adds `transfers` to `total_spending`. Zero in the GR configs since 2026-10-09 (replaced by the minimum income benefit); `financing='transfer_floor'` works only with `minimum_income = 0`
+- Minimum income benefit (`minimum_income` = y_min, `external_params.minimum_income` = 0.0846 in the GR configs since 2026-10-09, `docs/EGM_PLAN.md` §2): the unemployed of working age and retirees receive `b = max(0, y_min − y)`, `y` = lump sum + after-tax UI or pension − out-of-pocket medical spending; the employed receive none. `b` depends on the discrete state only, not on assets. Untaxed, gated on `y_min > 0`, refused together with `transfer_floor > 0`. Computed in `compute_budget_jax`, `_state_outcomes_jax`, `_compute_budget` (NumPy; the simulation and `_exact_columns` call it), recorded in `transfer_sim` and booked in the `transfers` line. Every JAX kernel takes it as the last positional argument (`in_axes` None). Tests: `test_minimum_income.py`; reference arrays of 2580d6e in `tests_data/egm_reference_2580d6e.npz` (`egm_reference_case.py`)
 - Survival risk / stochastic mortality (`survival_probs`)
 - Age-dependent medical expenditure (`m_age_profile`)
 - Age-dependent productivity transitions (`P_y_by_age_health`)

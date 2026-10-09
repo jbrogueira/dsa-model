@@ -32,11 +32,11 @@ The state `z_last` is the previous year's productivity, with an eligibility draw
 
 Working-age `j ∈ 𝒲`, with assets `a` (beginning of period) and bound `a' ≥ a̲`:
 $$(1+\tau^c)\,c + a' = \big(1 + (1-\tau^k) r_t\big) a + \underbrace{y^L + T^{UI} - \tau^p y^L - \tau^l\big(y^L - \tau^p y^L + T^{UI}\big)}_{\text{after-tax labor income and UI}} - (1-\kappa)\,m_j + \beta_t^{lump}, \tag{4}$$
-where the payroll tax `τ^p` falls on wage income `y^L` only, the labor income tax `τ^l` falls on the base `y^L - τ^p y^L + T^{UI}` (payroll-deductible, UI taxable, §10 item 8); `T^{UI} = ρ^{ui} w_t κ_j z_last e^{α_i}` if `z = 0`, else `0`; `m_j` is age-dependent⁴ medical cost of which the government covers a share `κ` and the household pays `(1-κ)m_j` out of pocket; `β_t^{lump}` is the lump-sum bequest transfer (§3.4); and a minimum-consumption floor `c̲` is enforced by an additional transfer when (4) would otherwise imply `c < c̲`. Capital income `r_t a` is taxed at `τ^k`, consumption at `τ^c`, labor income at `τ^l + τ^p`.
+where the payroll tax `τ^p` falls on wage income `y^L` only, the labor income tax `τ^l` falls on the base `y^L - τ^p y^L + T^{UI}` (payroll-deductible, UI taxable, §10 item 8); `T^{UI} = ρ^{ui} w_t κ_j z_last e^{α_i}` if `z = 0`, else `0`; `m_j` is age-dependent⁴ medical cost of which the government covers a share `κ` and the household pays `(1-κ)m_j` out of pocket; `β_t^{lump}` is the lump-sum bequest transfer (§3.4). An unemployed household (`z = 0`) also receives the minimum income benefit `b = max(0, y_min − y)`, where `y = T^{ls}_t + (1−τ^l)T^{UI} − (1−κ)m_j` is its non-capital income net of out-of-pocket medical spending, `T^{ls}_t` the lump-sum transfer per adult and `y_min` the guaranteed income level. The benefit depends on `(j, z, z_last)` and not on `a`. Employed households receive none. Capital income `r_t a` is taxed at `τ^k`, consumption at `τ^c`, labor income at `τ^l + τ^p`.
 
 Retired `j ∈ ℛ` (labor `ℓ = 0`):
 $$(1+\tau^c)\,c + a' = \big(1 + (1-\tau^k) r_t\big) a + (1-\tau^l)\,\text{PENS} - (1-\kappa)\,m_j + \beta_t^{lump}, \tag{5}$$
-the pension taxed at `τ^l` but not `τ^p`. The pension is set at retirement from the wage and a blend of last-employed and career-average productivity, with a floor:
+the pension taxed at `τ^l` but not `τ^p`. Retirees receive the minimum income benefit with `y = T^{ls}_t + (1−τ^l)\,\text{PENS} − (1−κ)m_j`. The pension is set at retirement from the wage and a blend of last-employed and career-average productivity, with a floor:
 $$\text{PENS} = \max\!\Big(\rho^{pens}\, w_t\, \kappa_{J_R}\,\big[\lambda\, z_{last} + (1-\lambda)\,\bar z\big]\, e^{\alpha_i},\; b_{\min}\Big), \tag{6}$$
 where `ρ^{pens}` is the replacement rate, `λ` weights the last-employed state against mean employed productivity `z̄`, and `b_min` is the floor. The live configuration leaves `λ` unset, so it is derived from the career-average approximation `λ = (1 - ρ_z^{J_R})/(J_R(1-ρ_z)) ≈ 0.443` (at `ρ_z = 0.95`, `J_R = 39`): a near-even blend, not last-state-only.⁵
 
@@ -153,6 +153,7 @@ Greece. The income process is estimated externally from LIS/EU-SILC; five parame
 | `ρ^{ui}` | UI replacement | 0.0945 | OAED rules |
 | `p^{ui}` | probability that a new unemployment spell is eligible for UI | 0.332 | LFS 2023, share of the unemployed aged 25–64 with a spell under 12 months who receive benefits (Eurostat `lfsa_ugadra`) |
 | `b_min` | min pension floor (wage units) | 0.15 | Greek min/avg pension |
+| `y_min` | guaranteed income level of the minimum income benefit | 0.0846 | Guaranteed Minimum Income, EUR 200 a month for a single adult, 2023 |
 | `κ` | government health coverage | 0.662 | OECD Health |
 | `λ^{find}` | job-finding rate | 0.50 | Eurostat |
 | `λ̄^{sep}` | separation-rate cap | 0.10 | — |

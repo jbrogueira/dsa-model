@@ -615,6 +615,7 @@ class OLGTransition:
                 alpha_mult_jax,
                 ls_c,
                 ref.ui_eligibility_prob,
+                ref.minimum_income,
             )
 
         batched_arrays = (w_at_rets, r_paths, w_paths,
@@ -983,6 +984,7 @@ class OLGTransition:
                         cbeq,
                         cls,
                         ref.ui_eligibility_prob,
+                        ref.minimum_income,
                     )
 
                     # Store only actual (non-padded) cohorts
@@ -1101,6 +1103,7 @@ class OLGTransition:
                     False,
                     None,
                     ref.ui_eligibility_prob,
+                    ref.minimum_income,
                 )
                 res = np.asarray(res)
                 for i, b in enumerate(sel):

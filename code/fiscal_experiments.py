@@ -708,6 +708,10 @@ def _run_one_simulation(olg, base_paths: dict, cf: dict,
     r_path = np.asarray(base_paths['r_path'], dtype=float)
 
     tf_delta = cf.get('transfer_floor_delta', 0.0)
+    if tf_delta != 0.0 and float(getattr(olg.lifecycle_config, 'minimum_income', 0.0)) > 0.0:
+        raise ValueError("financing='transfer_floor' moves the consumption floor, which "
+                         "the minimum income benefit replaces; it is not available "
+                         "with minimum_income > 0")
     orig_tf  = getattr(olg.lifecycle_config, 'transfer_floor', 0.0)
     transfer_floor = orig_tf + float(tf_delta) if tf_delta != 0.0 else None
 

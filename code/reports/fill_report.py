@@ -128,8 +128,11 @@ def params_table(cfg, n0=None, n_inf=None):
         ('$b_{min}$', 'minimum pension, 2023', ext.get('pension_min_floor'),
          'national pension, L.4387/2016'
          + ('; follows the pension index' if ext.get('pension_floor_indexed') else '')),
-        ('$\\underline{c}$', 'consumption floor (means-tested)', ext.get('transfer_floor'),
-         'guaranteed minimum income'),
+        (('$y_{min}$', 'guaranteed income level of the minimum income benefit',
+          ext.get('minimum_income'), 'guaranteed minimum income, single adult')
+         if float(ext.get('minimum_income') or 0.0) > 0.0 else
+         ('$\\underline{c}$', 'consumption floor (means-tested)', ext.get('transfer_floor'),
+          'guaranteed minimum income')),
         ('$\\tau^{beq}$', 'tax on accidental bequests', ext.get('tau_beq'), 'assumption: no intended bequests, accidental ones taxed away'),
         ('$f$', 'job-finding probability', ext.get('job_finding_rate'),
          'Eurostat \\texttt{une\\_ltu\\_a}'),

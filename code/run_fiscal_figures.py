@@ -953,6 +953,7 @@ params_out = {
     'kappa':         float(getattr(economy.lifecycle_config, 'kappa', 1.0)),
     'tau_beq':       float(getattr(economy.lifecycle_config, 'tau_beq', 0.0)),
     'transfer_floor': float(getattr(economy.lifecycle_config, 'transfer_floor', 0.0) or 0.0),
+    'minimum_income': float(getattr(economy.lifecycle_config, 'minimum_income', 0.0) or 0.0),
     # Which population the aggregates are divided by. Consumers of this JSON
     # must refuse it if they work on a different convention: before 2026-10-01
     # the transition divided by everyone ever entered, which is 11% smaller than

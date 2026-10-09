@@ -157,6 +157,7 @@ def _panels_jax(olg, models_rows, chunk=None):
                 False,
                 rows,
                 ref.ui_eligibility_prob,
+                ref.minimum_income,
             )
             vals = np.asarray(panel[:, :, fidx, :])        # (C, R, F, S)
             mass = np.asarray(mass)                         # (C, R, S)

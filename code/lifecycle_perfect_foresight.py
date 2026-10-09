@@ -187,6 +187,12 @@ class LifecycleConfig:
 
     # === Means-tested transfers (Feature #15) ===
     transfer_floor: float = 0.0         # Consumption floor (Huggett-style)
+    # Minimum income benefit (EGM_PLAN.md section 2): the unemployed of working
+    # age and retirees receive max(0, minimum_income - y), where y is the lump
+    # sum plus after-tax UI or pension less out-of-pocket medical spending. y
+    # does not depend on assets, so the budget stays linear in a. 0 = off; the
+    # benefit and transfer_floor are alternatives and are refused together.
+    minimum_income: float = 0.0
 
     # === Lump-sum transfer (since 2026-10-07) ===
     # A uniform amount per adult received every period at every age, untaxed,
@@ -430,6 +436,12 @@ class LifecycleModelPerfectForesight:
         self.tax_kappa = config.tax_kappa
         self.tax_eta = config.tax_eta
         self.transfer_floor = config.transfer_floor
+        self.minimum_income = float(config.minimum_income)
+        if self.minimum_income < 0.0:
+            raise ValueError(f'minimum_income = {self.minimum_income} is negative')
+        if self.minimum_income > 0.0 and float(self.transfer_floor) > 0.0:
+            raise ValueError('transfer_floor and minimum_income are alternatives; '
+                             'set one of them to zero')
         self.bequest_lumpsum = config.bequest_lumpsum
         self.lump_sum_path = np.asarray(config.lump_sum_path, dtype=float)
         self.labor_supply = config.labor_supply
@@ -888,6 +900,16 @@ class LifecycleModelPerfectForesight:
         if self.transfer_floor > 0.0:
             transfer = max(0.0, self.transfer_floor - budget)
             budget += transfer
+
+        # Minimum income benefit for the unemployed of working age and for
+        # retirees: the shortfall of non-capital income net of out-of-pocket
+        # medical spending (lump sum + after-tax UI or pension - (1-kappa) m)
+        # below minimum_income. It depends on the discrete state, not on a.
+        if self.minimum_income > 0.0 and (is_retired or i_y == 0):
+            income = self.lump_sum_path[t] + after_tax_labor_income - oop_health_exp
+            benefit = max(0.0, self.minimum_income - income)
+            transfer += benefit
+            budget += benefit
 
         return after_tax_labor_income, after_tax_capital_income, oop_health_exp, budget, transfer
 
@@ -1386,8 +1408,9 @@ class LifecycleModelPerfectForesight:
                 # Means-tested transfer, exactly as the solve granted it: the
                 # same budget function at this state (resources at one hour of
                 # work, before the hours adjustment), with the agent's own
-                # permanent-effect multiplier.
-                if self.transfer_floor > 0.0:
+                # permanent-effect multiplier. The minimum income benefit is
+                # recorded in the same element.
+                if self.transfer_floor > 0.0 or self.minimum_income > 0.0:
                     self._alpha_mult = a_mult
                     transfer_sim[t_sim, i] = self._compute_budget(
                         is_retired, lifecycle_age,
@@ -1528,8 +1551,9 @@ class LifecycleModelPerfectForesight:
 
         # Means-tested transfer: the solve's own budget function at each
         # state, as the simulation calls it (the retired enter with y = 0).
+        # The minimum income benefit is recorded in the same element.
         transfer = np.zeros(shape)
-        if self.transfer_floor > 0.0:
+        if self.transfer_floor > 0.0 or self.minimum_income > 0.0:
             for idx in np.argwhere(mu > 0.0):
                 k, i_a, i_y, i_h, i_yl = (int(v) for v in idx)
                 if is_retired:
