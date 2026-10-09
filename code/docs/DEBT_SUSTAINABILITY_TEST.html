@@ -92,15 +92,17 @@ th:first-child, td:first-child { text-align: left; }
 <h3>The interest rate on the debt stock</h3>
 <p>Let \(\bar r_t\) be the average real interest rate paid in year \(t\) on the debt carried into year \(t\), so that \(r_{B,t}=\bar r_t\) in section 1. Each year a share \(\mu_t\) of the stock is refinanced at the rate on new borrowing, and the rest keeps the rate at which it was issued:</p>
 <div class="eq">\[ \bar r_t=(1-\mu_t)\,\bar r_{t-1}+\mu_t\big(r^m_t+s(d_{t-1})\big),\qquad d_t=d_{t-1}\,\frac{1+\bar r_t}{1+g^Y_t}-pb_t . \]</div>
-<p>\(r^m_t\) is the real rate on new borrowing at low debt, and \(s(\cdot)\) is the spread on new borrowing, non-negative, non-decreasing in the debt ratio and zero for negative debt. The state of public finances in a year is the pair \((d_t,\bar r_t)\): the debt ratio and the rate the stock carries. With \(\mu_t=1\) the whole stock is repriced every year and the rate depends on the debt ratio alone.</p>
-<p>In the model, \(\mu_t\) is amortisation over the previous year's debt in the Commission's projection (0.055–0.08 in 2026–32, 0.14 in 2040, 0.21 in 2060), held at its 2051–60 mean of 0.215 after 2060. \(r^m_t\) is chosen so that with \(s\equiv0\) the recursion reproduces the baseline sovereign rate path exactly. The concessional terms of the official loans are then carried by \(\bar r_{2025}=-0.98\%\) and its slow repricing. With a positive spread, refinanced debt pays the spread at the current debt ratio on top of the rate the baseline implies, including along the baseline debt path. The spread is a fixed function of the debt ratio: it does not depend on the reform or on the distance to the limit, as the risk premium does in Bi (2012), and it does not pass through to the return on capital \(r\).</p>
+<p>\(r^m_t\) is the real rate on new borrowing at low debt, and \(s(\cdot)\) is the spread on new borrowing,</p>
+<div class="eq">\[ s(d)=\sigma\,\max\big(d-d_{2025},\,0\big),\qquad d_{2025}=1.46 . \]</div>
+<p>The baseline sovereign rates already price Greek debt at its 2025 level, so debt up to that level pays no spread, and each unit of debt above it raises the rate on new borrowing by \(\sigma\). The state of public finances in a year is the pair \((d_t,\bar r_t)\): the debt ratio and the rate the stock carries. With \(\mu_t=1\) the whole stock is repriced every year and the rate depends on the debt ratio alone.</p>
+<p>In the model, \(\mu_t\) is amortisation over the previous year's debt in the Commission's projection (0.055–0.08 in 2026–32, 0.14 in 2040, 0.21 in 2060), held at its 2051–60 mean of 0.215 after 2060. \(r^m_t\) is chosen so that with \(s\equiv0\) the recursion reproduces the baseline sovereign rate path exactly. The concessional terms of the official loans are then carried by \(\bar r_{2025}=-0.98\%\) and its slow repricing. The spread is a fixed function of the debt ratio: it does not depend on the reform or on the distance to the limit, as the risk premium does in Bi (2012), and it does not pass through to the return on capital \(r\).</p>
 
 <h3>On the balanced growth path</h3>
 <p>With constant \(\mu\), \(r^m\), \(g^Y\) and surplus, the rate on the stock settles at \(\bar r=r^m+s(d)\) and the debt-stabilising balance is</p>
 <div class="eq">\[ pb^{stab}(d)=\frac{r^m+s(d)-g^Y}{1+g^Y}\,d . \]</div>
 <p>Let \(pb^{\max}\) be the largest primary surplus, as a share of GDP, that constant distortionary tax rates can raise on the balanced growth path under \(P\), and assume it is positive. Suppose \(pb^{stab}\) increases in \(d\), which holds for \(d>0\) when \(r^m\ge g^Y\). Where \(pb^{stab}(d)>pb^{\max}\), debt rises at any constant tax rates, which raises the rate on refinanced debt and widens the gap, so debt grows without bound. The balanced-growth limit \(\bar d\) solves</p>
 <div class="eq">\[ pb^{\max}=\frac{r^m+s(\bar d)-g^Y}{1+g^Y}\,\bar d . \]</div>
-<p class="note">Illustration with assumed values, not model output: \(s(d)=0.03\,\max(d-0.6,\,0)\) (3 basis points per percentage point of debt above 60% of GDP, close to Laubach's (2009) estimate of 3–4 basis points per percentage point of projected debt for US five-year-ahead ten-year forward rates), \(r^m-g^Y=0.3\) percentage points and \(pb^{\max}=8\%\) give \(\bar d\approx1.9\).</p>
+<p class="note">Illustration with assumed values, not model output: \(\sigma=0.03\) (3 basis points per percentage point of debt, close to Laubach's (2009) estimate of 3–4 basis points per percentage point of projected debt for US five-year-ahead ten-year forward rates), \(r^m-g^Y=0.3\) percentage points and \(pb^{\max}=8\%\) give \(\bar d\approx2.46\).</p>
 
 <h3>Along the transition</h3>
 <p>Before \(T\), the surplus in a year depends on the whole tax path, through saving and hours. Let \(\tau\) be a path of tax rates from \(t_s\) on, the year the reform takes effect, that is constant from \(T-75\) on, and \(pb_t(\tau)\) the surplus it produces in year \(t\). The surplus path does not depend on the debt ratio: the spread affects only the interest the government pays, while households earn \(r\) and firms face \(r\). Given the inherited state \((d_{t_s-1},\bar r_{t_s-1})\), the two equations above then determine the debt path.</p>
@@ -136,23 +138,21 @@ th:first-child, td:first-child { text-align: left; }
     <tr><td>Baseline + 2% of GDP</td><td>24.9</td><td>21.7</td><td>14.9</td><td>28.5</td></tr>
   </tbody>
 </table></div>
-<p>With a debt-elastic rate, debt above the limit raises the rate on refinanced debt, which raises debt further, so it diverges within a few decades. Surpluses in the distant future then matter little for the limit. Along the baseline tax path, with the illustrative spread and the refinancing shares above:</p>
+<p>With a debt-elastic rate, debt above the limit raises the rate on refinanced debt, which raises debt further, so it diverges within a few decades. Surpluses in the distant future then matter little for the limit. Along the baseline tax path, with \(\sigma=0.03\) and the refinancing shares above:</p>
 <div class="table-box"><table>
   <thead><tr><th>Surpluses</th><th>Baseline</th><th>After 2202 \(\times0.5\)</th><th>After 2202 \(\times1.5\)</th><th>After 2100 \(\times0.5\)</th><th>After 2060 \(\times0.5\)</th></tr></thead>
-  <tbody><tr><td>\(\bar d_{2025}\)</td><td>1.364</td><td>1.364</td><td>1.364</td><td>1.354</td><td>1.281</td></tr></tbody>
+  <tbody><tr><td>\(\bar d_{2025}\)</td><td>2.037</td><td>2.037</td><td>2.037</td><td>2.031</td><td>1.980</td></tr></tbody>
 </table></div>
-<p>The 2025 limit is set mainly by the surpluses before 2060. A refinancing share after 2060 of 0.05 instead of 0.215 gives 1.379 instead of 1.364.</p>
+<p>The 2025 limit is set mainly by the surpluses before 2060. A refinancing share after 2060 of 0.05 instead of 0.215 gives 2.050 instead of 2.037.</p>
 
 <h3>Sensitivity to the spread</h3>
-<p>The level of the limit is sensitive to the spread and to the speed of repricing. Along the baseline tax path the 2025 limit ranges from 1.19 to 2.00 across the spreads below with gradual repricing, so whether the 2025 debt ratio of 1.46 lies below the limit depends on the spread's slope and on the debt ratio at which it starts. Full repricing (\(\mu_t=1\)) lowers the limit by 0.12–0.29. In every case, changing the surpluses after 2202 by half moves the 2025 limit by at most 0.002.</p>
+<p>The level of the limit is sensitive to the spread and to the speed of repricing. Along the baseline tax path the 2025 limit ranges from 1.93 to 2.55 across the values of \(\sigma\) below with gradual repricing, and from 1.84 to 2.40 with full repricing (\(\mu_t=1\)), which lowers it by 0.09–0.27. In every case, changing the surpluses after 2202 by half moves the 2025 limit by at most 0.002.</p>
 <div class="table-box"><table>
-  <thead><tr><th>Spread \(s(d)\)</th><th>Gradual repricing</th><th>Gradual, surpluses + 2 pp</th><th>Full repricing</th><th>Full, surpluses + 2 pp</th></tr></thead>
+  <thead><tr><th>Slope \(\sigma\)</th><th>Gradual repricing</th><th>Gradual, surpluses + 2 pp</th><th>Full repricing</th><th>Full, surpluses + 2 pp</th></tr></thead>
   <tbody>
-    <tr><td>\(0.01\max(d-0.6,0)\)</td><td>2.00</td><td>2.71</td><td>1.84</td><td>2.42</td></tr>
-    <tr><td>\(0.03\max(d-0.6,0)\)</td><td>1.36</td><td>1.86</td><td>1.23</td><td>1.60</td></tr>
-    <tr><td>\(0.05\max(d-0.6,0)\)</td><td>1.19</td><td>1.60</td><td>1.06</td><td>1.35</td></tr>
-    <tr><td>\(0.03\max(d-0.4,0)\)</td><td>1.24</td><td>1.74</td><td>1.09</td><td>1.47</td></tr>
-    <tr><td>\(0.03\max(d-0.9,0)\)</td><td>1.58</td><td>2.06</td><td>1.45</td><td>1.81</td></tr>
+    <tr><td>\(\sigma=0.01\)</td><td>2.55</td><td>3.24</td><td>2.40</td><td>2.97</td></tr>
+    <tr><td>\(\sigma=0.03\)</td><td>2.04</td><td>2.49</td><td>1.94</td><td>2.26</td></tr>
+    <tr><td>\(\sigma=0.05\)</td><td>1.93</td><td>2.28</td><td>1.84</td><td>2.07</td></tr>
   </tbody>
 </table></div>
 <p class="note">Baseline surpluses, GDP growth and sovereign rates from the report baseline (<code>output/calibration_growth/baseline_paths.npz</code>); refinancing shares from <code>data/dsa_projection_GR.npz</code>. These are limits along the baseline tax path, not the bound of section 5. The spread applies to refinanced debt; in these paths the government runs primary surpluses throughout.</p>

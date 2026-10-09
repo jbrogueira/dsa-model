@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>Sustainability Exercises</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: a single reading column for a methods note, equations set off in full width. */
+:root {
+  --bg: #fbfcfd;
+  --fg: #1d232b;
+  --muted: #5b6672;
+  --rule: #d8dee5;
+  --accent: #2c5d8a;
+  --panel: #eef2f6;
+  --font-body: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-head: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181d; --fg: #e3e7ec; --muted: #9aa5b1; --rule: #2e353e; --accent: #8db8e0; --panel: #1c222a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14181d; --fg: #e3e7ec; --muted: #9aa5b1; --rule: #2e353e; --accent: #8db8e0; --panel: #1c222a;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 1.125rem; line-height: 1.6; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-inline: 16px; padding-block: 2.5rem 4rem; }
+header { display: grid; gap: .4rem; border-bottom: 1px solid var(--rule); padding-bottom: 1.25rem; margin-bottom: 1.75rem; }
+.eyebrow { font-family: var(--font-head); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-head); font-weight: 600; font-size: 1.75rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-head); font-weight: 600; font-size: 1.2rem; margin: 2.5rem 0 .5rem; text-wrap: balance; color: var(--accent); }
+h3 { font-family: var(--font-head); font-weight: 500; font-size: 1rem; margin: 1.5rem 0 .25rem; }
+p { margin: .6rem 0; }
+ul, ol { padding-left: 1.3rem; margin: .5rem 0; }
+li { margin: .35rem 0; }
+code { font-family: var(--font-mono); font-size: .85em; background: var(--panel); padding: .05em .3em; border-radius: 3px; }
+.eq { overflow-x: auto; overflow-y: hidden; padding-block: .25rem; }
+.note { font-size: .95rem; color: var(--muted); }
+mjx-container[display="true"] { margin: .6rem 0 !important; }
+@media print { .table-box { overflow: visible; } th, td { white-space: normal; } }
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">DSA to LSA · model notes · 9 October 2026</span>
+  <h1>Baselines and reforms for the debt sustainability test</h1>
+  <p class="note">Companion to <code>DEBT_SUSTAINABILITY_TEST</code>, whose notation it uses. Greek OLG small open economy, base year 2023, reforms from \(t_s=2026\), inherited debt ratio \(d_{2025}=1.46\).</p>
+</header>
+
+<h2>1. Assumptions common to all runs</h2>
+<ul>
+  <li><strong>Balanced growth path.</strong> Every policy and exogenous path is constant from 2119 at the latest, so the economy is on its balanced growth path from \(T=2194\), when the population becomes stationary. The transition runs to 2202, and all paths are held at their 2202 values after that.</li>
+  <li><strong>No terminal debt target.</strong> No tax rate or spending line responds to debt. The debt path of each run is an output.</li>
+  <li><strong>Sovereign rate.</strong> The rate on the stock reprices gradually, with refinancing shares from the Commission's projection. New borrowing pays a spread on debt above its 2025 level,
+    <div class="eq">\[ \bar r_t=(1-\mu_t)\,\bar r_{t-1}+\mu_t\big(r^m_t+\sigma\max(d_{t-1}-d_{2025},0)\big),\qquad \bar r_{2025}=-0.98\%, \]</div>
+    where \(r^m_t\) reproduces the baseline sovereign rate path when \(\sigma=0\). Debt at or below 1.46 pays the baseline rates, so the spread affects only runs whose debt rises above its 2025 level. Results are reported for \(\sigma=0\), 0.01, 0.03 and 0.05.</li>
+  <li><strong>Bound.</strong> For each run, \(\underline d_{2025}\) is the largest 2025 debt ratio from which debt stays bounded, maximised over permanent changes \(\Delta\) in the labour income tax rate from 2026, unanticipated before 2026. Fiscal space is \(\underline d_{2025}-1.46\).</li>
+</ul>
+
+<h2>2. Baseline</h2>
+<p>Current policy, as legislated or projected:</p>
+<ul>
+  <li>the pension replacement rate follows the pension index, falling to 0.62 of its 2023 value by 2070;</li>
+  <li>the retirement age follows the Ageing Report projection to 2070 and life expectancy at 65 to 2100;</li>
+  <li>health coverage \(\kappa\) and medical spending per person by age stay at their calibrated values;</li>
+  <li>the output tax \(\tau^y\) is held at one rate from 2026 that makes the 2060 debt ratio equal to the Commission's projection, and stays at that rate afterwards.</li>
+</ul>
+<p>Report: the debt ratio to 2202 under debt financing; \(\underline d_{2025}\), fiscal space and the maximising \(\Delta\), for each \(\sigma\).</p>
+
+<h2>3. Fixed-promises baseline</h2>
+<p>The baseline with the replacement rate held at its 2023 value in every year (pension index equal to one). All other paths, including \(\tau^y\) and the lump-sum transfer, are copied from the baseline, so the cost of keeping the replacement rate falls on debt.</p>
+<p>Report: the same items as for the baseline, and the difference in fiscal space between the two baselines, which is the cost of the pension promise in units of the 2025 debt ratio.</p>
+
+<h2>4. Reforms</h2>
+<p>Each reform is run against both baselines. Its size \(x\) is a parameter, with a reference value.</p>
+<ul>
+  <li><strong>Public investment.</strong> A permanent rise in public investment from 2026, a constant detrended level equal to \(x\)% of the baseline's 2025 output. Reference \(x=2\).</li>
+  <li><strong>Public health spending.</strong> A permanent rise in health coverage \(\kappa\) from 2026 that raises government health spending by \(x\) percentage points of baseline GDP. Reference \(x=1.29\), the fall in government health spending as a share of GDP over 2011–15 relative to 2010.</li>
+</ul>
+<p>Report, for each reform and baseline:</p>
+<ul>
+  <li>the debt ratio to 2202 under debt financing, at the reference size;</li>
+  <li>\(\underline d_{2025}\), fiscal space and the fiscal cost, the fall in \(\underline d_{2025}\) relative to the baseline, at the reference size and for each \(\sigma\);</li>
+  <li>the break-even size: the largest \(x\) at which \(\underline d_{2025}\ge1.46\). Where the baseline itself has negative fiscal space, report that the reform cannot be financed at any size.</li>
+</ul>
+<p class="note">The bound and the break-even size are computed within the family of permanent labour-tax changes, so they are lower bounds on what some tax path could finance.</p>
+
+<h2>5. Cost</h2>
+<p>A bound takes 10–12 transitions; changing \(\sigma\) needs no further solve. The two baselines take about 24 transitions. The two reforms against two baselines at five sizes each take about 240, roughly seven hours on the A100 at 106 seconds per transition.</p>
+</div>
+
+<script>
+window.MathJax = { tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] }, svg: { fontCache: 'global' } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+
+</body>
+</html>
