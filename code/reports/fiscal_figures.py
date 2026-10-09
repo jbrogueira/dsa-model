@@ -349,11 +349,17 @@ def main():
                     default=os.path.join(here, '..', 'output', 'calibration_growth', 'baseline_paths.npz'))
     ap.add_argument('--last-year', type=int, default=2070)
     ap.add_argument('--out-dir', default=None)
+    ap.add_argument('--drop', default='',
+                    help='comma list SHOCK:SCENARIO left out of the figures and tables, '
+                         'e.g. health:tax_financed_window')
     args = ap.parse_args()
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     R, G, base_year = load(args.results, args.baseline)
+    for item in filter(None, args.drop.split(',')):
+        shock, scn = item.split(':')
+        R.get(shock, {}).pop(scn, None)
     outdir = args.out_dir or os.path.dirname(os.path.abspath(args.results))
     for shock in [s for s in SHOCKS if s in R]:
         S = R[shock]
