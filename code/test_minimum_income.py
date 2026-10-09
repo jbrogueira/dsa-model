@@ -68,7 +68,7 @@ def test_zero_benefit_reproduces_2580d6e(backend, floor):
 
 def test_backends_agree():
     m_np, m_jx = _solved('numpy'), _solved('jax')
-    assert np.array_equal(np.asarray(m_np.a_policy), np.asarray(m_jx.a_policy))
+    assert np.array_equal(np.asarray(m_np.a_next_policy), np.asarray(m_jx.a_next_policy))
     assert np.abs(np.asarray(m_np.c_policy_alpha) - np.asarray(m_jx.c_policy_alpha)).max() < 1e-9
     assert np.abs(np.asarray(m_np.V_alpha) - np.asarray(m_jx.V_alpha)).max() < 1e-9
     e_np, e_jx = m_np.exact_age_means(), m_jx.exact_age_means()

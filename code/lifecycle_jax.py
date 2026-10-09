@@ -155,6 +155,22 @@ def labor_disutility_jax(l, nu, phi):
     return nu * l ** (1 + phi) / (1 + phi)
 
 
+# Key offset of the asset-lottery draws in simulate_lifecycle_jax.
+_LOTTERY_FOLD = 1_000_003
+
+
+def lottery_jax(grid, x):
+    """Two-node lottery of a savings level x over an increasing grid; JAX
+    form of lifecycle_perfect_foresight.lottery_np. Returns (k, omega): the
+    lower node of the interval holding x (clipped to the grid) and the weight
+    on it; 1 - omega goes to node k + 1. A level on node n > 0 gives
+    (n - 1, 0), on node 0 (0, 1)."""
+    x = jnp.clip(x, grid[0], grid[-1])
+    k = jnp.clip(jnp.searchsorted(grid, x, side='left') - 1, 0, grid.shape[0] - 2)
+    omega = (grid[k + 1] - x) / (grid[k + 1] - grid[k])
+    return k, omega
+
+
 def _pension_floor_jax(floor, replacement):
     """Floor in a period with the given replacement rate: `floor` itself when
     non-negative, -floor times the rate when negative (the indexed floor, see
@@ -322,7 +338,8 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
 
     Returns
     -------
-    (V_t, a_pol_t, c_pol_t, l_pol_t) each shape (n_a, n_y, n_h, n_y)
+    (V_t, a_pol_t, c_pol_t, l_pol_t) each shape (n_a, n_y, n_h, n_y);
+    a_pol_t is the level of a', a node of the grid.
     """
     (r_t, w_t, tau_c_t, tau_l_t, tau_p_t, tau_k_t,
      pension_replacement_t, P_h_t, P_y_t, is_retired,
@@ -475,7 +492,7 @@ def solve_period_jax(V_next, period_params, model_params, alpha_mult=1.0,
     u_fallback = utility_jax(c_fallback, gamma)
 
     V_t = jnp.where(jnp.isfinite(best_val), best_val, u_fallback)
-    a_pol_t = jnp.where(jnp.isfinite(best_val), best_a_idx, 0).astype(jnp.int32)
+    a_pol_t = a_grid[jnp.where(jnp.isfinite(best_val), best_a_idx, 0)]
     c_pol_t = jnp.where(jnp.isfinite(best_val), best_c, c_fallback)
     l_pol_t = jnp.where(jnp.isfinite(best_val), best_l, 1.0)
 
@@ -558,7 +575,7 @@ def _solve_terminal_period_jax(
     v_labor = jnp.where(labor_supply & work_employed,
                         labor_disutility_jax(l_pol, nu, phi), 0.0)
     V = utility_jax(c, gamma) - v_labor
-    a_pol = jnp.zeros_like(V, dtype=jnp.int32)
+    a_pol = jnp.full_like(V, a_grid[0])
     return V, a_pol, c, l_pol
 
 
@@ -602,7 +619,7 @@ def solve_lifecycle_jax(
     Returns
     -------
     V : (T, n_a, n_y, n_h, n_y)
-    a_policy : (T, n_a, n_y, n_h, n_y), int32
+    a_next_policy : (T, n_a, n_y, n_h, n_y), the level of a'
     c_policy : (T, n_a, n_y, n_h, n_y)
     l_policy : (T, n_a, n_y, n_h, n_y)
     """
@@ -754,11 +771,11 @@ def solve_lifecycle_jax(
     l_pol_scan = l_pol_scan[::-1]
 
     V = jnp.concatenate([V_scan, V_T[None]], axis=0)
-    a_policy = jnp.concatenate([a_pol_scan, a_pol_T[None]], axis=0)
+    a_next_policy = jnp.concatenate([a_pol_scan, a_pol_T[None]], axis=0)
     c_policy = jnp.concatenate([c_pol_scan, c_pol_T[None]], axis=0)
     l_policy = jnp.concatenate([l_pol_scan, l_pol_T[None]], axis=0)
 
-    return V, a_policy, c_policy, l_policy
+    return V, a_next_policy, c_policy, l_policy
 
 
 # JIT-compile with static args for shapes and scalar params
@@ -843,7 +860,7 @@ _solve_lifecycle_jax_batched_tr_pyc = jax.jit(
 # ---------------------------------------------------------------------------
 
 def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
-                        a_policy, c_policy, l_policy,
+                        a_next_policy, c_policy, l_policy,
                         a_grid, y_grid, h_grid, m_grid,
                         w_path, w_at_retirement,
                         tau_c_path, tau_l_path, tau_p_path, tau_k_path,
@@ -865,8 +882,8 @@ def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
     """
     is_retired = lifecycle_age >= retirement_age
 
-    # Look up policy on the agent's alpha slice
-    a_pol_val = a_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
+    # Look up policy on the agent's alpha slice (a_pol_val is the level of a')
+    a_pol_val = a_next_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
     c_pol_val = c_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
     l_pol_val = l_policy[alpha_idx, lifecycle_age, i_a, i_y, i_h, i_y_last]
 
@@ -971,7 +988,7 @@ def _state_outcomes_jax(i_a, i_y, i_h, i_y_last, lifecycle_age,
 
 
 
-def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
+def _agent_step_jax(carry, t_data, a_next_policy, c_policy, l_policy,
                     a_grid, y_grid, h_grid, m_grid,
                     P_y, P_h,
                     w_path, w_at_retirement,
@@ -1002,22 +1019,25 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     Single time-step for one agent.
 
     carry: (i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive)
-    t_data: (t_sim_idx, u_y, u_h, u_alive, u_elig)
+    t_data: (t_sim_idx, u_y, u_h, u_alive, u_elig, u_lot)
 
-    Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
+    The agent moves to the upper of the two asset nodes around its savings
+    level when u_lot >= omega (lottery_jax), to the lower one otherwise.
+
+    Phase 8: a_next_policy/c_policy/l_policy are 6-D, indexed
     [n_alpha, T, n_a, n_y, n_h, n_y]. The agent's permanent FE is captured by the
     closed-over `alpha_idx` (slice into the leading axis) and `alpha_mult`
     (= exp(alpha_grid[alpha_idx]), multiplies wage, UI, and pension wage component).
     """
     i_a, i_y, i_h, i_y_last, avg_earnings, n_earnings_years, alive = carry
-    t_sim_idx, u_y, u_h, u_alive, u_elig = t_data
+    t_sim_idx, u_y, u_h, u_alive, u_elig, u_lot = t_data
 
     lifecycle_age = current_age + t_sim_idx
     is_last_step = (t_sim_idx == (T - current_age - 1))
 
     s = _state_outcomes_jax(
         i_a, i_y, i_h, i_y_last, lifecycle_age,
-        a_policy, c_policy, l_policy,
+        a_next_policy, c_policy, l_policy,
         a_grid, y_grid, h_grid, m_grid,
         w_path, w_at_retirement,
         tau_c_path, tau_l_path, tau_p_path, tau_k_path,
@@ -1053,7 +1073,8 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     )
 
     # --- State transitions ---
-    new_i_a = jnp.where(is_last_step, i_a, a_pol_val)
+    k_lo, omega = lottery_jax(a_grid, a_pol_val)
+    new_i_a = jnp.where(is_last_step, i_a, jnp.where(u_lot >= omega, k_lo + 1, k_lo))
 
     # Next income state — handle age/health-dependent P_y
     P_y_row = jnp.where(
@@ -1083,7 +1104,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
     # a' = 0).
     surv_t = survival_probs[lifecycle_age, i_h]
     dies = alive & (u_alive > surv_t)
-    bequest_this_period = jnp.where(dies, (1.0 + trend_growth) * a_grid[a_pol_val], 0.0)
+    bequest_this_period = jnp.where(dies, (1.0 + trend_growth) * a_pol_val, 0.0)
     new_alive = alive & ~dies
 
     new_carry = (new_i_a.astype(jnp.int32), new_i_y.astype(jnp.int32),
@@ -1120,7 +1141,7 @@ def _agent_step_jax(carry, t_data, a_policy, c_policy, l_policy,
 
 
 def simulate_lifecycle_jax(
-    a_policy, c_policy, l_policy,
+    a_next_policy, c_policy, l_policy,
     a_grid, y_grid, h_grid, m_grid,
     P_y, P_h,
     w_path, w_at_retirement,
@@ -1154,7 +1175,7 @@ def simulate_lifecycle_jax(
     """
     Simulate lifecycle paths for n_sim agents using vmap + lax.scan.
 
-    Phase 8: a_policy/c_policy/l_policy are 6-D, indexed
+    Phase 8: a_next_policy/c_policy/l_policy are 6-D, indexed
     [n_alpha, T, n_a, n_y, n_h, n_y]. alpha_idx_sim (n_sim,) gives each
     agent's permanent fixed-effect grid index; alpha_mult_sim (n_sim,) is
     exp(alpha_grid[alpha_idx_sim]). When n_alpha=1 the leading axis of the
@@ -1174,6 +1195,12 @@ def simulate_lifecycle_jax(
     # UI eligibility draws from a key folded off the parent, so the three
     # draws above are the same whatever the eligibility probability.
     u_elig_all = jax.random.uniform(jax.random.fold_in(key, 1), shape=(T_sim, n_sim))
+    # Asset lottery draws, from another folded key for the same reason. On
+    # this PRNG fold_in(key, i) equals split(key, 3)[i] for i < 3, so
+    # fold_in(key, 2) would reproduce the survival draws (and fold_in(key, 1)
+    # above reproduces the health draws); the lottery folds in a constant no
+    # split here reaches.
+    u_lot_all = jax.random.uniform(jax.random.fold_in(key, _LOTTERY_FOLD), shape=(T_sim, n_sim))
     t_indices = jnp.arange(T_sim)
 
     # Default wage_age_profile to ones
@@ -1207,12 +1234,12 @@ def simulate_lifecycle_jax(
     initial_alive = jnp.ones(n_sim, dtype=jnp.bool_)
 
     def simulate_one(init_state, alpha_idx_self, alpha_mult_self,
-                     u_y_seq, u_h_seq, u_alive_seq, u_elig_seq):
+                     u_y_seq, u_h_seq, u_alive_seq, u_elig_seq, u_lot_seq):
         """Scan over T_sim steps for one agent. alpha_idx/alpha_mult are
         per-agent constants captured into the step closure."""
         step_fn = partial(
             _agent_step_jax,
-            a_policy=a_policy, c_policy=c_policy, l_policy=l_policy,
+            a_next_policy=a_next_policy, c_policy=c_policy, l_policy=l_policy,
             a_grid=a_grid, y_grid=y_grid, h_grid=h_grid, m_grid=m_grid,
             P_y=P_y, P_h=P_h,
             w_path=w_path, w_at_retirement=w_at_retirement,
@@ -1241,7 +1268,7 @@ def simulate_lifecycle_jax(
             ui_eligibility_prob=ui_eligibility_prob,
             minimum_income=minimum_income,
         )
-        xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq, u_elig_seq)
+        xs = (t_indices, u_y_seq, u_h_seq, u_alive_seq, u_elig_seq, u_lot_seq)
         _, outputs = lax.scan(step_fn, init_state, xs)
         return outputs
 
@@ -1254,8 +1281,9 @@ def simulate_lifecycle_jax(
 
     all_outputs = jax.vmap(
         simulate_one,
-        in_axes=(0, 0, 0, 1, 1, 1, 1),
-    )(init_states, alpha_idx_sim, alpha_mult_sim, u_y_all, u_h_all, u_alive_all, u_elig_all)
+        in_axes=(0, 0, 0, 1, 1, 1, 1, 1),
+    )(init_states, alpha_idx_sim, alpha_mult_sim, u_y_all, u_h_all, u_alive_all, u_elig_all,
+      u_lot_all)
 
     # all_outputs is a tuple of 22 arrays, each (n_sim, T_sim) from vmap:
     # the 21 panel arrays and transfer_sim. Transpose to (T_sim, n_sim).
@@ -1275,7 +1303,7 @@ _simulate_lifecycle_jax_jit = jax.jit(
 
 # Batched simulation: vmap over cohorts with shared grids/transitions.
 _SIMULATE_IN_AXES = (
-        0, 0, 0,                 # a_policy, c_policy, l_policy
+        0, 0, 0,                 # a_next_policy, c_policy, l_policy
         None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
         None, None,              # P_y, P_h
         0, 0,                    # w_path, w_at_retirement
@@ -1330,7 +1358,7 @@ _simulate_lifecycle_jax_batched_tr_pyc = jax.jit(
 # ---------------------------------------------------------------------------
 
 def exact_age_means_jax(
-    a_policy, c_policy, l_policy,
+    a_next_policy, c_policy, l_policy,
     a_grid, y_grid, h_grid, m_grid,
     P_y, P_h,
     w_path, w_at_retirement,
@@ -1363,8 +1391,8 @@ def exact_age_means_jax(
     Per-age population means of the panel variables, without simulation.
 
     The distribution of households over (alpha, a, y, h, y_last) is carried
-    forward from initial_dist: the decision rule moves mass between asset
-    nodes (a' is a node, so nothing is interpolated), P_y and P_h move it
+    forward from initial_dist: the savings level moves mass to the two asset
+    nodes around it (lottery_jax; a grid-search level is a node), P_y and P_h move it
     between income and health states, and survival scales it. Each mean is the
     mass-weighted sum over the grid of the same per-state outcomes the
     simulation records (_state_outcomes_jax), the dead counting as zero as
@@ -1389,7 +1417,7 @@ def exact_age_means_jax(
     (1 - survival) * (1+g) * a'.
     """
     T_sim = T - current_age
-    n_alpha = a_policy.shape[0]
+    n_alpha = a_next_policy.shape[0]
     n_a, n_y, n_h = a_grid.shape[0], y_grid.shape[0], h_grid.shape[0]
 
     if wage_age_profile is None:
@@ -1411,7 +1439,7 @@ def exact_age_means_jax(
         def one_state(i_a, i_y, i_h, i_y_last, alpha_idx, mult):
             return _state_outcomes_jax(
                 i_a, i_y, i_h, i_y_last, age,
-                a_policy, c_policy, l_policy,
+                a_next_policy, c_policy, l_policy,
                 a_grid, y_grid, h_grid, m_grid,
                 w_path, w_at_retirement,
                 tau_c_path, tau_l_path, tau_p_path, tau_k_path,
@@ -1436,7 +1464,7 @@ def exact_age_means_jax(
         surv = survival[age][H]
         # Accidental bequest of those who die at this age: the wealth carried
         # out of the period, (1+g) a'.
-        bequest = (1.0 - surv) * (1.0 + trend_growth) * a_grid[s['a_pol_val']]
+        bequest = (1.0 - surv) * (1.0 + trend_growth) * s['a_pol_val']
         columns = (
             s['a_val'], s['c_pol_val'], s['y_val'], s['h_val'], H,
             s['effective_y'], s['employed'], s['ui'],
@@ -1462,13 +1490,18 @@ def exact_age_means_jax(
             else (jnp.nan if i == 15 else mean_alpha_idx)
             for i, x in enumerate(columns)])
 
-        # Next age. Survivors move to their chosen asset node; then
+        # Next age. Survivors move to the two asset nodes around their savings
+        # level, weights omega and 1 - omega (the omega scatter first, so a
+        # level on a node adds exact zeros there); then
         #   working: y' ~ P_y(age, h)[y, .], y_last' = y
         #   retired: y' = 0,                 y_last' = y_last
         # and h' ~ P_h(age)[h, .]. A household moving from employment into
         # unemployment at a working age is ineligible for UI with
         # probability 1 - p, and its y_last' is then 0.
-        moved = jnp.zeros_like(mu).at[K, s['a_pol_val'], Y, H, YL].add(mu * surv)
+        k_lo, omega = lottery_jax(a_grid, s['a_pol_val'])
+        mass = mu * surv
+        moved = (jnp.zeros_like(mu).at[K, k_lo, Y, H, YL].add(omega * mass)
+                 .at[K, k_lo + 1, Y, H, YL].add((1.0 - omega) * mass))
         P_y_age = jnp.where(P_y_age_health, P_y_4d[age],
                             jnp.broadcast_to(P_y, (n_h, n_y, n_y)))
         P_h_age = P_h[age]
@@ -1510,7 +1543,7 @@ _exact_age_means_jax_jit = jax.jit(exact_age_means_jax, static_argnames=_EXACT_S
 # Batched over cohorts that share the grids, the initial distribution and the
 # retirement age.
 _EXACT_IN_AXES = (
-        0, 0, 0,                 # a_policy, c_policy, l_policy
+        0, 0, 0,                 # a_next_policy, c_policy, l_policy
         None, None, None, None,  # a_grid, y_grid, h_grid, m_grid
         None, None,              # P_y, P_h
         0, 0,                    # w_path, w_at_retirement
@@ -1964,11 +1997,11 @@ class LifecycleModelJAX:
 
         # Placeholders for results
         self.V = None
-        self.a_policy = None
+        self.a_next_policy = None
         self.c_policy = None
         self.l_policy = None
         self.V_alpha = None
-        self.a_policy_alpha = None
+        self.a_next_policy_alpha = None
         self.c_policy_alpha = None
         self.l_policy_alpha = None
 
@@ -1992,7 +2025,7 @@ class LifecycleModelJAX:
             if verbose and self.n_alpha > 1:
                 print(f"  alpha[{alpha_idx}] = {float(self.alpha_grid[alpha_idx]):+.4f}  "
                       f"(exp = {alpha_mult:.4f})")
-            V, a_policy, c_policy, l_policy = _solve_lifecycle_jax_jit(
+            V, a_next_policy, c_policy, l_policy = _solve_lifecycle_jax_jit(
                 self.a_grid, self.y_grid, self.h_grid, self.m_grid,
                 self.P_y_2d,
                 self.P_h,
@@ -2027,19 +2060,19 @@ class LifecycleModelJAX:
                 minimum_income=self.minimum_income,
             )
             V_list.append(np.asarray(V))
-            a_list.append(np.asarray(a_policy))
+            a_list.append(np.asarray(a_next_policy))
             c_list.append(np.asarray(c_policy))
             l_list.append(np.asarray(l_policy))
 
         # Stack per-alpha policies on a leading axis (n_alpha, T, ...)
         self.V_alpha = np.stack(V_list, axis=0)
-        self.a_policy_alpha = np.stack(a_list, axis=0)
+        self.a_next_policy_alpha = np.stack(a_list, axis=0)
         self.c_policy_alpha = np.stack(c_list, axis=0)
         self.l_policy_alpha = np.stack(l_list, axis=0)
 
         # Backward-compat aliases pointing at alpha=0
         self.V = self.V_alpha[0]
-        self.a_policy = self.a_policy_alpha[0]
+        self.a_next_policy = self.a_next_policy_alpha[0]
         self.c_policy = self.c_policy_alpha[0]
         self.l_policy = self.l_policy_alpha[0]
 
@@ -2160,7 +2193,7 @@ class LifecycleModelJAX:
         simulate_lifecycle_jax. With n_alpha=1, alpha_idx is all zero,
         alpha_mult is all one, and behavior matches pre-Phase-8 exactly.
         """
-        if self.a_policy_alpha is None:
+        if self.a_next_policy_alpha is None:
             raise RuntimeError("Must call solve() before simulate().")
         if (float(self.transfer_floor) > 0.0
                 and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
@@ -2177,7 +2210,7 @@ class LifecycleModelJAX:
          alpha_idx_sim, alpha_mult_sim, subkey) = self._simulate_inputs(n_sim, seed)
 
         # Convert per-alpha policies to JAX (shape (n_alpha, T, n_a, n_y, n_h, n_y))
-        a_policy_jax = jnp.array(self.a_policy_alpha)
+        a_next_policy_jax = jnp.array(self.a_next_policy_alpha)
         c_policy_jax = jnp.array(self.c_policy_alpha)
         l_policy_jax = jnp.array(self.l_policy_alpha)
 
@@ -2185,7 +2218,7 @@ class LifecycleModelJAX:
         P_y_4d_sim = self.P_y_4d if self.P_y_age_health else None
 
         result = _simulate_lifecycle_jax_jit(
-            a_policy_jax, c_policy_jax, l_policy_jax,
+            a_next_policy_jax, c_policy_jax, l_policy_jax,
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
             self.P_y_2d, self.P_h,
             self.w_path, self.w_at_retirement,
@@ -2227,7 +2260,7 @@ class LifecycleModelJAX:
         LifecycleModelPerfectForesight.exact_age_means(): (T_sim, 23), column i
         the mean of element i of the simulate() panel. See exact_age_means_jax.
         """
-        if self.a_policy_alpha is None:
+        if self.a_next_policy_alpha is None:
             raise RuntimeError("Must call solve() before exact_age_means().")
         if (float(self.transfer_floor) > 0.0
                 and int(getattr(self.config, 'schooling_years', 0) or 0) > 0):
@@ -2239,7 +2272,7 @@ class LifecycleModelJAX:
             raise ValueError("exact_age_means covers ages current_age..T-1")
 
         out = _exact_age_means_jax_jit(
-            jnp.array(self.a_policy_alpha), jnp.array(self.c_policy_alpha),
+            jnp.array(self.a_next_policy_alpha), jnp.array(self.c_policy_alpha),
             jnp.array(self.l_policy_alpha),
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
             self.P_y_2d, self.P_h,
@@ -2280,12 +2313,12 @@ class LifecycleModelJAX:
         mass is the mass of households on each state at that age. A column with
         zero mass is a state nobody is in. See exact_age_means_jax.
         """
-        if self.a_policy_alpha is None:
+        if self.a_next_policy_alpha is None:
             raise RuntimeError("Must call solve() before exact_panel().")
         T_sim = self.T - self.current_age
         rows = np.arange(T_sim) if rows is None else np.asarray(rows, dtype=int)
         _, panel, mass = _exact_age_means_jax_jit(
-            jnp.array(self.a_policy_alpha), jnp.array(self.c_policy_alpha),
+            jnp.array(self.a_next_policy_alpha), jnp.array(self.c_policy_alpha),
             jnp.array(self.l_policy_alpha),
             self.a_grid, self.y_grid, self.h_grid, self.m_grid,
             self.P_y_2d, self.P_h,
@@ -2511,11 +2544,11 @@ if __name__ == "__main__":
         print(f"\n  Max |V_numpy - V_jax| = {V_diff:.2e}")
 
         # Compare policies
-        a_match = np.all(np_model.a_policy == jax_model.a_policy)
+        a_match = np.all(np_model.a_next_policy == jax_model.a_next_policy)
         print(f"  Asset policies identical: {a_match}")
         if not a_match:
-            n_diff = np.sum(np_model.a_policy != jax_model.a_policy)
-            n_total = np_model.a_policy.size
+            n_diff = np.sum(np_model.a_next_policy != jax_model.a_next_policy)
+            n_total = np_model.a_next_policy.size
             print(f"  Differing entries: {n_diff}/{n_total} ({100*n_diff/n_total:.2f}%)")
 
         c_diff = np.max(np.abs(np_model.c_policy - jax_model.c_policy))

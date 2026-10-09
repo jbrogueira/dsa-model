@@ -30,6 +30,23 @@ def encoded_pension_floor(config):
     return -floor / ref
 
 
+def lottery_np(grid, x):
+    """Two-node lottery of a savings level x over an increasing grid.
+
+    Returns (k, omega): x is clipped to [grid[0], grid[-1]], k indexes the
+    lower node of the interval [grid[k], grid[k+1]] that holds it and omega =
+    (grid[k+1] - x)/(grid[k+1] - grid[k]) is the weight on grid[k], 1 - omega
+    the weight on grid[k+1]. side='left': a level on node n > 0 gives k = n - 1
+    and omega = 0, a level on node 0 gives k = 0 and omega = 1, so a policy on
+    the nodes moves the whole mass through a single node.
+    """
+    grid = np.asarray(grid)
+    x = np.clip(np.asarray(x, dtype=float), grid[0], grid[-1])
+    k = np.clip(np.searchsorted(grid, x, side='left') - 1, 0, len(grid) - 2)
+    omega = (grid[k + 1] - x) / (grid[k + 1] - grid[k])
+    return k, omega
+
+
 def pension_floor_at(floor, replacement):
     """Floor in a period with the given replacement rate; `floor` as returned
     by encoded_pension_floor()."""
@@ -524,9 +541,10 @@ class LifecycleModelPerfectForesight:
             self.m_grid = config.m_scale_path[:, None] * self.m_grid
 
         # Value and policy functions
-        # Dimensions: (T, n_a, n_y, n_h, n_y_last)
+        # Dimensions: (T, n_a, n_y, n_h, n_y_last). The savings policy is the
+        # level of a' in detrended units.
         self.V = None
-        self.a_policy = None
+        self.a_next_policy = None
         self.c_policy = None
 
     def _print_income_diagnostics(self):
@@ -780,7 +798,7 @@ class LifecycleModelPerfectForesight:
         base_shape = (self.T, self.n_a, self.n_y, self.n_h, self.n_y)
         full_shape = (self.n_alpha,) + base_shape
         self.V_alpha = np.zeros(full_shape)
-        self.a_policy_alpha = np.zeros(full_shape, dtype=np.int32)
+        self.a_next_policy_alpha = np.zeros(full_shape)
         self.c_policy_alpha = np.zeros(full_shape)
         self.l_policy_alpha = np.ones(full_shape)
 
@@ -791,10 +809,10 @@ class LifecycleModelPerfectForesight:
                       f"(exp = {self._alpha_mult:.4f})")
 
             # Per-alpha scratch arrays. The existing _solve_period /
-            # _solve_backward_* methods write into self.V / self.a_policy / ...
-            # so we keep them as plain arrays during the inner solve.
+            # _solve_backward_* methods write into self.V / self.a_next_policy
+            # / ... so we keep them as plain arrays during the inner solve.
             self.V = np.zeros(base_shape)
-            self.a_policy = np.zeros(base_shape, dtype=np.int32)
+            self.a_next_policy = np.zeros(base_shape)
             self.c_policy = np.zeros(base_shape)
             self.l_policy = np.ones(base_shape)
 
@@ -812,7 +830,7 @@ class LifecycleModelPerfectForesight:
 
             # Snapshot this alpha's policies into the per-alpha arrays
             self.V_alpha[alpha_idx] = self.V
-            self.a_policy_alpha[alpha_idx] = self.a_policy
+            self.a_next_policy_alpha[alpha_idx] = self.a_next_policy
             self.c_policy_alpha[alpha_idx] = self.c_policy
             self.l_policy_alpha[alpha_idx] = self.l_policy
 
@@ -820,7 +838,7 @@ class LifecycleModelPerfectForesight:
         # downstream consumer that has not yet been ported to per-alpha lookup.
         self._alpha_mult = 1.0
         self.V = self.V_alpha[0]
-        self.a_policy = self.a_policy_alpha[0]
+        self.a_next_policy = self.a_next_policy_alpha[0]
         self.c_policy = self.c_policy_alpha[0]
         self.l_policy = self.l_policy_alpha[0]
 
@@ -1056,12 +1074,12 @@ class LifecycleModelPerfectForesight:
                                 a, y, h, i_a, i_y, i_y_last, i_h, is_retired=True, is_terminal=is_terminal)
                             if val_ret > val_work:
                                 self.V[t, i_a, i_y, i_h, i_y_last] = val_ret
-                                self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx_ret
+                                self.a_next_policy[t, i_a, i_y, i_h, i_y_last] = self.a_grid[aidx_ret]
                                 self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_ret
                                 self.l_policy[t, i_a, i_y, i_h, i_y_last] = l_ret
                             else:
                                 self.V[t, i_a, i_y, i_h, i_y_last] = val_work
-                                self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx_work
+                                self.a_next_policy[t, i_a, i_y, i_h, i_y_last] = self.a_grid[aidx_work]
                                 self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_work
                                 self.l_policy[t, i_a, i_y, i_h, i_y_last] = l_work
                         else:
@@ -1070,7 +1088,7 @@ class LifecycleModelPerfectForesight:
                                 a, y, h, i_a, i_y, i_y_last, i_h,
                                 is_retired=is_retired_fixed, is_terminal=is_terminal)
                             self.V[t, i_a, i_y, i_h, i_y_last] = val
-                            self.a_policy[t, i_a, i_y, i_h, i_y_last] = aidx
+                            self.a_next_policy[t, i_a, i_y, i_h, i_y_last] = self.a_grid[aidx]
                             self.c_policy[t, i_a, i_y, i_h, i_y_last] = c_val
                             self.l_policy[t, i_a, i_y, i_h, i_y_last] = l_val
 
@@ -1231,7 +1249,7 @@ class LifecycleModelPerfectForesight:
             t = period_data[0]
             for i_a, (V_slice, a_pol_slice, c_pol_slice, l_pol_slice) in enumerate(results):
                 self.V[t, i_a, :, :, :] = V_slice
-                self.a_policy[t, i_a, :, :, :] = a_pol_slice
+                self.a_next_policy[t, i_a, :, :, :] = a_pol_slice
                 self.c_policy[t, i_a, :, :, :] = c_pol_slice
                 self.l_policy[t, i_a, :, :, :] = l_pol_slice
 
@@ -1429,14 +1447,23 @@ class LifecycleModelPerfectForesight:
                 if self.config.survival_probs is not None:
                     survival_t = self.survival_probs[lifecycle_age, i_h[i]]
                     if np.random.random() > survival_t:
-                        a_next_idx = self.a_policy_alpha[alpha_idx_sim[i], lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
-                        bequest_sim[t_sim, i] = (1.0 + self.trend_growth) * self.a_grid[a_next_idx]
+                        a_next = self.a_next_policy_alpha[alpha_idx_sim[i], lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                        bequest_sim[t_sim, i] = (1.0 + self.trend_growth) * a_next
                         alive[i] = False
                         continue  # skip state transitions for dead agent
 
                 # --- State transitions to next period ---
                 if t_sim < T_sim - 1:
-                    i_a[i] = self.a_policy_alpha[alpha_idx_sim[i], lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                    # The household moves to one of the two nodes around its
+                    # savings level, the upper one with probability 1 - omega.
+                    # A level on a node has omega in {0, 1} and takes no draw,
+                    # so grid-search policies keep the random stream unchanged.
+                    a_next = self.a_next_policy_alpha[alpha_idx_sim[i], lifecycle_age, i_a[i], i_y[i], i_h[i], i_y_last[i]]
+                    k_lo, omega = lottery_np(self.a_grid, a_next)
+                    if 0.0 < omega < 1.0:
+                        i_a[i] = k_lo + 1 if np.random.random() >= omega else k_lo
+                    else:
+                        i_a[i] = k_lo + 1 if omega == 0.0 else k_lo
 
                     if not is_retired:
                         i_y_last[i] = i_y[i]
@@ -1514,7 +1541,7 @@ class LifecycleModelPerfectForesight:
         zeros = np.zeros(shape)
         is_retired = (lifecycle_age >= self.retirement_age)
 
-        a_next_idx = self.a_policy_alpha[:, lifecycle_age]
+        a_next = self.a_next_policy_alpha[:, lifecycle_age]
         c = self.c_policy_alpha[:, lifecycle_age]
         w_t = self.w_path[lifecycle_age]
         kappa_t = self.wage_age_profile[lifecycle_age]
@@ -1572,14 +1599,14 @@ class LifecycleModelPerfectForesight:
             surv = self.survival_probs[lifecycle_age][H]
         else:
             surv = np.ones(shape)
-        bequest = (1.0 - surv) * (1.0 + self.trend_growth) * self.a_grid[a_next_idx]
+        bequest = (1.0 - surv) * (1.0 + self.trend_growth) * a_next
 
         columns = (a_val, c, y_val, h_val, H, effective_y, employed, ui,
                    m, (1 - self.kappa_path[lifecycle_age]) * m,
                    self.kappa_path[lifecycle_age] * m,
                    tax_c, tax_l, tax_p, tax_k, None, pension,
                    np.full(shape, is_retired), l, np.ones(shape), bequest, None, transfer)
-        return columns, a_next_idx, surv
+        return columns, a_next, surv
 
     def exact_age_means(self, T_sim=None, return_dist=False):
         """Per-age population means of the panel variables, without simulation.
@@ -1610,20 +1637,24 @@ class LifecycleModelPerfectForesight:
             if return_dist:
                 dists[t_sim] = mu
 
-            columns, a_next_idx, surv = self._exact_columns(lifecycle_age, mu)
+            columns, a_next, surv = self._exact_columns(lifecycle_age, mu)
             for i, x in enumerate(columns):
                 if x is not None:
                     means[t_sim, i] = np.sum(mu * x)
             means[t_sim, 21] = mean_alpha_idx
 
-            # Next age: survivors move to their chosen asset node, then
+            # Next age: survivors move to the two asset nodes around their
+            # savings level (weights omega and 1 - omega), then
             #   working: y' ~ P_y(age, h)[y, .], y_last' = y
             #   retired: y' = 0,                 y_last' = y_last
             # and h' ~ P_h(age)[h, .]. A household moving from employment into
             # unemployment at a working age is ineligible for UI with
             # probability 1 - p, and its y_last' is then 0.
             moved = np.zeros(shape)
-            np.add.at(moved, (K, a_next_idx, Y, H, YL), mu * surv)
+            k_lo, omega = lottery_np(self.a_grid, a_next)
+            mass = mu * surv
+            np.add.at(moved, (K, k_lo, Y, H, YL), omega * mass)
+            np.add.at(moved, (K, k_lo + 1, Y, H, YL), (1.0 - omega) * mass)
             P_h_age = self.P_h[lifecycle_age]
             if is_retired:
                 mu = np.zeros(shape)
@@ -1740,7 +1771,7 @@ def _solve_period_wrapper(args, model):
     is_terminal = (t == model.T - 1)
 
     V_slice = np.zeros((model.n_y, model.n_h, model.n_y))
-    a_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y), dtype=np.int32)
+    a_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y))
     c_pol_slice = np.zeros((model.n_y, model.n_h, model.n_y))
     l_pol_slice = np.ones((model.n_y, model.n_h, model.n_y))
 
@@ -1758,12 +1789,12 @@ def _solve_period_wrapper(args, model):
                         is_retired=True, is_terminal=is_terminal)
                     if val_r > val_w:
                         V_slice[i_y, i_h, i_y_last] = val_r
-                        a_pol_slice[i_y, i_h, i_y_last] = aidx_r
+                        a_pol_slice[i_y, i_h, i_y_last] = model.a_grid[aidx_r]
                         c_pol_slice[i_y, i_h, i_y_last] = c_r
                         l_pol_slice[i_y, i_h, i_y_last] = l_r
                     else:
                         V_slice[i_y, i_h, i_y_last] = val_w
-                        a_pol_slice[i_y, i_h, i_y_last] = aidx_w
+                        a_pol_slice[i_y, i_h, i_y_last] = model.a_grid[aidx_w]
                         c_pol_slice[i_y, i_h, i_y_last] = c_w
                         l_pol_slice[i_y, i_h, i_y_last] = l_w
                 else:
@@ -1772,7 +1803,7 @@ def _solve_period_wrapper(args, model):
                         a, y, h, i_a, i_y, i_y_last, i_h,
                         is_retired=is_retired_fixed, is_terminal=is_terminal)
                     V_slice[i_y, i_h, i_y_last] = val
-                    a_pol_slice[i_y, i_h, i_y_last] = aidx
+                    a_pol_slice[i_y, i_h, i_y_last] = model.a_grid[aidx]
                     c_pol_slice[i_y, i_h, i_y_last] = c_val
                     l_pol_slice[i_y, i_h, i_y_last] = l_val
 

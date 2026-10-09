@@ -133,7 +133,7 @@ def _panels_jax(olg, models_rows, chunk=None):
             else:
                 init_arg, py_arg = initial_dist, (ref.P_y_4d if ref.P_y_age_health else None)
             _, panel, mass = kernel(
-                stack(lambda m: m.a_policy_alpha), stack(lambda m: m.c_policy_alpha),
+                stack(lambda m: m.a_next_policy_alpha), stack(lambda m: m.c_policy_alpha),
                 stack(lambda m: m.l_policy_alpha),
                 ref.a_grid, ref.y_grid, ref.h_grid, stack(lambda m: m.m_grid),
                 ref.P_y_2d, ref.P_h,

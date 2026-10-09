@@ -676,11 +676,11 @@ class OLGTransition:
             model = models_dict[b]
             model.V_alpha = (None if on_device
                              else np.stack([Vb[ci] for Vb in V_alpha_sweeps], axis=0))
-            model.a_policy_alpha = xp.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
+            model.a_next_policy_alpha = xp.stack([ab[ci] for ab in a_alpha_sweeps], axis=0)
             model.c_policy_alpha = xp.stack([cb[ci] for cb in c_alpha_sweeps], axis=0)
             model.l_policy_alpha = xp.stack([lb[ci] for lb in l_alpha_sweeps], axis=0)
             model.V = None if on_device else model.V_alpha[0]
-            model.a_policy = model.a_policy_alpha[0]
+            model.a_next_policy = model.a_next_policy_alpha[0]
             model.c_policy = model.c_policy_alpha[0]
             model.l_policy = model.l_policy_alpha[0]
 
@@ -689,8 +689,8 @@ class OLGTransition:
         for b in group_birth_periods:
             if solved_as[b] != b:
                 solved, model = models_dict[solved_as[b]], models_dict[b]
-                for attr in ('V_alpha', 'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha',
-                             'V', 'a_policy', 'c_policy', 'l_policy'):
+                for attr in ('V_alpha', 'a_next_policy_alpha', 'c_policy_alpha', 'l_policy_alpha',
+                             'V', 'a_next_policy', 'c_policy', 'l_policy'):
                     setattr(model, attr, getattr(solved, attr))
 
     @staticmethod
@@ -771,7 +771,7 @@ class OLGTransition:
 
             # Stack per-cohort 6-D policies on CPU; upload per chunk during
             # simulation to avoid holding all cohorts' policies on GPU at once.
-            # If a_policy_alpha is missing (older code path), wrap the 5-D scalar
+            # If a_next_policy_alpha is missing (older code path), wrap the 5-D scalar
             # policy on a singleton leading axis to keep the shape uniform.
             on_device = self.jax_policies_on_device
 
@@ -949,7 +949,7 @@ class OLGTransition:
                     def s(arr):
                         return arr[idx]
 
-                    ca_pol = _policy_stack(padded, 'a_policy_alpha', 'a_policy')
+                    ca_pol = _policy_stack(padded, 'a_next_policy_alpha', 'a_next_policy')
                     cc_pol = _policy_stack(padded, 'c_policy_alpha', 'c_policy')
                     cl_pol = _policy_stack(padded, 'l_policy_alpha', 'l_policy')
                     sliced = [s(a) for a in per_cohort_arrs]
@@ -1025,7 +1025,7 @@ class OLGTransition:
                 continue
             computed_as, first_with = {}, {}
             for b, m in models.items():
-                key = (self._solve_inputs_key(m), id(m.a_policy_alpha),
+                key = (self._solve_inputs_key(m), id(m.a_next_policy_alpha),
                        id(m.c_policy_alpha), id(m.l_policy_alpha))
                 computed_as[b] = first_with.setdefault(key, b)
             todo = {b: models[b] for b in models if computed_as[b] == b}
@@ -1078,7 +1078,7 @@ class OLGTransition:
                 else:
                     init_arg, py_arg = initial_dist, P_y_4d
                 res = exact_batched(
-                    stack(lambda m: m.a_policy_alpha), stack(lambda m: m.c_policy_alpha),
+                    stack(lambda m: m.a_next_policy_alpha), stack(lambda m: m.c_policy_alpha),
                     stack(lambda m: m.l_policy_alpha),
                     ref.a_grid, ref.y_grid, ref.h_grid, stack(lambda m: m.m_grid),
                     ref.P_y_2d, ref.P_h,
@@ -1762,8 +1762,8 @@ class OLGTransition:
                             # read *_policy_alpha (the scalar arrays alias alpha=0
                             # only), so stitching the scalars alone never reaches
                             # the simulation.
-                            for attr in ('a_policy', 'c_policy', 'l_policy',
-                                         'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
+                            for attr in ('a_next_policy', 'c_policy', 'l_policy',
+                                         'a_next_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
                                 base_arr = getattr(base_model, attr, None)
                                 cf_arr   = getattr(model, attr, None)
                                 if base_arr is None or cf_arr is None:
@@ -1784,16 +1784,15 @@ class OLGTransition:
 
                         # Show asset policy at age 0 (newborn)
                         age = 0
-                        # a_policy shape: (T, n_a, n_y, n_h, n_e)
+                        # a_next_policy shape: (T, n_a, n_y, n_h, n_e), levels of a'
                         # Show policy for median asset state, first income/health state
                         mid_a = model.config.n_a // 2
-                        a_next_idx = model.a_policy[age, mid_a, 0, 0, 0]
-                        a_next_level = model.a_grid[a_next_idx]
-                        print(f"       Asset policy at age {age}: a'={a_next_level:.6f} (idx={a_next_idx}, from a={model.a_grid[mid_a]:.6f})")
+                        a_next_level = model.a_next_policy[age, mid_a, 0, 0, 0]
+                        print(f"       Asset policy at age {age}: a'={a_next_level:.6f} (from a={model.a_grid[mid_a]:.6f})")
 
                         # Show mean asset policy across all states
-                        mean_a_policy = np.mean(model.a_policy[age, :, :, :, :])
-                        max_a_policy = np.max(model.a_policy[age, :, :, :, :])
+                        mean_a_policy = np.mean(model.a_next_policy[age, :, :, :, :])
+                        max_a_policy = np.max(model.a_next_policy[age, :, :, :, :])
                         print(f"       Mean a' at age {age}: {mean_a_policy:.6f}, Max a': {max_a_policy:.6f}")
 
                         # Check if saving is happening
@@ -1845,8 +1844,8 @@ class OLGTransition:
                 # Stitch the per-alpha arrays too: the batched simulate
                 # reads *_policy_alpha, so stitching the scalar arrays
                 # alone never reaches the simulation.
-                for attr in ('a_policy', 'c_policy', 'l_policy',
-                             'a_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
+                for attr in ('a_next_policy', 'c_policy', 'l_policy',
+                             'a_next_policy_alpha', 'c_policy_alpha', 'l_policy_alpha'):
                     base_arr = getattr(base_m, attr, None)
                     jax_arr  = getattr(jax_m, attr, None)
                     if base_arr is None or jax_arr is None:

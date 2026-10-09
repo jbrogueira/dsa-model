@@ -57,7 +57,7 @@ class TestLumpSum:
         resid_np, m_np = _budget_identity(cfg, LifecycleModelPerfectForesight)
         resid_jx, m_jx = _budget_identity(cfg, LifecycleModelJAX)
         assert resid_np < 1e-10 and resid_jx < 1e-10
-        assert np.array_equal(np.asarray(m_np.a_policy), np.asarray(m_jx.a_policy))
+        assert np.array_equal(np.asarray(m_np.a_next_policy), np.asarray(m_jx.a_next_policy))
         assert np.abs(np.asarray(m_np.c_policy) - np.asarray(m_jx.c_policy)).max() < 1e-9
 
     def test_lump_sum_raises_consumption(self):

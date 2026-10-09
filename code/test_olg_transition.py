@@ -449,16 +449,16 @@ class TestBorrowingConstraint:
         print(f"{'a_idx':<6} {'assets':<10} {'a_next':<10} {'savings?':<10}")
         print("-" * 40)
         
-        for a_idx in range(model.a_policy.shape[1]):
-            a_next = model.a_policy[age, a_idx, y_idx, h_idx, e_idx]
+        for a_idx in range(model.a_next_policy.shape[1]):
+            a_next = model.a_next_policy[age, a_idx, y_idx, h_idx, e_idx]
             # Get actual asset value from grid
             a_current = model.a_grid[a_idx]
             saves = "✓" if a_next > 0.01 else "✗"
             print(f"{a_idx:<6} {a_current:<10.4f} {a_next:<10.4f} {saves:<10}")
         
         # Check if ONLY a=0 has zero savings
-        a0_policy = model.a_policy[age, 0, y_idx, h_idx, e_idx]
-        a1_policy = model.a_policy[age, 1, y_idx, h_idx, e_idx]
+        a0_policy = model.a_next_policy[age, 0, y_idx, h_idx, e_idx]
+        a1_policy = model.a_next_policy[age, 1, y_idx, h_idx, e_idx]
         
         print("\nKey finding:")
         print(f"  Policy at a=0: {a0_policy:.4f}")
@@ -629,7 +629,7 @@ class TestRootCauseDiagnostic:
         age = 1
         print(f"\nPolicy function at age {age}:")
         print(f"  c_policy shape: {model.c_policy.shape}")
-        print(f"  a_policy shape: {model.a_policy.shape}")
+        print(f"  a_policy shape: {model.a_next_policy.shape}")
         
         # Sample the policy: a'(a, y, h) for some states
         a_idx = 0  # Starting with zero assets
@@ -637,7 +637,7 @@ class TestRootCauseDiagnostic:
         h_idx = 0  # No health shock
         
         c_policy_val = model.c_policy[age, a_idx, y_idx, h_idx, 0]
-        a_next_policy_val = model.a_policy[age, a_idx, y_idx, h_idx, 0]
+        a_next_policy_val = model.a_next_policy[age, a_idx, y_idx, h_idx, 0]
         
         print("\n  At state (a=0, y_low, h_good):")
         print(f"    Consumption: {c_policy_val:.4f}")
@@ -651,7 +651,7 @@ class TestRootCauseDiagnostic:
         # Try higher income state
         y_idx = 1  # High income
         c_policy_val_high = model.c_policy[age, a_idx, y_idx, h_idx, 0]
-        a_next_policy_val_high = model.a_policy[age, a_idx, y_idx, h_idx, 0]
+        a_next_policy_val_high = model.a_next_policy[age, a_idx, y_idx, h_idx, 0]
         
         print("\n  At state (a=0, y_high, h_good):")
         print(f"    Consumption: {c_policy_val_high:.4f}")
@@ -716,7 +716,7 @@ class TestPolicyIndexing:
         model.solve(verbose=False)
         
         print("\nPolicy function shapes:")
-        print(f"  a_policy: {model.a_policy.shape}")
+        print(f"  a_policy: {model.a_next_policy.shape}")
         print(f"  c_policy: {model.c_policy.shape}")
         print(f"  V: {model.V.shape}")
         
@@ -729,22 +729,22 @@ class TestPolicyIndexing:
         print(f"  n_y = {config.n_y}")
         print(f"  n_h = {config.n_h}")
 
-        n_y_last = model.a_policy.shape[-1]
+        n_y_last = model.a_next_policy.shape[-1]
         print(f"  n_y_last (previous income states) = {n_y_last}")
         
         # Sample policies at different ages
         print("\nSample asset policies (a=0, y=high, h=good, e=0):")
         for age in range(min(4, config.T)):
-            a_next = model.a_policy[age, 0, 1, 0, 0]  # a=0, y=1 (high), h=0, e=0
+            a_next = model.a_next_policy[age, 0, 1, 0, 0]  # a=0, y=1 (high), h=0, e=0
             print(f"  Age {age}: a' = {a_next:.4f}")
         
         # Check if any policies are non-zero
-        nonzero_policies = np.sum(model.a_policy > 0.01)
-        total_policies = np.prod(model.a_policy.shape)
+        nonzero_policies = np.sum(model.a_next_policy > 0.01)
+        total_policies = np.prod(model.a_next_policy.shape)
         print(f"\nNon-zero asset policies: {nonzero_policies}/{total_policies} ({100*nonzero_policies/total_policies:.1f}%)")
         
         # Check if the issue is at age 1 specifically
-        age1_policies = model.a_policy[1, :, :, :, :]
+        age1_policies = model.a_next_policy[1, :, :, :, :]
         age1_nonzero = np.sum(age1_policies > 0.01)
         age1_total = np.prod(age1_policies.shape)
         print(f"Age 1 non-zero policies: {age1_nonzero}/{age1_total} ({100*age1_nonzero/age1_total:.1f}%)")
@@ -752,7 +752,7 @@ class TestPolicyIndexing:
         # Check other ages
         for age in [0, 2, 3]:
             if age < config.T:
-                age_policies = model.a_policy[age, :, :, :, :]
+                age_policies = model.a_next_policy[age, :, :, :, :]
                 age_nonzero = np.sum(age_policies > 0.01)
                 age_total = np.prod(age_policies.shape)
                 print(f"Age {age} non-zero policies: {age_nonzero}/{age_total} ({100*age_nonzero/age_total:.1f}%)")
@@ -800,25 +800,25 @@ class TestEarningsIndexing:
         model = LifecycleModelPerfectForesight(ss_config, verbose=False)
         model.solve(verbose=False)
         
-        n_y_last = model.a_policy.shape[-1]
+        n_y_last = model.a_next_policy.shape[-1]
         print(f"\nNumber of previous income states (n_y_last): {n_y_last}")
 
         # Check policy at age 1, for each y_last state
         print("\nAge 1 policies (a=0, y=high, h=good) by y_last state:")
         for yl_idx in range(n_y_last):
-            a_next = model.a_policy[1, 0, 1, 0, yl_idx]
+            a_next = model.a_next_policy[1, 0, 1, 0, yl_idx]
             print(f"  y_last={yl_idx}: a' = {a_next:.4f}")
 
         # Check age 2
         print("\nAge 2 policies (a=0, y=high, h=good) by y_last state:")
         for yl_idx in range(n_y_last):
-            a_next = model.a_policy[2, 0, 1, 0, yl_idx]
+            a_next = model.a_next_policy[2, 0, 1, 0, yl_idx]
             print(f"  y_last={yl_idx}: a' = {a_next:.4f}")
 
         # Check which y_last states have most non-zero policies
         print("\nNon-zero policies by y_last state:")
         for yl_idx in range(n_y_last):
-            yl_policies = model.a_policy[:, :, :, :, yl_idx]
+            yl_policies = model.a_next_policy[:, :, :, :, yl_idx]
             yl_nonzero = np.sum(yl_policies > 0.01)
             yl_total = np.prod(yl_policies.shape)
             print(f"  y_last={yl_idx}: {yl_nonzero}/{yl_total} ({100*yl_nonzero/yl_total:.1f}%)")
@@ -826,7 +826,7 @@ class TestEarningsIndexing:
         # Check average policy value by y_last state
         print("\nAverage savings by y_last state (excluding zeros):")
         for yl_idx in range(n_y_last):
-            yl_policies = model.a_policy[:, :, :, :, yl_idx]
+            yl_policies = model.a_next_policy[:, :, :, :, yl_idx]
             nonzero_policies = yl_policies[yl_policies > 0.01]
             if len(nonzero_policies) > 0:
                 avg_savings = np.mean(nonzero_policies)
@@ -889,7 +889,7 @@ class TestSimulationVsPolicy:
         
         print("\nDirect policy access (a=0, y=high, h=good, e=0):")
         for age in range(min(4, config.T)):
-            a_next = model.a_policy[age, 0, 1, 0, 0]
+            a_next = model.a_next_policy[age, 0, 1, 0, 0]
             print(f"  Age {age}: a' = {a_next:.4f}")
         
         print("\n⚠️  If simulation shows positive assets but direct access shows zero,")
@@ -939,7 +939,7 @@ class TestJAXBackend:
         assert V_diff < 1e-6, f"V mismatch: max diff = {V_diff:.2e}"
 
         # Asset policies must be identical
-        assert np.all(np_model.a_policy == jax_model.a_policy), \
+        assert np.all(np_model.a_next_policy == jax_model.a_next_policy), \
             "Asset policies differ between NumPy and JAX"
 
         # Consumption policies must be close
@@ -1322,7 +1322,7 @@ class TestNewFeaturesJAX:
 
         V_diff = np.max(np.abs(np_model.V - jax_model.V))
         assert V_diff < 1e-6, f"V mismatch with pension floor: max diff = {V_diff:.2e}"
-        assert np.all(np_model.a_policy == jax_model.a_policy), \
+        assert np.all(np_model.a_next_policy == jax_model.a_next_policy), \
             "Asset policies differ with pension floor"
 
     def test_progressive_tax_jax_matches_numpy(self):
@@ -1342,7 +1342,7 @@ class TestNewFeaturesJAX:
 
         V_diff = np.max(np.abs(np_model.V - jax_model.V))
         assert V_diff < 1e-6, f"V mismatch with progressive tax: max diff = {V_diff:.2e}"
-        assert np.all(np_model.a_policy == jax_model.a_policy), \
+        assert np.all(np_model.a_next_policy == jax_model.a_next_policy), \
             "Asset policies differ with progressive tax"
 
     def test_age_medical_jax_matches_numpy(self):
@@ -1382,7 +1382,7 @@ class TestNewFeaturesJAX:
 
         V_diff = np.max(np.abs(np_model.V - jax_model.V))
         assert V_diff < 1e-6, f"V mismatch with survival risk: max diff = {V_diff:.2e}"
-        assert np.all(np_model.a_policy == jax_model.a_policy), \
+        assert np.all(np_model.a_next_policy == jax_model.a_next_policy), \
             "Asset policies differ with survival risk"
 
     def test_schooling_jax_matches_numpy(self):
@@ -1451,7 +1451,7 @@ class TestNewFeaturesJAX:
 
         V_diff = np.max(np.abs(np_model.V - jax_model.V))
         assert V_diff < 1e-6, f"V mismatch with combined features: max diff = {V_diff:.2e}"
-        assert np.all(np_model.a_policy == jax_model.a_policy), \
+        assert np.all(np_model.a_next_policy == jax_model.a_next_policy), \
             "Asset policies differ with combined features"
 
 
@@ -1814,7 +1814,7 @@ class TestLaborSupply:
         m2 = LifecycleModelPerfectForesight(config_explicit, verbose=False)
         m2.solve(verbose=False)
         assert np.allclose(m1.V, m2.V), "V should be identical with labor_supply=False"
-        assert np.all(m1.a_policy == m2.a_policy), "a_policy should be identical"
+        assert np.all(m1.a_next_policy == m2.a_next_policy), "a_policy should be identical"
         assert np.allclose(m1.c_policy, m2.c_policy), "c_policy should be identical"
         assert np.allclose(m1.l_policy, m2.l_policy), "l_policy should be identical (all 1.0)"
 
@@ -1854,7 +1854,7 @@ class TestLaborSupplyJAX:
 
         V_diff = np.max(np.abs(np_model.V - jax_model.V))
         assert V_diff < 1e-6, f"V mismatch: max diff = {V_diff:.2e}"
-        assert np.all(np_model.a_policy == jax_model.a_policy), \
+        assert np.all(np_model.a_next_policy == jax_model.a_next_policy), \
             "Asset policies differ"
         assert np.allclose(np_model.l_policy, jax_model.l_policy), \
             "l_policy should match (both all 1.0)"
@@ -2283,7 +2283,7 @@ class TestFixedEffect:
         # Scalar policies alias the (singleton) per-alpha arrays
         assert m.V_alpha.shape[0] == 1
         assert np.array_equal(m.V, m.V_alpha[0])
-        assert np.array_equal(m.a_policy, m.a_policy_alpha[0])
+        assert np.array_equal(m.a_next_policy, m.a_next_policy_alpha[0])
 
     def test_alpha_permanence(self):
         """Each agent's alpha_idx is constant across all simulation periods."""
@@ -2410,7 +2410,9 @@ class TestTrendGrowthHousehold:
         grow, flat, _ = self._pair()
         mg = Model(grow, verbose=False); mg.solve(verbose=False)
         mf = Model(flat, verbose=False); mf.solve(verbose=False)
-        assert np.array_equal(np.asarray(mg.a_policy), np.asarray(mf.a_policy))
+        # the same node on grids that differ by the factor 1+g
+        np.testing.assert_allclose(np.asarray(mf.a_next_policy),
+                                   (1 + self.G) * np.asarray(mg.a_next_policy), rtol=1e-14, atol=0)
         assert np.abs(np.asarray(mg.c_policy) - np.asarray(mf.c_policy)).max() < 1e-12
         assert np.abs(np.asarray(mg.l_policy) - np.asarray(mf.l_policy)).max() < 1e-12
 
@@ -2426,7 +2428,7 @@ class TestTrendGrowthHousehold:
         mg = LifecycleModelPerfectForesight(LifecycleConfig(trend_growth=self.G, **base),
                                             verbose=False)
         mg.solve(verbose=False)
-        assert not np.array_equal(m0.a_policy, mg.a_policy)
+        assert not np.array_equal(m0.a_next_policy, mg.a_next_policy)
 
 
 class TestTrendGrowthStocks:
@@ -2718,7 +2720,7 @@ class TestCohortBatchedSurvival:
         cls = type(batched)
         alone = cls(batched.config, verbose=False)
         alone.solve(verbose=False)
-        for field in ('c_policy', 'a_policy'):
+        for field in ('c_policy', 'a_next_policy'):
             b = np.asarray(getattr(batched, field))
             a = np.asarray(getattr(alone, field))
             assert b.shape == a.shape, f'{field} shape {b.shape} vs {a.shape}'
@@ -3071,8 +3073,8 @@ class TestCohortRetirement:
         for key, m in models.items():
             alone = LifecycleModelJAX(m.config, verbose=False)
             alone.solve(verbose=False)
-            assert np.array_equal(np.asarray(m.a_policy_alpha),
-                                  np.asarray(alone.a_policy_alpha)), key
+            assert np.array_equal(np.asarray(m.a_next_policy_alpha),
+                                  np.asarray(alone.a_next_policy_alpha)), key
             np.testing.assert_allclose(np.asarray(m.c_policy_alpha),
                                        np.asarray(alone.c_policy_alpha),
                                        rtol=1e-10, atol=1e-12, err_msg=str(key))
@@ -3330,7 +3332,7 @@ class TestAuditFixes20261002:
         assert np.ptp(Vr[10]) > 1e-6, "retired value does not depend on z_last"
         assert np.all(np.diff(Vr, axis=1) >= -1e-12), "retired value decreasing in z_last"
         assert np.abs(np.asarray(m.V) - np.asarray(mj.V)).max() < 1e-10
-        assert np.array_equal(np.asarray(m.a_policy), np.asarray(mj.a_policy))
+        assert np.array_equal(np.asarray(m.a_next_policy), np.asarray(mj.a_next_policy))
 
     def test_hours_are_not_capped_at_one(self):
         """c3: with a small disutility weight the chosen hours exceed one on both
@@ -3494,7 +3496,7 @@ class TestHoursSolve:
         cfg = self._cfg(gamma=gamma, nu=12.0 if gamma == 1.0 else 3.0)
         m = LifecycleModelPerfectForesight(cfg, verbose=False); m.solve(verbose=False)
         mj = LifecycleModelJAX(cfg, verbose=False); mj.solve(verbose=False)
-        assert np.array_equal(np.asarray(m.a_policy_alpha), np.asarray(mj.a_policy_alpha))
+        assert np.array_equal(np.asarray(m.a_next_policy_alpha), np.asarray(mj.a_next_policy_alpha))
         np.testing.assert_allclose(np.asarray(mj.V_alpha), np.asarray(m.V_alpha), rtol=0, atol=1e-9)
         np.testing.assert_allclose(np.asarray(mj.c_policy_alpha), np.asarray(m.c_policy_alpha),
                                    rtol=0, atol=1e-9)
@@ -3528,8 +3530,8 @@ class TestIdenticalCohortsSolvedOnce:
         for bp, m in olg.birth_cohort_solutions['medium'].items():
             alone = LifecycleModelJAX(m.config, verbose=False)
             alone.solve(verbose=False)
-            assert np.array_equal(np.asarray(m.a_policy_alpha),
-                                  np.asarray(alone.a_policy_alpha)), bp
+            assert np.array_equal(np.asarray(m.a_next_policy_alpha),
+                                  np.asarray(alone.a_next_policy_alpha)), bp
             np.testing.assert_allclose(np.asarray(m.c_policy_alpha),
                                        np.asarray(alone.c_policy_alpha),
                                        rtol=1e-10, atol=1e-12, err_msg=str(bp))
@@ -3540,7 +3542,7 @@ class TestIdenticalCohortsSolvedOnce:
         assert olg._cohort_solve_counts == [1, n_cohorts]
         models = list(olg.birth_cohort_solutions['medium'].values())
         assert len(models) == n_cohorts
-        assert all(m.a_policy_alpha is models[0].a_policy_alpha for m in models)
+        assert all(m.a_next_policy_alpha is models[0].a_next_policy_alpha for m in models)
         self._assert_each_cohort_matches_its_own_solve(olg)
 
     def test_a_tax_change_separates_the_cohorts_that_live_through_it(self):
@@ -3840,9 +3842,9 @@ class TestPoliciesOnDevice:
         assert not np.array_equal(np.asarray(res_d.cf_macro['A']), np.asarray(res_d.base_macro['A']))
         model_h = olg_h.birth_cohort_solutions['medium'][-3]
         model_d = olg_d.birth_cohort_solutions['medium'][-3]
-        assert isinstance(model_d.a_policy_alpha, jax.Array) and model_d.V is None
-        assert isinstance(model_h.a_policy_alpha, np.ndarray) and model_h.V is not None
-        assert np.array_equal(np.asarray(model_d.a_policy_alpha), model_h.a_policy_alpha)
+        assert isinstance(model_d.a_next_policy_alpha, jax.Array) and model_d.V is None
+        assert isinstance(model_h.a_next_policy_alpha, np.ndarray) and model_h.V is not None
+        assert np.array_equal(np.asarray(model_d.a_next_policy_alpha), model_h.a_next_policy_alpha)
         assert np.array_equal(np.asarray(model_d.c_policy_alpha), model_h.c_policy_alpha)
 
 

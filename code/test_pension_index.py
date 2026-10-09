@@ -86,7 +86,7 @@ def test_indexed_floor_is_the_absolute_floor_at_the_reference_rate():
     a.solve(verbose=False)
     b.solve(verbose=False)
     assert np.allclose(a.V, b.V, rtol=0, atol=1e-12)
-    assert np.array_equal(a.a_policy, b.a_policy)
+    assert np.array_equal(a.a_next_policy, b.a_next_policy)
 
 
 def test_indexed_floor_moves_with_the_replacement_rate():
@@ -118,7 +118,7 @@ def test_jax_matches_numpy_with_an_indexed_floor_and_a_falling_rate():
     j = LifecycleModelJAX(cfg, verbose=False)
     j.solve(verbose=False)
     assert np.allclose(np.asarray(j.V), n.V, rtol=0, atol=1e-9)
-    assert np.array_equal(np.asarray(j.a_policy), n.a_policy)
+    assert np.array_equal(np.asarray(j.a_next_policy), n.a_next_policy)
 
 
 def _small_spec(backend, aggregation):
